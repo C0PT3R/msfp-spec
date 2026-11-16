@@ -1,6 +1,6 @@
 # Proposal 3: Key rotation and revocation
 
-Status: Proposed.
+Status: Adopted whole (2026-11-16); open points still open.
 Touches: sections 4, 6.4, 6.5, 7, 9.1, 9.2 and 14 of
 [spec/v0.md](../spec/v0.md); adds two calls.
 

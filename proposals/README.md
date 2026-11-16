@@ -15,7 +15,7 @@ read or assumed, it says so.
 |---|----------|--------|
 | 1 | [Strict canonical rules](0001-strict-canonical-rules.md): one Ed25519 rule set (canonical points in the prime-order subgroup), I-JSON, one text per value, refuse the rest | Adopted, R check required |
 | 2 | [Opaque library IDs](0002-opaque-library-ids.md): library and version IDs chosen by the owning server, never the media server's | Adopted, choose again |
-| 3 | [Key rotation and revocation](0003-key-rotation-and-revocation.md): a rotation signed by the old and new keys, a committed next key, revocation | Proposed |
+| 3 | [Key rotation and revocation](0003-key-rotation-and-revocation.md): a rotation signed by the old and new keys, a committed next key, revocation | Adopted whole |
 | 4 | [A core plus separately versioned parts](0004-core-and-parts.md): core, `catalog`, `playback`, `media`, announced in `hello`; MSFP names; optional `/.well-known/msfp` | Proposed |
 | 5 | [Title identity beyond TMDB, and episode order](0005-title-identity-and-episode-order.md): TMDB's numbering in keys, `with` for double episodes, `e0`, `ids` for IMDb and TVDB | Proposed |
 | 6 | [Request signatures vs RFC 9421](0006-request-signatures-vs-rfc9421.md): a comparison; recommends keeping MSFP's scheme | Proposed |
