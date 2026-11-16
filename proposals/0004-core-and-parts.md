@@ -1,6 +1,6 @@
 # Proposal 4: A core plus separately versioned parts
 
-Status: Proposed.
+Status: Adopted (2026-11-16), with the rename to MSFP labels and headers in core 1 (open point 1); other open points still open.
 Touches: sections 3, 9 and 13 of [spec/v0.md](../spec/v0.md); adds a
 discovery document.
 
