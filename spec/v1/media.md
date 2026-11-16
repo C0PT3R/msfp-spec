@@ -169,18 +169,13 @@ The numbers are each implementation's; the bounds are required.
   have a bound of their own across the server; Overfin's is 4 for
   playlists and subtitles together, and 4 for sheets.
 
-**Overfin.** Overfin accepts the three `Range` forms above, with numbers
-of up to 15 digits, and answers `416` to any other; it also accepts
-`bytes=-0`. It doesn't check a
-`206`'s `Content-Range` or `Content-Length` against the range asked for:
-it passes them on. A `HEAD` is answered as a `GET` is, and fetches from
-upstream as a `GET` would. It bounds time to the answer and the length
-of a media fetch (by its playback's life), and reads in memory
-(4 and 4, as above), but not how many fetches of the file or segments run
-at once, for a playback or a peer, on either side. A small read (a
-playlist, a subtitle part) has no total time limit of its own. An
-upstream `416` reaches the viewer as `404`, and a playlist or subtitle
-part over its size as `409`.
+**Overfin.** Overfin follows sections 2.1 to 2.4 on a peer's ticket. Its
+numbers: 8 fetches at once per playback and 64 per peer, on both sides,
+each with a queue as long, waited in for 10 seconds at most, then `503`;
+a playlist, a subtitle part, a PGS part or a sheet is read whole within
+2 minutes. The same stream route serves its own people's browsers, on
+tickets of their own: there it answers `HEAD` as `GET`, and passes on any
+single range its media server answers.
 
 ## 3. What is fetched
 
@@ -495,4 +490,4 @@ Choices of the review round of 2026-11-16, to confirm:
    and PGS fields beyond sizes (sections 3.2 and 3.3). An open PGS object
    at the end of a part isn't refused.
 6. **`Content-Range` checks** (section 2.1) are required of the viewer's
-   server, though Overfin doesn't make them yet.
+   server; Overfin makes them since 2026-11-16.
