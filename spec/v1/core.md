@@ -363,6 +363,86 @@ certificate of type Ed25519 or ECDSA P-256, kept apart from the federation
 key; a lifetime of a year or less; the new pin named in `hello` before
 the switch to a renewed certificate.
 
+### 3.3 Connecting to peers
+
+Every address a server connects to for federation comes from a peer, or
+from an operator who copied it from a peer: the address in a code
+(section 5), in a `pair` request (section 9.1), in a `hello` that
+announces a move (section 13.2), a discovery document's address
+(section 11), and the media URLs under a peer's stream root
+([media](media.md#1-the-urls)). A hostile peer could name an address that
+points back into the server's own machine or network. So each connection
+made for a peer is checked first.
+
+**Refused destinations.** A server must refuse, by default, to connect to
+an IP address in any of these ranges:
+
+| Range | What it is |
+|-------|------------|
+| `127.0.0.0/8`, `::1` | loopback: the server's own machine |
+| `169.254.0.0/16`, `fe80::/10` | link-local; a cloud's metadata service answers at `169.254.169.254` |
+| `0.0.0.0/8`, `::` | unspecified, and IPv4's "this network" |
+| `224.0.0.0/4`, `ff00::/8` | multicast |
+| `240.0.0.0/4`, with `255.255.255.255` | reserved, and broadcast |
+
+An IPv4-mapped IPv6 address (`::ffff:0:0/96`, for example
+`::ffff:127.0.0.1`) is judged as the IPv4 address it carries.
+
+**Private ranges are allowed by default.** `10.0.0.0/8`, `172.16.0.0/12`,
+`192.168.0.0/16`, `100.64.0.0/10` and `fc00::/7` stay reachable: two
+servers on the same home network pair this way.
+
+**Operator policy.** A server may let its operator change this, with
+these bounds:
+
+- The operator may allow loopback, for a peer on the same machine. Every
+  other range of the table stays refused, whatever the setting.
+- The operator may refuse more: private ranges (a server that pairs only
+  over the internet), or any range the server's network needs kept out.
+  Some clouds also serve metadata at an address in a private range
+  (`fd00:ec2::254`, for example); a server there should refuse it.
+- The default, with no setting, is the table above.
+
+**Names.** For a host that is a name, a server:
+
+1. looks the name up once for the connection;
+2. checks every address the answer holds, and refuses the name if any of
+   them is refused, so that a name can't pair a LAN address with the
+   metadata service;
+3. connects only to an address it checked, without looking the name up
+   again. A second lookup could give another answer (DNS rebinding).
+
+Each new connection repeats the lookup and the check. A connection kept
+open and reused was checked when it was made. TLS still uses the name:
+SNI and the certificate check are as section 3.2 says, whatever address
+was dialed.
+
+**Through a proxy or a gateway.** A server whose connections go through a
+proxy or a gateway of its own makes sure the check happens where the
+connection is made, by the same rules. A server must not use a proxy that
+would connect to a refused address for it, such as a proxy named by its
+environment.
+
+**Redirects** are never followed (section 3), so a peer can't send a
+connection elsewhere after the check.
+
+**What a refused address means.** A refused connection fails like an
+unreachable peer, and nothing is sent: on a code, the redeeming server
+tells its operator that the address can't be reached; on an address
+change, the old address stays (section 13.2, step 3); on a media fetch,
+the fetch fails ([media section 2](media.md#2-requests)). A server may
+also refuse an address when it reads it (a code, a `pair` request), but
+must check again at connection time, since a name's answer can change.
+
+**Overfin.** Overfin refuses exactly the table above, by default, on
+every connection to a peer: calls, the media relay, preview sheets, the
+`hello` that confirms an address change, and the connection to its own
+address when it reads its own certificate. It checks at connection time
+only. Its one setting, `federation.allow_loopback`, allows loopback and
+nothing else. It offers no setting to refuse private ranges. A backend
+behind Overfin's gateway connects through the gateway, which makes the
+same check. It uses no proxy from the environment.
+
 ## 4. Identity and keys
 
 ### 4.1 The key
@@ -814,17 +894,30 @@ protocol, except where the `type` tells refusals apart: `not-supported`
 on `404` (section 10.4), and the `409`s of `rotate` and
 [playback](playback.md#2-play). The `type` values of version 1:
 
-| Status | `type` | `title` | Where |
-|--------|--------|---------|-------|
-| 400 | `invalid-request` | `Invalid request` | a bad body on `rotate`, `revoke`, `play`, `progress`, `stop` |
-| 404 | `not-found` | `Not found` | every call |
-| 404 | `not-supported` | `Not supported` | a call of a part the receiver doesn't speak with the caller (section 10.4) |
-| 409 | `rotation-refused` | `Rotation refused` | `rotate` (section 9.3) |
-| 409 | `stream-limit-reached` | `Too many streams on this account` | `play` |
-| 409 | `not-playable` | `This item can't be played` | `play` |
-| 410 | `playback-stopped` | `Playback was stopped` | `progress` |
-| 500 | `internal-error` | `Internal error` | every call |
-| 503 | `server-busy` | `The server is busy; try again shortly` | `play` |
+This is the reference for every status a federation call can answer, in
+every part of version 1. Media fetches are not federation calls; their
+statuses are in section 8.4.
+
+| Status | `type` | `title` | Calls | Meaning | What the caller does |
+|--------|--------|---------|-------|---------|----------------------|
+| 200 | (none) | | every call | done; the body is the answer | uses it |
+| 202 | (none) | | `rotate` | accepted, waiting for the receiver's operator (section 9.3) | waits |
+| 400 | `invalid-request` | `Invalid request` | `rotate`, `revoke`, `play`, `progress`, `stop` | the body is malformed, or a value is out of range | gives up; a correct caller never gets it |
+| 404 | `not-found` | `Not found` | every call | not heard, not known, not paired yet, no such code, or no such title for this peer; signed or not tells them apart (section 6.6) | as section 6.6 says |
+| 404 | `not-supported` | `Not supported` | a call of a part that is off | the receiver doesn't speak that part with the caller (section 10.4) | makes no more calls of that part until a newer `hello` |
+| 409 | (no body) | | `pair` | the caller's key is already a peer of the maker (section 9.1) | tells its operator |
+| 409 | `rotation-refused` | `Rotation refused` | `rotate` | the new key isn't accepted (section 9.3) | as section 12.4 says |
+| 409 | `stream-limit-reached` | `Too many streams on this account` | `play` | the pairing's streams are all in use, or its limit is 0 | tells the viewer "busy now" |
+| 409 | `not-playable` | `This item can't be played` | `play` | the owning server has no way to play its copy | tells the viewer "not playable" |
+| 410 | `playback-stopped` | `Playback was stopped` | `progress` | the playback isn't live, or isn't this pairing's | stops the viewer's player |
+| 429 | `rate-limited` | `Too many requests` | every call | this peer is over its own limit (section 8.3) | waits, as section 8.3 says |
+| 500 | `internal-error` | `Internal error` | every call | the receiver failed | tries again later, as for no answer |
+| 503 | `server-busy` | `The server is busy; try again shortly` | `play`; every call when the server is full (section 8.3) | the server's transcodes, or its capacity, are all in use | waits, as section 8.3 says; on `play`, tells the viewer "busy now" |
+
+A problem document may carry `retryAfter`, an integer from 1 to 3,600:
+seconds before the caller should try again (section 8.3). A receiver that
+doesn't know a `type` reads the status alone, except for `409` on `play`
+([playback section 2.5](playback.md#25-refusals)).
 
 The `title` texts are examples; any text will do.
 
@@ -832,6 +925,94 @@ The `title` texts are examples; any text will do.
 you", "not paired yet", "there's no such code", or "there's no such title
 for you". Signed or not tells them apart (section 6.6). A bad body on
 `pair`, `hello`, `libraries` and `titles` gets a signed `404` too.
+
+### 8.3 Limits and overload
+
+A server must protect itself from a peer that calls too much, by fault or
+on purpose, and must stay predictable when it is full. It must have all
+of these:
+
+1. **A limit per peer** on federation calls: how many calls one peer's
+   key may make in a period. Calls before a signature checks out (a
+   stranger, a `pair` attempt) are limited by network address instead.
+2. **A global limit** on federation calls, all peers together.
+3. **A limit on concurrent requests**, for one peer and in all.
+4. **A limit on `play`**, besides the pairing's `streams`: how often one
+   peer may call `play`, since each call can start work on the media.
+5. **Bounded queues.** A request waits for a slot only in a queue of
+   bounded length, for a bounded time. When the queue is full, or the time
+   is up, the request is refused at once.
+6. **Predictable overload.** A limit reached gives one of the answers
+   below. Never a hang, a dropped connection, or an answer that gets
+   slower without bound.
+
+The numbers are each implementation's. Suggested defaults, where Overfin
+has a value:
+
+| Limit | Suggested default |
+|-------|-------------------|
+| Request body | 64 KiB (section 3) |
+| Nonces remembered | 100,000 of known peers, 1,000 of strangers (section 6.5) |
+| Requests per network address, before any signature check | 50 a second, in bursts of up to 400 |
+| Playbacks per pairing | 2 streams, 1 of them transcoded ([playback section 6](playback.md#6-what-the-owning-server-enforces)) |
+| Subtitle and playlist reads at once, on the viewer's server | 4 ([media section 2](media.md#2-requests)) |
+| Preview sheet reads at once, on the viewer's server | 4 ([media section 3](media.md#3-what-is-fetched)) |
+
+**The answers.**
+
+- To a known peer, once its signature checks out: a signed `429`
+  `rate-limited` when that peer is over its own limit (items 1, 3 and 4);
+  a signed `503` `server-busy` when the server as a whole is full
+  (items 2 and 3, a full queue, or its transcodes on `play`).
+- Either may carry `retryAfter` in its body (section 8.2), and the same
+  value in a `Retry-After` header. The caller trusts only the body's: the
+  header isn't signed.
+- Before a signature checks out (a limit by network address): the
+  unsigned `404` of a failed check, or a `429` from the server's host.
+  For a known peer, an unsigned answer is no answer (section 6.6).
+
+**What a caller does.**
+
+- It never retries before `retryAfter` has passed.
+- Without one, and after an unsigned refusal or no answer, it backs off:
+  each retry waits about twice as long as the one before, from a few
+  seconds up to an hour at most, with some randomness so that peers don't
+  retry together.
+- `hello`, `libraries` and `titles` wait for their next turn on their
+  usual schedule, if that comes later.
+- A `play` refused this way isn't retried by itself: the viewer is told
+  "busy now" and may try again.
+- A `progress` refused this way waits for its next turn. A `stop` may be
+  retried a few times; the owning server ends an unused playback within
+  2 minutes anyway ([media section 4](media.md#4-how-long-a-ticket-works)).
+
+**Overfin.** Overfin has none of the limits of items 1 to 5 on federation
+calls today, besides the pairing's streams and transcodes, the server's
+transcode budget, the nonce caps and the body size. Behind its gateway,
+the gateway limits requests by network address (50 a second, bursts of
+400) and answers a plain-text, unsigned `429` with `Retry-After: 5`; a
+single Overfin without a gateway doesn't. It never sends `rate-limited`
+on federation calls, and its `server-busy` carries no `retryAfter`. Its
+client reads neither, and doesn't back off beyond its schedules: titles
+read every 30 minutes, a pending pairing asked at most every 20 seconds
+while its operator waits, one try for `progress` and `stop`.
+
+### 8.4 Media answers
+
+Media fetches ([media](media.md)) are plain `GET`s, not signed, and their
+answers aren't signed either. Their statuses:
+
+| Status | Meaning | What the viewer's server does |
+|--------|---------|-------------------------------|
+| 200 | the whole resource | relays it, after the checks of media section 3 |
+| 206 | the range asked for | checks `Content-Range` (media section 2), relays it |
+| 404 | no such file, a query string, browser headers, or a ticket that isn't live | for a playlist, the file or a segment: treats the playback as ended; for a subtitle part or a sheet: goes without it |
+| 416 | the `Range` header is malformed or out of the file | answers `416` to the viewer |
+| 503 | the owning server is busy | answers `503` to the viewer, who may try again |
+| anything else | not expected | as a failed fetch: the viewer's server answers `404` to the viewer |
+
+A body that comes with a refusal is not read beyond a few kilobytes, and
+never shown.
 
 ## 9. The core's calls
 
@@ -1050,6 +1231,10 @@ Versions travel in `hello`, request and answer, in `core` and `parts`
 - **Lists.** At most 8 versions each, each a non-negative integer. A
   receiver ignores entries beyond 8 and entries that aren't such
   integers. An empty list means the sender doesn't speak that part.
+- **Duplicates** in a list count once. A `core` or a part's list that
+  isn't an array, or a `parts` that isn't an object, is a bad body
+  (section 8.2): the whole `hello` is refused, nothing is stored. An
+  empty `core` list leaves no common core.
 - A server lists every version it speaks, not only the highest. A server
   that speaks both cores lists `[0,1]`.
 
@@ -1423,6 +1608,36 @@ in progress keep their old URLs until they end.
 - **Clocks.** Keep clocks set by the network. A clock off by more than 5
   minutes stops all calls, rotations and revocations. A clock behind
   delays calls after the other's restarts.
+- **Peers' addresses** point where the peer chooses. Section 3.3 keeps
+  connections out of the server's own machine and its cloud's metadata
+  service.
+- **Overload.** Section 8.3 limits a peer that calls too much.
+
+### 14.1 Logging
+
+Logs, diagnostics, error messages and crash reports are read by more
+people, and kept longer, than the secrets they could hold. A server must
+never write any of these into them, whole or in part:
+
+- a ticket, or a URL that holds one, such as a media URL
+  ([media section 1](media.md#1-the-urls)). HTTP clients' error messages
+  often quote the URL: remove it first;
+- a pairing code, its secret, the secret's hash, or the pairing proof
+  (section 5);
+- a private key or its seed, a key kept for a later rotation, or anything
+  derived from them but the public key, the fingerprint and the next key
+  commitment (sections 4 and 12);
+- a request's or an answer's body as a whole, since it may hold any of
+  these. Fields known to be harmless (a peer's name, a title key, a status,
+  a problem `type`) may be logged.
+
+A server may log public keys, fingerprints, addresses, playback IDs,
+nonces, statuses and problem types. A playback ID isn't a credential: the
+ticket is.
+
+**Overfin.** Overfin logs none of the secrets above. A failed media fetch
+has the URL removed from its error before it is logged, and a crash in a
+request logs the route's pattern, not the path.
 
 ## 15. Versioning
 
@@ -1562,6 +1777,8 @@ implementation speaks version 1 yet. The generator also checks them.
 | `rotation.json` | A rotates from "a" to "a2", committing to "a3": the statement, both signatures, and the `rotate` exchange |
 | `revocation.json` | A revokes "a": the statement, its signature, and the `revoke` exchange |
 | `strict.json` | addresses and codes with their verdicts under core 1 (`https` only) |
+| `strict.json`, `destinations` | IP addresses a server connects to for a peer by default, or refuses (section 3.3) |
+| `media.json` | WebVTT parts and what rebuilding them gives, HLS playlists and PGS parts, with their verdicts ([media section 3](media.md#3-what-is-fetched)) |
 
 The cases of [vectors/v0-strict.json](../../vectors/v0-strict.json)
 (keys, signatures, base64url, dates, integers, JSON) hold for core 1 too.
@@ -1693,8 +1910,8 @@ listed here, with its source in [proposals/](../../proposals/README.md).
    2). It would settle the "custom crypto protocol" concern more directly
    than switching to HTTP Message Signatures (RFC 9421), which proposal 6
    compared and set aside.
-4. **Rate limits.** There is none on federation calls beyond the nonce
-   memory caps of section 6.5.
+4. **Rate limits.** Closed by the review round of 2026-11-16: section 8.3
+   requires them, with the answers and the retry rules.
 
 **Rotation and revocation**
 
@@ -1763,3 +1980,12 @@ listed here, with its source in [proposals/](../../proposals/README.md).
     then a pairing stays in core 0, and the `address` member of `hello` is
     read in core 0 between servers that list core 1, so that `http`
     pairings can move (sections 10.3 and 16.5).
+23. Section 3.3 refuses the ranges listed, by default, and lets an
+    operator allow loopback only. Other forms that embed an IPv4 address
+    (NAT64's `64:ff9b::/96`, 6to4's `2002::/16`) are not judged by the
+    IPv4 address they carry; whether they should be is open.
+24. Section 8.3's refusals: `429` `rate-limited` for one peer over its
+    limit, `503` `server-busy` for a full server, and `retryAfter` in the
+    signed body rather than in the unsigned header alone.
+25. Section 8.3 suggests numbers only where Overfin has one. A per-peer
+    call rate, a global one and a `play` rate have no suggested default.

@@ -22,6 +22,48 @@ pairing) rarely and carefully, the media formats more often.
 Read the core first. Each part says what it needs from the core, and
 refers to it by section.
 
+## Glossary
+
+Each document defines its own terms in full; this list is a summary, in
+one place, with where each is defined.
+
+| Term | Meaning | Defined in |
+|------|---------|------------|
+| Server | one installation of an implementation, with one address and one current key | [core 1](core.md#1-overview-and-terms) |
+| Address | where a server's API answers: `https://host[:port]`, no path | [core 5.2](core.md#52-addresses) |
+| Base path | the path of the federation calls, `/api/v1/federation/` unless the discovery document says otherwise | [core 11](core.md#11-the-discovery-document) |
+| Peer | another server this one knows by its public key | [core 7.3](core.md#73-states) |
+| Pairing | two operators making their servers peers, by hand | [core 7](core.md#7-pairing-step-by-step) |
+| Pairing code | one line holding the maker's address, key, a one-time secret and an expiry | [core 5](core.md#5-the-pairing-code) |
+| Fingerprint | a short form of a public key, which operators compare when pairing | [core 4.2](core.md#42-the-fingerprint) |
+| Current key | the key a peer knows a server by now | [core 12](core.md#12-key-rotation-and-revocation) |
+| Next key commitment | SHA-256 of a key made for a later rotation | [core 12.5](core.md#125-the-next-key-commitment) |
+| Nonce | 16 random bytes that make each signed request unique | [core 6.5](core.md#65-nonces-replay-and-restarts) |
+| Pin | SHA-256 of a certificate's public key, which a server names in `hello` | [core 3.2](core.md#32-https-certificates) |
+| *Trusted*, *named* | a certificate a public authority vouches for; one the peer named by its pin | [core 3.2](core.md#32-https-certificates) |
+| Part | a separately versioned set of calls: `catalog`, `playback`, `media` | [core 10](core.md#10-versions-and-parts) |
+| Problem document | the JSON body of a refusal (RFC 9457), with `type`, `title`, `status` | [core 8.2](core.md#82-refusals) |
+| Library | a set of titles a server may offer a peer, by an opaque ID | [catalog 2](catalog.md#2-libraries) |
+| Offer, want | what one side shares; what the other takes of it | [catalog 1](catalog.md#1-terms) |
+| Title key | the identity of a film, series, season or episode, from TMDB's IDs | [catalog 4](catalog.md#4-title-keys) |
+| Owning server | the server that holds a copy and streams it | [playback 1](playback.md#1-terms) |
+| Viewer's server | the server whose person watches; the only one the person's browser talks to | [playback 1](playback.md#1-terms) |
+| Copy, version | one file of a title; the ID the owning server gives it | [playback 1](playback.md#1-terms) |
+| Playback | one stream the owning server runs for the viewer's server, with an ID and a ticket | [playback 6.1](playback.md#61-a-playbacks-states) |
+| Ticket | the opaque credential in the media URLs, the only one | [media 1](media.md#1-the-urls) |
+| Stream root | `<address><prefix>/api/v1/stream/`, under which a server's media is | [media 1](media.md#1-the-urls) |
+| Stretch, part | 120 seconds of a subtitle track, fetched on its own | [media 3](media.md#3-what-is-fetched) |
+| Sheet | a JPEG of seek-bar preview tiles | [playback 2.4](playback.md#24-seek-bar-previews) |
+
+## Errors
+
+Every status and problem `type` a federation call can answer, in every
+part, is listed with its meaning and what the caller does in
+[core section 8.2](core.md#82-refusals). The statuses of media fetches are
+in [core section 8.4](core.md#84-media-answers). Limits and overload, and
+how a caller retries, are in
+[core section 8.3](core.md#83-limits-and-overload).
+
 ## Dependencies
 
 - `catalog` needs only the core.
@@ -103,6 +145,13 @@ proves nothing, and is off by default
 - **Address changes** (proposal 8), in the core.
 - **The clarifications** (all 34), as in version 0's corrections.
 - The seek-bar previews already in version 0, in `playback` and `media`.
+- **The review round of 2026-11-16**: which addresses a server connects
+  to ([core section 3.3](core.md#33-connecting-to-peers), also a version 0
+  correction); required rate limits and overload answers (core section
+  8.3); logging (core section 14.1); one error reference (core section
+  8.2); exact HLS, WebVTT and PGS rules and bounds on fetches
+  ([media](media.md) sections 2 and 3); choosing the copy and tracks, and
+  a playback's states ([playback](playback.md) sections 2.6 and 6).
 
 The proposals and their decisions are in
 [proposals/](../../proposals/README.md). Points the proposals left open
@@ -114,6 +163,8 @@ are listed in each document's open questions.
 answers under the MSFP labels and headers, a rotation statement, a
 revocation statement, and a `hello` carrying `core`, `parts`,
 `certificates` and `address`
-([core section 17](core.md#17-test-vectors)). They come from the
+([core section 17](core.md#17-test-vectors)), the destinations a server
+refuses to connect to (`destinations` in `strict.json`), and WebVTT,
+HLS and PGS cases with their verdicts (`media.json`, media section 3). They come from the
 generator in [tools/vectors/](../../tools/vectors/), not from an
 implementation.
