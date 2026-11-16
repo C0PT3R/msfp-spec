@@ -175,6 +175,16 @@ func verifyAll(read func(string) []byte) []error {
 	verdicts("v1/strict.json", "codes", func(x obj) error { _, err := readCode(str(x, "text"), core1.prefix, false); return err })
 	verdicts("v1/strict.json", "mediaNames", func(x obj) error { return checkMediaName(str(x, "text")) })
 	verdicts("v1/strict.json", "bases", func(x obj) error { return checkBase(str(x, "text")) })
+	verdicts("v1/strict.json", "destinations", func(x obj) error { return checkDestination(str(x, "text")) })
+	verdicts("v1/media.json", "hls", func(x obj) error { return checkPlaylist([]byte(str(x, "text"))) })
+	verdicts("v1/media.json", "pgs", func(x obj) error { return checkPGS(text(x)) })
+	for _, v := range load("v1/media.json")["webvtt"].([]any) {
+		x := v.(obj)
+		got, err := rebuildVTT(text(x))
+		if (err == nil) != (x["valid"] == true) || string(got) != str(x, "output") {
+			bad("v1/media.json: webvtt %q: the file says valid=%v, output %q; the rules give %v, %q", str(x, "name"), x["valid"], str(x, "output"), err, got)
+		}
+	}
 
 	// vectors/v1/
 	keys := load("v1/keys.json")

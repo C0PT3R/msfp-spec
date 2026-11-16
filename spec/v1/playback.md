@@ -82,6 +82,24 @@ listed above, lowercase, each once, sorted; `maxHeight` stepped down to
 1,000 left out (0); the request's `maxBitrateKbps` rounded down to a whole
 1,000 from 1,000 up, and kept as it is below.
 
+**Arrays in capabilities.** The owning server reads each array of
+`capabilities` this way:
+
+- An array whose entries aren't all strings, or a member that isn't an
+  array where the table says one, refuses the request (`400`).
+- An entry not in the table, in another case included, is ignored.
+  Duplicates count once. Order doesn't matter.
+- An empty array, or one left with nothing once unknown entries are
+  ignored, means the same as the member left out: nothing said.
+- Nothing said about `containers` or `videoCodecs`: no file is played as
+  it is (`direct`); the owning server remuxes or transcodes to H.264 and
+  AAC in HLS, which every viewer's server must be able to play. Nothing
+  said about `audioCodecs`: AAC only. Nothing said about `hdr`: standard
+  range only.
+
+**Overfin.** Overfin lowercases each entry before comparing it, so
+`H264` counts as `h264`; a correct sender writes lowercase anyway.
+
 ### 2.2 What the owning server does
 
 1. It refuses the request (`400`) when `title` isn't a film's or an
@@ -215,6 +233,7 @@ Besides those bounds, a full sheet is at most 4,096 pixels each way:
 ### 2.5 Refusals
 
 `400` `invalid-request`, `404` `not-found`, `409`, `503`, `500` as above,
+`429` `rate-limited` ([core section 8.3](core.md#83-limits-and-overload)),
 and `404` `not-supported` when `playback` is off. A `409` is one of two
 refusals, told apart by the problem `type` of its signed body:
 
@@ -230,6 +249,75 @@ must read the `type` of a signed `409`: `not-playable` means not
 playable; any other `type`, or a body without one, means busy now. A body
 that isn't JSON counts as a body without a `type`. Any other refusal
 (`400`, `404`, `500`, an unsigned one) means not playable.
+
+### 2.6 Choosing the copy and the tracks
+
+The owning server chooses in this order: the copy, then the audio, then
+the subtitles, then how to serve it. A track ID (`a<n>`, `s<n>`) names a
+track of the copy chosen. Section 2.2 already refused a malformed ID
+(`400`). "The default audio" is the track the copy marks as default, else
+its first audio track. Language matching takes the same tag first
+(`fr-CA` for `fr-CA`), then the same base language (`fr` for `fr-CA`),
+and for audio only the title's own sound, never a commentary or a
+description.
+
+**The copy.**
+
+| `versionId` | `audioLanguage` | Copy chosen |
+|-------------|-----------------|-------------|
+| one of the title's copies | any | that copy |
+| absent, or no copy has it | a copy's audio matches | the first copy whose audio matches |
+| absent, or no copy has it | absent, or no copy matches | the first copy |
+| no copies offered to the peer | any | refused: `404` |
+
+**The audio.**
+
+| `audioTrack` | `audioLanguage` | Audio played |
+|--------------|-----------------|--------------|
+| a track of the copy | any (ignored) | that track |
+| not a track of the copy | any | as if `audioTrack` were absent |
+| absent | a track matches | that track |
+| absent | absent, or no track matches | the default audio |
+
+**The subtitles.** Subtitles are never burned into the video: they never
+make a playback transcode, and the choice only says which track to show.
+
+| `subtitleTrack` | `subtitleLanguage` | `subtitleTrack` in the answer |
+|-----------------|--------------------|-------------------------------|
+| `off` | any (ignored) | absent: none shown |
+| a track of the copy | any (ignored) | that track |
+| not a track of the copy | any | as if `subtitleTrack` were absent |
+| absent | a track matches | that track |
+| absent | absent, or no track matches | absent: none shown |
+
+Whatever is chosen, `forcedTrack` is the forced track in the language of
+the audio played, when the copy has one. Every text and PGS subtitle
+track is listed, whichever is shown; picture formats other than PGS are
+not listed.
+
+**How it's served.** `method` follows from the copy, the audio track and
+the capabilities, the cheapest first: `direct`, then `remux`, then
+`transcode`. There is no request member to forbid transcoding.
+
+| What the copy and track need | Limits (section 6) | Result |
+|------------------------------|--------------------|--------|
+| `direct` or `remux` | a stream free | `200` |
+| `transcode` | a stream free, a transcode free for the pairing and in the server's budget | `200` |
+| `transcode` | the pairing's `transcodes` all used or 0, or the server's budget used | `503` `server-busy` |
+| anything | the pairing's `streams` all used, or 0 | `409` `stream-limit-reached` |
+| no way to play the copy | any | `409` `not-playable` |
+
+The owning server doesn't fall back to another copy, track or quality to
+avoid a transcode, and doesn't refuse for lack of a language. The answer
+always says what plays (`versionId`, `audioTrack`, `subtitleTrack`), and
+the viewer's server shows that, not what it asked for.
+
+**Overfin.** Overfin speaks version 0, whose `play` has no `versionId`:
+it chooses the copy by `audioLanguage`, then the first. An `audioTrack`
+that isn't a track of the copy is passed to its media server as is,
+whose answer then decides; Overfin doesn't check it first. A
+`subtitleTrack` that isn't a track of the copy is echoed in the answer,
+and fetching its parts gets `404`. The rest is as above.
 
 ## 3. progress
 
@@ -320,6 +408,82 @@ anything.
   tags wanted, the coarsened capabilities, and progress over time, for
   one unnamed viewer of the other server.
 
+### 6.1 A playback's states
+
+A playback exists only on the owning server, from a `200` to `play`. It
+is in one of three states:
+
+| State | How it gets there | `progress` | `stop` | Media with its ticket |
+|-------|-------------------|------------|--------|-----------------------|
+| **started** | `play` answered `200` | `200`; the playback becomes active | `200`; the playback ends | served; the playback becomes active |
+| **active** | a `progress` or a media request since it started | `200` | `200`; the playback ends | served |
+| **ended** | `stop`, expiry, or one of the endings of section 6.3 | `410` `playback-stopped` | `200`, nothing changes | `404` |
+
+- **started** and **active** are both *live*: the ticket works, and the
+  playback counts against the limits. They differ only in that an active
+  playback has been used since it started; a server may treat them as one.
+- **ended** is final. A playback never comes back to life; the viewer's
+  server starts a new one with `play`, with a new ID and a new ticket.
+- A playback ID of another pairing, or one the owning server never gave,
+  is treated as ended: `410` on `progress`, `200` on `stop`, and nothing
+  changes.
+
+**Duplicate and late calls.**
+
+- A second `stop` of the same playback is answered `200`, and changes
+  nothing. A viewer's server may send `stop` again when it got no answer.
+- A `progress` that arrives after the playback ended, however it ended,
+  gets `410` `playback-stopped`, and the playback stays ended. The viewer's
+  server stops its player.
+- Calls of one playback may cross on the way: a `progress` sent before a
+  `stop` may arrive after it. The owning server goes by its own state,
+  never by the order the viewer's server sent things in.
+
+### 6.2 Limits at once
+
+The owning server must enforce the stream and transcode caps
+atomically: checking that a stream (and, for a transcode, a transcode) is
+free and counting the new playback is one step, which no other `play`
+can come between. So two `play`s that arrive together can never both
+take the last stream. A `play` that loses this race is refused as if it
+had come later (`409` or `503`, section 2.6). A server may check the
+caps earlier too, to refuse before doing any work, but the check that
+counts is the atomic one.
+
+### 6.3 How a playback ends
+
+A live playback ends, and its ticket stops working at once, when:
+
+- the viewer's server sends `stop`;
+- it has had neither a `progress` nor a media request for 2 minutes
+  (expiry; a media response still open counts as use);
+- it has lasted longer than the owning server's longest playback, if it
+  has one (Overfin: 24 hours);
+- the pairing ends, the caller is no longer `paired`, or its key is
+  suspended ([core section 12.6](core.md#126-revocation));
+- the library holding the copy is no longer offered to that peer;
+- the owning server's operator stops it.
+
+When it ends, the owning server stops the work it started for it (the
+transcode, open media responses) and frees its stream. An abandoned
+playback (the viewer's server crashed, or lost its network) is cleaned up
+by expiry: the owning server checks for expired playbacks at least once a
+minute, so that one never holds a stream much longer than 2 minutes after
+its last use.
+
+The ticket must stop working at once in every case: the next media
+request after the ending gets `404`, even when the ending was noticed
+only then.
+
+**Overfin.** Overfin's check and count are one step under one lock
+(atomic), and it checks the pairing's streams once more before asking its
+media server, to refuse early. It looks for expired playbacks every 30
+seconds. A pairing that ends, or a library no longer offered, ends the
+playback at its next media request (answered `404`), or at expiry if no
+request comes: Overfin doesn't end them at the moment of the change.
+After a playback ends, it remembers why for an hour; `progress` gets
+`410` either way.
+
 ## 7. Security considerations
 
 - **The ticket** is the only credential for the media, and is carried by
@@ -347,3 +511,16 @@ confirm:
    Proposal 5 says where a playback of a later episode starts, but not how
    `startPositionMs` combines with it. This draft reads a non-zero
    `startPositionMs` as a position in the copy.
+
+Choices of the review round of 2026-11-16, to confirm:
+
+3. **An `audioTrack` or `subtitleTrack` the copy doesn't have** is read
+   as absent (section 2.6), not refused with `400`.
+4. **No member to forbid transcoding** (section 2.6): a viewer's server
+   that doesn't want one has no way to say so; the limits decide.
+5. **The three states** of section 6.1, where started and active differ
+   only in use. A server that needs no difference may keep one live state.
+6. **Ending at once** when a pairing ends or a library is no longer
+   offered (section 6.3): required as "the next media request fails";
+   whether the transcode must also stop at the moment of the change is
+   left to implementations.

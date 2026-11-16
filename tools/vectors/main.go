@@ -32,6 +32,7 @@ func main() {
 		{"v1/rotation.json", genV1Rotation},
 		{"v1/revocation.json", genV1Revocation},
 		{"v1/strict.json", genV1Strict},
+		{"v1/media.json", genV1Media},
 	}
 
 	failed := false

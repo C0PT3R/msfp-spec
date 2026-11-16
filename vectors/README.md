@@ -7,9 +7,13 @@ Values for an implementation's tests to check against. They are under
 |------|---------|---------------------|
 | [v0.json](v0.json) | 0 | Overfin's own code. Keys, a pairing code, the pairing proof, and three signed exchanges ([v0 section 15](../spec/v0.md#15-test-vectors)). Implementations keep copies of it and check them, so it never changes. |
 | [v0-strict.json](v0-strict.json) | 0 | The generator below. Valid and invalid cases for the canonical forms of [v0 section 2.1](../spec/v0.md#21-canonical-forms) and the code and address rules of v0 section 5: keys (the identity, a point of order 8, a key with a small-order part, a non-canonical encoding), signatures (an identity-key forgery, a torsion R, S + L), base64url, dates, integers, JSON bodies, addresses and codes, each with its verdict. They hold for core 1 too, except that core 1 refuses `http`. |
-| [v1/](v1/) | core 1 | The generator below. Keys and commitments, a `msfp-pair-1.` code with an `https` address, signed requests and answers under the MSFP labels and headers (with the answer's media type), a rotation statement, a revocation statement, a `hello` carrying `core`, `parts`, `certificates` and `address`, and address and code verdicts under core 1 ([core section 17](../spec/v1/core.md#17-test-vectors)). |
+| [v1/](v1/) | core 1 | The generator below. Keys and commitments, a `msfp-pair-1.` code with an `https` address, signed requests and answers under the MSFP labels and headers (with the answer's media type), a rotation statement, a revocation statement, a `hello` carrying `core`, `parts`, `certificates` and `address`, address and code verdicts under core 1, the destinations a server refuses to connect to, and WebVTT, HLS and PGS cases ([core section 17](../spec/v1/core.md#17-test-vectors)). |
 
 **No implementation produced the files of version 1, nor v0-strict.json.**
+The media and destination cases were checked against Overfin's own
+sanitizer and checks on 2026-11-16: they agree, except for the HLS cases
+that [media section 3.1](../spec/v1/media.md#31-hls-playlists) lists in
+its Overfin note.
 Overfin's code doesn't implement version 1 yet, nor the stricter rules of
 version 0's corrections. Those files come from the generator alone: an
 independent program written from the specification. When an
