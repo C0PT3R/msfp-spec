@@ -295,12 +295,11 @@ Then:
 rewrites its media server's HLS: master playlists name `v<n>.m3u8`,
 media playlists `init.<ext>` (in `#EXT-X-MAP`) and `seg<n>.<ext>`, where
 *n* may be negative and *ext* is `mp4`, `m4s`, `ts`, `aac` or `mp3`; it
-drops every other tag, and refuses a playlist of its media server with
-any other URI. As the viewer's server, it checks steps 1, 2, 4 and 5; for
-step 3, it checks only that the playlist starts with the bytes `#EXTM3U`.
-It doesn't refuse `#EXT-X-DEFINE` or `#EXT-X-KEY` (whose URIs pass step 5
-or fail it as any other), doesn't count URIs, passes every tag on, and
-fetches any bare name the viewer asks for.
+keeps a segment's duration in `#EXTINF` but not its title, drops every
+other tag and any tag holding `URI=` in any case, and refuses a playlist
+of its media server with any other URI. As the viewer's server, it
+checks steps 1 to 8, and drops tags outside the subset, and comments,
+before serving. It fetches any bare name the viewer asks for.
 
 ### 3.2 WebVTT
 
