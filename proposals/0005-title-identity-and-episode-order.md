@@ -1,6 +1,6 @@
 # Proposal 5: Title identity beyond TMDB, and episode order
 
-Status: Proposed.
+Status: Adopted (2026-11-16); open points still open.
 Touches: sections 9.4, 9.5 and 11, and open question 8 of
 [spec/v0.md](../spec/v0.md).
 
