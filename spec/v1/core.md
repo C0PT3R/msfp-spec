@@ -1,0 +1,1761 @@
+# MSFP version 1: the core, version 1
+
+**Draft.** Nothing implements version 1 yet. [Version 0](../v0.md) is what
+Overfin and the Jellyfin plugin speak today, and stays the compatibility
+baseline. How the parts fit together is in [README.md](README.md).
+
+The core is what every MSFP server speaks: encodings, transport, keys, the
+pairing code, signed requests and answers, pairing and its states, key
+rotation and revocation, address changes, and how versions are agreed.
+The parts build on it: [catalog](catalog.md) (libraries and titles),
+[playback](playback.md) (starting and stopping a playback) and
+[media](media.md) (what the stream URLs serve).
+
+The words "must", "must not" and "should" carry their usual meaning in
+specifications. Every example uses `example.org` names and RFC 5737
+addresses. The test vectors are in [vectors/v1/](../../vectors/v1/)
+(section 17).
+
+## Contents
+
+1. [Overview and terms](#1-overview-and-terms)
+2. [Encodings and canonical forms](#2-encodings-and-canonical-forms)
+3. [Transport](#3-transport)
+4. [Identity and keys](#4-identity-and-keys)
+5. [The pairing code](#5-the-pairing-code)
+6. [Signing requests and answers](#6-signing-requests-and-answers)
+7. [Pairing, step by step](#7-pairing-step-by-step)
+8. [Common rules for every call](#8-common-rules-for-every-call)
+9. [The core's calls](#9-the-cores-calls)
+10. [Versions and parts](#10-versions-and-parts)
+11. [The discovery document](#11-the-discovery-document)
+12. [Key rotation and revocation](#12-key-rotation-and-revocation)
+13. [Changing a server's address](#13-changing-a-servers-address)
+14. [Security considerations](#14-security-considerations)
+15. [Versioning](#15-versioning)
+16. [Coexisting with version 0](#16-coexisting-with-version-0)
+17. [Test vectors](#17-test-vectors)
+18. [Open questions](#18-open-questions)
+
+## 1. Overview and terms
+
+MSFP lets media servers share their libraries: one server's people browse
+and play titles another server holds, through their own server. Version 1
+covers manual pairing only: two operators pair their servers by hand, and
+each trusts only the servers it paired with.
+
+- **Server**: one installation of an implementation of this protocol. It
+  has one address and one current Ed25519 key pair.
+- **Address**: where a server's API answers, `https://host[:port]`, with
+  no path (section 5.2).
+- **Base path**: the path under the address where the federation calls
+  are; `/api/v1/federation/` unless the server's discovery document says
+  otherwise (section 11).
+- **Peer**: another server this server knows by its public key. A peer is
+  in one of the states of section 7.3.
+- **Pairing**: the act, done by two operators by hand, that makes two
+  servers peers. Nothing is shared before it.
+- **Pairing code**: one line of text an operator sends another operator.
+  It holds the maker's address, public key, a one-time secret and an
+  expiry time (section 5).
+- **Core**: this document. **Part**: a separately versioned set of calls
+  and rules built on the core: `catalog`, `playback`, `media`
+  (section 10).
+- **Current key**: the key a peer knows a server by now. It may change by
+  a rotation (section 12).
+- **Next key commitment**: SHA-256 of a public key a server has made but
+  not used yet, which its peers store and accept a rotation to
+  (section 12).
+- **Owning server**, **viewer's server**, **library**, **offer**, **want**,
+  **title key**, **playback**, **ticket**: defined by the parts that use
+  them ([catalog](catalog.md#1-terms), [playback](playback.md#1-terms)).
+
+Every call is an HTTP `POST` with a JSON body, signed by the caller. Every
+answer to a known key is signed by the server answering. The media itself
+is fetched with plain `GET` requests that carry a ticket only
+([media](media.md)).
+
+## 2. Encodings and canonical forms
+
+- **base64url**: the URL-safe alphabet of RFC 4648 section 5, **without
+  padding**. Keys, nonces, signatures, hashes, commitments, pins and the
+  pairing proof use it.
+- **hex**: lowercase hexadecimal. The body hash inside a signed message
+  uses it.
+- **JSON**: I-JSON (RFC 7493), as below. Fields marked "optional" may be
+  left out.
+- **Times** are Unix seconds, written in decimal ASCII.
+- Text in signed messages and statements is ASCII, and lines are
+  separated by a single line feed (`\n`, byte 0x0A). There is never a
+  trailing line feed.
+
+Every value below has exactly one valid text. A sender must write that
+text. A receiver must refuse any other, the same way it refuses a bad
+signature or a bad body: an unsigned `404` when the value is checked
+before the signature checks out (section 6.4); after it, a signed refusal
+with the status that call gives a bad body (section 8.2).
+
+### 2.1 Ed25519
+
+Keys and signatures are pure Ed25519 (RFC 8032, not Ed25519ph), with the
+following rules, which RFC 8032 leaves open.
+
+A **public key** is valid only when all of these hold:
+
+1. it is 32 bytes;
+2. it is the canonical encoding of a point: the 255-bit y is below
+   p = 2^255 − 19, the point is on the curve, and the sign bit is 0 when
+   x = 0;
+3. the point is in the prime-order subgroup and is not of small order:
+   [L]A is the identity and A is not, where
+   L = 2^252 + 27742317777372353535851937790883648493. This excludes the
+   8 points of small order (the identity among them), and every point
+   with a small-order part.
+
+A **signature** (R ‖ S, 64 bytes) is valid for a message M under a valid
+key A only when:
+
+1. R satisfies conditions 2 and 3 above;
+2. S, read as a little-endian integer, is below L;
+3. [S]B = R + [k]A, where k = SHA-512(R ‖ A ‖ M) mod L and B is the base
+   point.
+
+With A and R both in the prime-order subgroup, the cofactored and the
+cofactorless equations accept exactly the same signatures. So any RFC 8032
+library may do step 3, once the point checks are done. Every honest
+signature passes: R = [r]B and A = [a]B. The checks are needed because
+libraries differ: some accept the identity as a key, and under it the
+signature (R = identity, S = 0) verifies every message; some accept a
+torsion component in R, which matters once a signed statement is checked
+by more than one server (section 12).
+
+A receiver checks a key once, when it first learns it (in a code, in
+`MSFP-Key` on `pair`, in a rotation), and may keep the result. It checks R
+on every signature, statements included.
+
+One way to make the point checks: decode the point, re-encode it and
+compare (canonical), multiply it by the cofactor 8 and compare with the
+identity (small order), compute [L − 1]P + P and compare with the
+identity (subgroup).
+
+### 2.2 Text encodings
+
+- **base64url**: only the characters `A–Z a–z 0–9 - _`; no padding, no
+  white space; the unused bits of the last character are zero. A simple
+  test: re-encoding the decoded bytes gives the same text. Lengths are
+  fixed where the value is: 43 characters for 32 bytes, 22 for 16, 86 for
+  64.
+- **hex**: lowercase `0–9 a–f` only. A SHA-256 is 64 characters.
+- **Decimal integers** in headers, signed messages and statements: `0` or
+  `[1-9][0-9]*`, no sign, no white space, at most 9,007,199,254,740,991
+  (2^53 − 1). `MSFP-Date` is a positive integer in this form.
+- **Status** in an answer message: the three digits of the status code.
+
+### 2.3 JSON
+
+- Bodies are I-JSON (RFC 7493): UTF-8 without a byte order mark; no
+  surrogate code points (escaped or not, so no lone surrogates) and no
+  noncharacters; no object with the same member name twice, names being
+  compared after their escapes are decoded.
+- Member names match exactly, case included. A name in another case is
+  an unknown member.
+- Unknown members are ignored. This is not leniency: it is how later
+  versions add fields (section 15).
+- Integers: a JSON number with no fraction, no exponent, not `-0`, from
+  −(2^53 − 1) to 2^53 − 1.
+- `null` is not a valid value for any MSFP member. A sender leaves an
+  empty optional member out, or sends `[]` or `""` where the field says
+  so. A receiver refuses `null` as an invalid value. (Toward a peer that
+  speaks version 0, see section 16.6.)
+- A member of another JSON type than its field says is an invalid value.
+- String values are compared and signed after JSON decoding. Since
+  addresses, keys and IDs are ASCII, a sender has no reason to escape any
+  of them.
+- Insignificant white space between JSON tokens is allowed. Bodies are
+  signed as bytes, never rebuilt, so their layout doesn't matter. Senders
+  should send none.
+
+### 2.4 Headers
+
+- Each of the four signature headers (section 6.1) must appear exactly
+  once in a request, and `MSFP-Signature` exactly once in an answer. Two
+  instances, or one value holding a comma, are refused.
+- A header value is taken after HTTP removes leading and trailing
+  optional white space. Any other white space inside makes it invalid.
+- `Content-Type` is compared without its parameters:
+  `application/json; charset=utf-8` is `application/json`.
+
+### 2.5 Case
+
+Header names are case-insensitive, as in HTTP. Everything else is
+case-sensitive and has one case:
+
+- scheme and host of an address: lowercase;
+- hex: lowercase;
+- enumerated values (`paired`, `movies`, `direct`, `hls`…): exactly as
+  listed;
+- part names: lowercase, as listed;
+- title keys: exactly as [catalog](catalog.md#4-title-keys) writes them;
+- language tags: the case conventions of BCP 47 (RFC 5646 section
+  2.1.1): language lowercase, script title case, region uppercase
+  (`fr-CA`, `zh-Hant-TW`). Receivers compare tags case-insensitively, so
+  `fr-ca` and `fr-CA` count as one tag, but senders write the
+  conventional form.
+
+Cases for all of these, valid and not, are in
+[vectors/v0-strict.json](../../vectors/v0-strict.json) and
+[vectors/v1/strict.json](../../vectors/v1/strict.json) (section 17).
+
+## 3. Transport
+
+- **HTTPS only.** Every federation call and every media fetch uses
+  `https`, with the certificate checks of section 3.2. There is no plain
+  `http` in version 1. A server without a certificate from a public
+  authority makes a self-signed one, or uses a private authority's, and
+  names its pin (section 3.2).
+- **Paths.** The federation calls are under the peer's base path:
+  `/api/v1/federation/` on the peer's address, unless its discovery
+  document gives another (section 11). The `v1` in that path is a fixed
+  literal, not the protocol's version.
+
+  | Call | Path under the base | Who calls whom | Defined in |
+  |------|---------------------|----------------|------------|
+  | pair | `pair` | the server redeeming a code calls the code's maker | section 9.1 |
+  | hello | `hello` | either peer | section 9.2 |
+  | rotate | `rotate` | a server changing its key calls each peer | section 9.3 |
+  | revoke | `revoke` | a server revoking its key calls each peer | section 9.4 |
+  | libraries | `libraries` | either paired peer | [catalog](catalog.md#2-libraries) |
+  | titles | `titles` | either paired peer | [catalog](catalog.md#3-titles) |
+  | play | `play` | the viewer's server calls the owning server | [playback](playback.md#2-play) |
+  | progress | `progress` | the viewer's server calls the owning server | [playback](playback.md#3-progress) |
+  | stop | `stop` | the viewer's server calls the owning server | [playback](playback.md#4-stop) |
+
+  The media is under the stream root, `<address><prefix>/api/v1/stream/`
+  ([media](media.md#1-the-urls)).
+- **Request headers.** `Content-Type: application/json` and the four
+  signature headers of section 6.1 are required.
+- **No browser headers.** Requests must not carry `Sec-Fetch-Site` with a
+  value other than `same-origin` or `none` (browsers' cross-site marker).
+  A server-to-server client sends no `Sec-Fetch-*` headers at all.
+- A request without `Content-Type: application/json`, or with a
+  cross-site `Sec-Fetch-Site`, is refused with the unsigned `404` of a
+  failed check (section 6.4).
+- **Answer bodies.** `application/json` for `200` and `202`. Signed
+  refusals are RFC 9457 problem documents, `application/problem+json`,
+  with `type`, `title` and `status` members (section 8.2). One refusal has
+  an empty body and no `Content-Type` (`409` on `pair`). The answer's
+  media type is signed (section 6.3).
+- **Unsigned refusals.** Their body is not specified. A receiver should
+  send whatever its host sends for a path that doesn't exist, so that the
+  two can't be told apart. Where the host can't do that, it sends the
+  problem document of section 8.2.
+- **Redirects.** A caller must not follow them. A request is signed for
+  one host only. A `3xx` counts like any other status that isn't `200`
+  or `202`.
+- **Sizes.** A request body is at most 64 KiB (65,536 bytes); a receiver
+  refuses a longer one with an unsigned `404`. A caller reads at most
+  4 MiB (4,194,304 bytes) of an answer; a longer answer fails its
+  signature check.
+- **Timeouts.** A caller should give each call 15 seconds in all.
+- **Proxies.** A server behind a reverse proxy must keep the path, query
+  and body byte for byte: the signature covers them.
+
+### 3.1 Local testing
+
+An implementation may offer plain `http` as a test switch, for its own
+development. Such a switch is outside the protocol: a server must not
+make or accept `http` pairings with it on in normal use.
+
+### 3.2 HTTPS certificates
+
+Identity rests on the key, never on the certificate (section 4). But a
+media fetch is not signed: its ticket and bytes have only TLS to protect
+them. So a server's key vouches for its certificate, and a peer may use a
+certificate no public authority issued.
+
+**The pin.** A certificate is named by its pin: the SHA-256 of its
+`SubjectPublicKeyInfo` (the DER bytes of the public key with its
+algorithm, as in the certificate), sent base64url (43 characters). This
+is the same value as HPKP's `pin-sha256`, in base64url instead of base64.
+A server names its pins in the `certificates` field of `hello`
+(section 9.2). It should name the pin of every certificate its address
+may serve now: the leaf certificate's, not an authority's.
+
+**What a client accepts.** For a connection to a peer's address, the
+client checks the certificate chain the peer's TLS server presents, in
+one of three ways:
+
+| Check | Passes when |
+|-------|-------------|
+| *trusted* | the chain is valid for the address's host against the client's usual trusted roots, as for any web site (names, dates, usages) |
+| *named* | the pin of the first (leaf) certificate is one the peer named in its latest signed `hello`; names, dates and the rest of the chain are not checked |
+| *any* | any certificate at all |
+
+Only the leaf counts for *named*: the TLS handshake proves the server
+holds the leaf's private key, and no other's. A pin of an authority in the
+chain must not make the chain pass.
+
+Which check each request needs:
+
+| Request | Accepted |
+|---------|----------|
+| `pair`, `hello`, and `GET /.well-known/msfp` (section 11) | *trusted*, *named* or *any* |
+| every other federation call (`rotate`, `revoke`, and the parts' calls) | *trusted* or *named* |
+| the media (the stream root) | *trusted* or *named* |
+
+`pair` and `hello` may take any certificate because their answers are
+checked by key (section 6.6) and neither way carries a secret: the
+pairing proof is bound to the caller's key and address (section 9.1). They
+are how pins are learnt, before any is known and after a renewal. The
+discovery document proves nothing anyway. Every other request needs a
+*trusted* or *named* certificate, `play` above all, since its answer
+carries the ticket.
+
+**Keeping pins.** The client stores, with the peer, the pins of the
+latest signed `hello` it got from it, request or answer, latest by
+arrival. Each one replaces the last one's: a `hello` without
+`certificates`, or with an empty list, removes them. A receiver ignores
+entries that aren't 43 characters of base64url decoding to 32 bytes, and
+keeps the first 8 valid entries, each pin once, in the order sent. Pins
+only add to what *trusted* accepts; they never refuse a trusted
+certificate.
+
+- A `certificates` member that isn't an array: in a request, the body is
+  refused like a bad body (section 9.2), and the caller's pins stay as
+  they were; in a signed answer, it counts as no pins.
+- A signed `404` to a `hello` leaves the stored pins as they were.
+- When a peer's pins change, the client closes its connections to that
+  peer that were accepted only by a pin the peer no longer names.
+- When a peer's stored address changes (section 13), the pins learnt
+  from the old address are dropped and learnt again from the new one's
+  `hello`.
+
+**Renewals.** A server whose certificate is renewed names the new pin in
+its `hello`s before it switches to the renewed certificate. A client that
+is refused a certificate on a call that needs *trusted* or *named* should
+send a `hello` to that peer, and, if the pins it gets differ from those it
+had (compared as sets), try the call once more. It does so for every call
+and for media fetches. A client sends at most one such `hello` to a peer
+at a time; calls and fetches that wait on it share its result.
+
+**Knowing one's own certificate.** A server behind a reverse proxy doesn't
+hold its certificate. It may connect to its own address, as a peer would,
+with SNI set to the address's host name (none for an IP address, as
+RFC 6066 says), read the leaf certificate served there, and name its pin.
+It reads it again when a `hello` is sent or answered a minute or more
+after the last reading. A failed reading keeps the last good one (none if
+there was never one), and the next attempt waits a minute. A server whose
+operator sets its pins in its configuration names those and reads
+nothing. A server may learn its pins any other way, as long as they are of
+the certificates its address really serves.
+
+A server that serves several certificates (RSA and ECDSA, several
+machines, a renewal rolling out) names all their pins. One reading sees
+only one of them, so such a server should take its pins from its
+configuration.
+
+A server whose certificate is publicly trusted needs no pins, but should
+name them all the same: its peers then keep working if it moves to a
+self-signed certificate.
+
+**Self-signed certificates.** Recommended, not required: a key for the
+certificate of type Ed25519 or ECDSA P-256, kept apart from the federation
+key; a lifetime of a year or less; the new pin named in `hello` before
+the switch to a renewed certificate.
+
+## 4. Identity and keys
+
+### 4.1 The key
+
+Each server has one current Ed25519 key pair (section 2.1). A server is
+known to its peers by its public key alone, never by its name, address or
+certificate. The key is made on first start, and changes only by a
+rotation (section 12).
+
+A public key must satisfy section 2.1. A server refuses a key that
+doesn't, wherever it meets it: in a code, in `MSFP-Key` on `pair`, or as
+the new key of a rotation.
+
+The public key travels as the 32 raw bytes, base64url: 43 characters.
+Example (the test key "a" of section 17):
+
+```
+A6EHv_POEL4dcN0Y50vAmWfk1jCbpQ1fHdyGZBJVMbg
+```
+
+Signatures are the 64 raw bytes, base64url: 86 characters.
+
+There is no other server ID on the wire. An implementation may give each
+peer a local ID for its own panel; peers never see it.
+
+### 4.2 The fingerprint
+
+Operators compare fingerprints, by phone or another channel they trust,
+before they accept a pairing or confirm a rotation. The fingerprint is:
+
+1. SHA-256 of the 32 raw public-key bytes;
+2. the first 15 bytes of that hash;
+3. encoded in standard base32 (RFC 4648 section 6, alphabet `A–Z2–7`):
+   exactly 24 characters, no padding;
+4. split into six groups of four, joined by `-`.
+
+Example, key "a": `KZDV-VJ2U-MNDU-YAUF-35O3-6K6K`.
+
+The fingerprint never travels between servers. Each panel computes it.
+
+## 5. The pairing code
+
+### 5.1 Format
+
+A core 1 code is the ASCII prefix `msfp-pair-1.` followed by base64url of
+these bytes, in order:
+
+| Bytes | Content |
+|-------|---------|
+| 32 | the maker's public key |
+| 32 | the secret: 32 random bytes |
+| 8 | when the code expires: Unix seconds, unsigned, big-endian |
+| 1 or more | the maker's address, as ASCII bytes (section 5.2) |
+
+The maker sets the expiry to 24 hours after it made the code, cut to the
+whole second. The code works once.
+
+A reader must:
+
+- remove every character with the Unicode `White_Space` property,
+  anywhere in the text (codes get wrapped in emails). A valid code is
+  ASCII, so this can't change one;
+- refuse text without the exact prefix, case included;
+- refuse a remainder that isn't base64url (section 2.2), or is over 779
+  characters (584 bytes: 72 plus a 512-byte address);
+- refuse a decoded value of 72 bytes or fewer (the address can't be
+  empty);
+- refuse a key that breaks section 2.1;
+- refuse an expiry above 2^53 − 1;
+- refuse address bytes that aren't ASCII or break section 5.2.
+
+The reader doesn't check whether the code has expired. The maker does,
+when the code is redeemed, and refuses it then.
+
+A server that also speaks core 0 reads version 0 codes too (prefix
+`overfin-pair-1.`, [v0 section 5](../v0.md#5-the-pairing-code)); see
+section 16.3.
+
+### 5.2 Addresses
+
+An address, in a code, in the pair request, in `hello`, and wherever a
+server writes its own, has this form and no other:
+
+```
+address = "https://" host [ ":" port ]
+port    = a decimal integer from 1 to 65535, without leading zeros,
+          and not 443
+host    = name / ipv4 / "[" ipv6 "]"
+name    = labels of 1 to 63 characters of a-z 0-9 -, not starting or
+          ending with -, joined by "."; at most 253 characters in all
+ipv4    = four decimal numbers 0 to 255 without leading zeros,
+          joined by "."
+ipv6    = an IPv6 address in the text form of RFC 5952 (lowercase,
+          longest run of zeros compressed); no zone identifier
+```
+
+- A host whose last label is all digits is read as an IPv4 address, and
+  must be one: `192.0.2.010` and `192.0.2` are refused, not read as
+  names.
+- The whole address is at most 512 bytes of ASCII.
+- There is no path, not even `/`; no `?`, `#` or `@`. A server that has a
+  trailing slash in its own configuration removes it before it writes its
+  address anywhere. A server hosted under a path gives its base path in
+  its discovery document (section 11); its address stays without a path.
+
+Examples: `https://a.example.org`, `https://192.0.2.10:8096`.
+
+### 5.3 Example
+
+The code made by key "a", at `https://a.example.org`, with the secret
+`404142…5f` (section 17), expiring at 1800086400:
+
+```
+msfp-pair-1.A6EHv_POEL4dcN0Y50vAmWfk1jCbpQ1fHdyGZBJVMbhAQUJDREVGR0hJSktMTU5PUFFSU1RVVldYWVpbXF1eXwAAAABrSyOAaHR0cHM6Ly9hLmV4YW1wbGUub3Jn
+```
+
+## 6. Signing requests and answers
+
+### 6.1 Headers
+
+Every request carries four headers:
+
+| Header | Value |
+|--------|-------|
+| `MSFP-Key` | the sender's public key, base64url (43 characters) |
+| `MSFP-Date` | when the request was signed, Unix seconds, decimal |
+| `MSFP-Nonce` | 16 random bytes, base64url (22 characters), never used twice |
+| `MSFP-Signature` | the sender's Ed25519 signature of the request message, base64url (86 characters) |
+
+Every signed answer carries one:
+
+| Header | Value |
+|--------|-------|
+| `MSFP-Signature` | the answering server's Ed25519 signature of the answer message, base64url |
+
+A request that carries both these headers and version 0's `Overfin-Key`,
+`Overfin-Date`, `Overfin-Nonce` or `Overfin-Signature` is refused, with an
+unsigned `404`.
+
+### 6.2 The request message
+
+The sender signs these bytes: seven lines, joined by `\n`, with no
+trailing `\n`.
+
+```
+msfp-1 request
+<method>
+<host>
+<target>
+<date>
+<nonce>
+<body hash>
+```
+
+- Line 1 is the literal label `msfp-1 request`.
+- `<method>`: the HTTP method, in capitals: `POST` for every call.
+- `<host>`: the host part of the **receiver's** address (section 5.2),
+  with its port if it has one. Example: `a.example.org`, or
+  `192.0.2.10:8096`. No scheme.
+- `<target>`: the request target, in origin form: the path as sent on the
+  wire (percent-encoded as sent), the base path included. Federation calls
+  have no query, so this is the path, for example
+  `/api/v1/federation/pair`.
+- `<date>`: exactly the text of the `MSFP-Date` header.
+- `<nonce>`: exactly the text of the `MSFP-Nonce` header.
+- `<body hash>`: SHA-256 of the exact body bytes sent, in hex (64
+  characters). An empty body hashes to
+  `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855`.
+
+The receiver rebuilds this message from one of **its own** current hosts,
+never from the `Host` header. A server has one current host, or two for a
+while after its address changed (section 13); it tries each. A request
+signed for one server therefore fails on every other, even when it is
+sent there. The receiver takes `<target>` from the request target as it
+received it, percent-encoding untouched, not from a decoded path. A
+federation call with a query is refused like a bad signature.
+
+### 6.3 The answer message
+
+The answering server signs these bytes: five lines, joined by `\n`, with
+no trailing `\n`.
+
+```
+msfp-1 response
+<nonce>
+<status>
+<media type>
+<body hash>
+```
+
+- Line 1 is the literal label `msfp-1 response`.
+- `<nonce>`: the text of the request's `MSFP-Nonce` header. This binds
+  the answer to its request: it can't be replayed for another one.
+- `<status>`: the HTTP status code sent, three digits (`200`, `404`…).
+- `<media type>`: the media type of the answer's `Content-Type` header:
+  type and subtype, in lowercase, without parameters or white space
+  (`application/json; charset=utf-8` gives `application/json`). An answer
+  without `Content-Type` has `-` here.
+- `<body hash>`: SHA-256 of the exact answer body bytes, hex.
+
+The caller builds `<media type>` from the `Content-Type` header it
+received. So a changed `Content-Type` makes the signature fail, and the
+caller can rely on the media type it reads. Other headers are not signed.
+
+A caller refuses a signed `200` or `202` whose media type isn't
+`application/json`, like a badly signed one.
+
+### 6.4 Checking a request
+
+The receiver checks, in this order, and refuses at the first failure:
+
+1. Each of the four signature headers appears exactly once, no version 0
+   signature header is present (section 6.1), the request has no query,
+   and `MSFP-Key` is base64url of exactly 32 bytes.
+2. `MSFP-Date` is a positive decimal integer in the form of section 2.2.
+3. The date is within 5 minutes of the receiver's clock: the difference
+   between the receiver's current time and the date, in either direction,
+   is at most 300 seconds. The receiver's time is not rounded.
+4. The date is not earlier than the moment the receiver's nonce memory
+   began (section 6.5). The date counts as the start of its second: a
+   request dated the second the process started is refused, unless the
+   process started exactly on that second.
+5. `MSFP-Nonce` is base64url of exactly 16 bytes.
+6. `MSFP-Signature` is base64url of exactly 64 bytes.
+7. The key is valid (section 2.1; a known key was checked when it was
+   learnt), and the signature is valid under it, by section 2.1's rules,
+   over the request message of section 6.2 rebuilt for one of the
+   receiver's current hosts.
+8. The key is one the receiver hears (section 6.5).
+9. The pair (key, nonce text) was never accepted before, and the nonce
+   memory has room.
+
+Then the receiver remembers (key, nonce text) and handles the call.
+
+Every failure gets the same answer: an unsigned `404`, the same as a path
+that doesn't exist (section 3). The sender learns nothing about why. There
+is one exception, in step 8: a key whose pairing this receiver ended
+(section 7.4), or a suspended key on a call other than `rotate` and
+`revoke` (section 12.6), gets a **signed** `404`, so that its server can
+trust it.
+
+### 6.5 Nonces, replay and restarts
+
+- **Who is heard.** After the signature checks out, the receiver asks
+  whether it hears the key. It hears:
+  - the current key of a peer, in any state;
+  - a peer's previous key, for 10 minutes after a rotation away from it
+    took effect (section 12.4);
+  - on `pair` only, every key while at least one of its pairing codes is
+    live (made and neither used nor expired), forgotten keys included;
+    otherwise a new code could never restart an ended pairing.
+
+  On every other call, and on `pair` without a live code, a forgotten key
+  gets the signed `404` of section 6.4. Any other key is refused before
+  its nonce is stored. So strangers can't fill the memory with nonces
+  they made up.
+- **The memory.** The receiver keeps every accepted (key, nonce) pair for
+  at least 10 minutes (twice the 5-minute window), from the moment the
+  request was accepted. Older requests fail step 3 anyway. A receiver
+  should keep two memories: one for known peers (for example at most
+  100,000 entries) and one for strangers heard during pairing (for
+  example at most 1,000). A nonce in either one is refused. When a memory
+  is full, after old entries are cleared, requests that would go in it are
+  refused until room comes back.
+- **Restarts.** A receiver that keeps nonces in memory only can't know
+  what it saw before it restarted. So step 4 refuses every request dated
+  before the process started. There is no allowance for the other
+  server's clock. If the sender's clock runs behind by *n* seconds, its
+  requests are refused for about *n* seconds after each restart of the
+  receiver. Keep both clocks set by the network.
+- **Retrying.** A sender whose call to a peer is refused with an unsigned
+  `404` should retry it once, a second later, with a new nonce (signed
+  again). A receiver that just restarted then accepts it.
+- **A sender** must make a fresh random nonce for every request, from a
+  cryptographic random source, and must never reuse one, even for a
+  retry. A retry is a new request, signed again.
+
+An implementation may keep nonces on disk instead. It must then still
+refuse any request whose nonce it can't prove it hasn't seen.
+
+### 6.6 Signing answers and checking them
+
+The answering server signs, with the key it uses toward that peer
+(normally its current key; during its own rotation, see section 12.4):
+
+- every `200` and `202` answer;
+- every refusal (any other status) to a request that passed section 6.4
+  from a key it hears as a peer's;
+- the `404` to a forgotten or suspended key.
+
+It doesn't sign refusals to strangers: requests that failed section 6.4,
+and requests from strangers on `pair` during a live code. Those stay
+plain `404`s.
+
+The caller checks every answer against the public key it knows the
+answering server by: the peer's current key (section 12). For `pair`, that
+is the key in the code.
+
+- A `200` or `202` answer counts only when its signature verifies.
+  Otherwise the caller treats the server as unreachable. Then it decodes
+  the JSON body.
+- Any other status counts only when its signature verifies. An unsigned
+  or badly signed refusal may come from someone between the two servers;
+  the caller treats it as "unreachable" and changes no state.
+- The one exception is `pair`. The code's maker doesn't know the caller
+  yet, so its refusals are unsigned. The caller accepts a refusal on
+  `pair`, signed or not. Faking one only spoils that one pairing.
+
+## 7. Pairing, step by step
+
+Server A's operator makes the code. Server B's operator pastes it.
+
+### 7.1 The steps
+
+1. **A makes a code.** A draws a 32-byte secret, stores it with its
+   expiry (24 hours), and shows the code (section 5). A stores
+   SHA-256(secret) to find the code later. A's operator sends the code to
+   B's operator by any means.
+2. **B reads the code.** B parses it (section 5.1). B refuses it when the
+   key is B's own, or a key B already knows as a peer, in any state. To
+   pair again with a peer that is `gone`, B's operator removes it first
+   (section 7.4). B may fetch A's discovery document (section 11) to find
+   A's base path.
+3. **B calls pair.** B sends a signed `pair` to the code's address, under
+   A's base path (section 9.1). The body names B's address and name,
+   carries SHA-256(secret), a proof that B knows the secret, and B's next
+   key commitment. The secret itself never travels.
+4. **A redeems the code.** A finds a live code by the secret hash, and
+   checks the proof against the stored secret, the request's `MSFP-Key`
+   and the `address` field. A refuses the request when the key is already
+   a peer of A's (`409`). Otherwise A, in one transaction, deletes the
+   code, takes B's key off its forgotten list if it is there (section
+   7.4), and stores B: B's public key, B's address, B's cleaned name and
+   B's commitment, in state `ours` (waiting for A's operator). A answers
+   `200`, signed, with A's name and A's next key commitment.
+5. **B stores A.** B checks the answer's signature against the key in the
+   code. Only then B stores A: the code's key, the code's address, A's
+   cleaned name and A's commitment, in state `theirs` (waiting for A's
+   operator). B takes A's key off its own forgotten list if it is there:
+   redeeming a code is consent to pair again.
+6. **A's operator accepts.** A's operator compares B's fingerprint with
+   B's operator, then accepts. A moves B to `paired`, and sends B a signed
+   `hello` with state `paired`, its versions and its pins (section 9.2).
+   B, which was waiting, moves A to `paired`, and answers with its own
+   versions and pins. Both now know which parts they share (section 10).
+7. **If B missed it.** If B couldn't be reached at step 6, B learns at its
+   next `hello` to A: A answers `paired`. B should ask every 20 seconds at
+   most while its panel shows a peer in state `theirs`. Any call that A
+   refuses with a signed `404` (other than `not-supported`) also makes B
+   ask (section 9.2).
+
+The operator of B gave consent at step 2, by pasting the code. A's
+operator gives it at step 6. B can't make A accept: a `hello` saying
+`paired` from a peer in state `ours` changes nothing.
+
+A pairing made from a core 1 code starts in core 1: `pair` is signed
+under section 6. A pairing made from a version 0 code starts in core 0
+(section 16.3).
+
+### 7.2 What each side stores
+
+For each peer:
+
+- its current key (the identity), its previous key and until when it is
+  still heard (section 12.4), its next key commitment and where that came
+  from (`pair`, a rotation, or a `hello`; or none), a pending rotation,
+  the history of its rotation statements, and whether it is suspended;
+- its address (where to call it), its base path (section 11), and, while
+  it is moving, its former address (section 13);
+- its name (for the panel), its state, when it was last heard from (any
+  request from the peer that passed section 6.4, and any answer from it
+  whose signature verified);
+- the core and part versions of its latest signed `hello` (section 10);
+- its pins (section 3.2);
+- what the parts keep: offers, wants and catalogs
+  ([catalog](catalog.md)), limits ([playback](playback.md)).
+
+A stores B's address as B gave it in the pair request. B stores A's
+address as the code gave it.
+
+### 7.3 States
+
+| State | Meaning | `hello` view sent |
+|-------|---------|-------------------|
+| `ours` | the peer used our code; our operator hasn't accepted | `waiting` |
+| `theirs` | we used the peer's code; its operator hasn't accepted | `waiting` |
+| `paired` | both sides accepted | `paired` |
+| `gone` | the peer answered, signed, that it doesn't know us | `waiting` |
+
+The parts' calls answer only peers in state `paired`; others get a signed
+`404`. `hello` answers peers in every state. A server remembers whether a
+`gone` peer was paired before. A `paired` hello brings it back to
+`paired` only then.
+
+Besides its state, a peer may be **suspended**: its key was revoked
+(section 12.6). A suspended peer's calls are refused, except `rotate` and
+`revoke`, and no call is made to it.
+
+### 7.4 Ending a pairing
+
+Either operator ends a pairing at once, or refuses a waiting one.
+Removing a peer, in any state (`gone` and suspended included), is an
+ending:
+
+1. The ending server deletes the peer, and records as "forgotten" the
+   SHA-256 of every key in the peer's history: its current key, its
+   previous key, and every key of its rotation statements.
+2. Then it sends the peer a signed `hello` with state `ended`. If the peer
+   can't be reached, nothing more is done.
+3. The peer that receives `ended` deletes the ender, in every state,
+   waiting ones included, and answers `200` with state `ended`, signed. It
+   doesn't record the ender as forgotten: the ender has deleted it too, so
+   nothing more passes between them.
+
+From then on, the ender answers that key's valid requests with a signed
+`404` (except `pair` while a code is live, section 6.5). The other server,
+on a signed `404` to `hello`, marks the ender `gone`. A pairing that ended
+starts again only with a new code.
+
+Entries of the forgotten list may be removed after a year. A removed
+entry only turns that key's signed `404` into an unsigned one.
+
+## 8. Common rules for every call
+
+### 8.1 Requests
+
+- Method `POST`, `Content-Type: application/json`, the four headers of
+  section 6.1, under the peer's base path.
+- The body is a JSON object, at most 64 KiB. Calls without fields send
+  `{}`.
+- The caller must not follow redirects.
+
+Types, in every part: *string*, *integer* (section 2.3), *boolean*,
+*array*, *object*. "Required" means the receiver refuses the request
+without it, or with an invalid value.
+
+### 8.2 Refusals
+
+A signed refusal is a problem document. The `404` refusal is, byte for
+byte (53 bytes, then a line feed):
+
+```
+{"type":"not-found","title":"Not found","status":404}
+```
+
+followed by `\n`. A receiver must not depend on these exact bytes: the
+signature covers whatever was sent, and only the status matters to the
+protocol, except where the `type` tells refusals apart: `not-supported`
+on `404` (section 10.4), and the `409`s of `rotate` and
+[playback](playback.md#2-play). The `type` values of version 1:
+
+| Status | `type` | `title` | Where |
+|--------|--------|---------|-------|
+| 400 | `invalid-request` | `Invalid request` | a bad body on `rotate`, `revoke`, `play`, `progress`, `stop` |
+| 404 | `not-found` | `Not found` | every call |
+| 404 | `not-supported` | `Not supported` | a call of a part the receiver doesn't speak with the caller (section 10.4) |
+| 409 | `rotation-refused` | `Rotation refused` | `rotate` (section 9.3) |
+| 409 | `stream-limit-reached` | `Too many streams on this account` | `play` |
+| 409 | `not-playable` | `This item can't be played` | `play` |
+| 410 | `playback-stopped` | `Playback was stopped` | `progress` |
+| 500 | `internal-error` | `Internal error` | every call |
+| 503 | `server-busy` | `The server is busy; try again shortly` | `play` |
+
+The `title` texts are examples; any text will do.
+
+`404` `not-found` means, on every call: "I don't hear you", "I don't know
+you", "not paired yet", "there's no such code", or "there's no such title
+for you". Signed or not tells them apart (section 6.6). A bad body on
+`pair`, `hello`, `libraries` and `titles` gets a signed `404` too.
+
+## 9. The core's calls
+
+### 9.1 pair
+
+`pair`, under the maker's base path. The server redeeming a code calls
+the code's maker. Heard from strangers only while the maker has a live
+code.
+
+Request:
+
+| Field | Type | Required | Content |
+|-------|------|----------|---------|
+| `address` | string | yes | the caller's own address (section 5.2) |
+| `name` | string | no | the caller's name, for the maker's panel |
+| `secretHash` | string | yes | base64url of SHA-256(secret): 32 bytes |
+| `proof` | string | yes | the pairing proof, below |
+| `nextCommitment` | string | no | the caller's next key commitment (section 12.5): base64url of 32 bytes |
+
+The proof is HMAC-SHA256, keyed with the 32-byte secret, over these bytes
+in order:
+
+1. the ASCII label `msfp-1 pairing\n` (it ends with a line feed);
+2. the caller's 32 raw public-key bytes, the same key as in `MSFP-Key`;
+3. a line feed, `\n`;
+4. the `address` field's value, after JSON decoding, as bytes (an
+   address is ASCII).
+
+It is sent base64url (43 characters). The maker compares it in constant
+time. The proof binds the secret to the caller's key and address: someone
+who sees it go by can't reuse it with a key of their own.
+
+Answer `200`:
+
+| Field | Type | Content |
+|-------|------|---------|
+| `name` | string | the maker's name |
+| `nextCommitment` | string, optional | the maker's next key commitment |
+
+Refusals:
+
+- `404`, unsigned (signed when the key is already a peer): the key isn't
+  heard, there's no live code with that hash, the code expired, the proof
+  is wrong, the body isn't valid JSON, the address is invalid, the hash
+  isn't 32 bytes, or `nextCommitment` isn't 32 bytes of base64url.
+- `409`: the caller's key is already a peer of the maker. The body is
+  empty. It is signed, since the key is known.
+- `500`: the maker failed to store the result.
+
+The maker checks in the order of section 7.1, step 4: the code and the
+proof first, then whether the key is known. A known key gets `409` only
+with a valid code and proof; otherwise it gets a signed `404`. A `409`
+leaves the code live.
+
+Names, on both sides, are cleaned before they are stored, in this order:
+
+1. every run of characters with the Unicode `White_Space` property
+   becomes one space;
+2. other control and format characters (Unicode Cc and Cf) are removed;
+3. both ends are trimmed;
+4. the result is cut to 80 code points, and trimmed again.
+
+An empty name becomes the host of the peer's address, with its port, as
+in the request message (section 6.2).
+
+### 9.2 hello
+
+`hello`, under the peer's base path. Either peer, in any state. It tells
+the other where the pairing stands, which versions the sender speaks,
+its pins and its address, and asks the same of the other.
+
+Request and answer `200` carry the same members:
+
+| Field | Type | Required in the request | Content |
+|-------|------|-------------------------|---------|
+| `state` | string | yes | the sender's view: `paired`, `waiting` or `ended` (in an answer: `ended` only when the request said `ended`) |
+| `core` | array of integer | no | the core versions the sender speaks, at most 8 (section 10) |
+| `parts` | object | no | for each part the sender speaks, the array of its versions, at most 8 each (section 10) |
+| `certificates` | array of string | no | the pins of the certificates the sender's address serves (section 3.2) |
+| `address` | string | no | the sender's address now (section 13) |
+| `nextCommitment` | string | no | the sender's next key commitment, for pairings that have none (section 12.5) |
+
+A server that speaks version 1 sends `core` and `parts` in every `hello`,
+request and answer: their absence means version 0 (section 10.2). It
+should send `address` in every `hello`. It leaves `certificates` out when
+it names none, and leaves out everything but `state` when it sends or
+answers `ended`.
+
+What the receiver does:
+
+- `ended`: it deletes the caller (section 7.4), and answers `ended`.
+- `paired`: if the caller is in state `theirs`, it becomes `paired`. If
+  the caller is `gone` and was paired before, it becomes `paired`.
+  Otherwise nothing changes.
+- `waiting`, or any other string: nothing changes; the answer is as for
+  `waiting`.
+- A body without `state`, with a `state` that isn't a string, or with a
+  member of the wrong type, is refused like a body that isn't JSON
+  (signed `404`), and the caller's stored versions, pins and address stay
+  as they were.
+
+Then, unless the request said `ended`, the receiver:
+
+- keeps the request's `core` and `parts` as the caller's versions
+  (section 10.3);
+- keeps the request's `certificates` as the caller's pins (section 3.2);
+- if `address` differs from the caller's stored address, starts the
+  check of section 13.2;
+- if `nextCommitment` is present, applies section 12.5;
+- notes the time it heard from the caller;
+- answers with its own view (section 7.3), versions, pins and address.
+
+What the caller does with the answer:
+
+- `200`: it keeps the answer's versions, pins and address, as the
+  receiver does above.
+- `200` with `paired`: as the receiver would do with `paired` above.
+- signed `404`: the peer doesn't know the caller, or has suspended its
+  key. The caller marks it `gone`.
+
+Refusals: `404` (unsigned to unknown keys, signed to forgotten or
+suspended ones); a signed `404` for a bad body; `500`.
+
+When a paired peer gets a signed `404` `not-found` on a part's call, it
+sends a `hello` at once. The peer may have ended the pairing, or not have
+heard yet that the pairing was accepted. A `404` `not-supported` doesn't
+call for a `hello` (section 10.4).
+
+Example, from [vectors/v1/exchanges.json](../../vectors/v1/exchanges.json):
+
+```json
+{"state":"paired","core":[0,1],"parts":{"catalog":[1],"playback":[1],"media":[1]},"certificates":["JN-hf1COiASAAUsiYeHXMNVvNnxYR2dKYnBT2Zx_6Fo"],"address":"https://a.example.org"}
+```
+
+### 9.3 rotate
+
+`rotate`, under the peer's base path. A server changing its key from O to
+N sends it to every peer, in any state, suspended ones included, signed
+with O (section 6). Section 12 says when, and what each side does.
+
+Request:
+
+| Field | Type | Required | Content |
+|-------|------|----------|---------|
+| `newKey` | string | yes | N, base64url |
+| `nextCommitment` | string | no | the commitment to the key after N, base64url of 32 bytes |
+| `date` | integer | yes | the statement's date, Unix seconds |
+| `oldSignature` | string | yes | O's signature of the rotation statement (section 12.2) |
+| `newSignature` | string | yes | N's signature of the rotation statement |
+
+Answers:
+
+| Status | Body | Meaning |
+|--------|------|---------|
+| `200` | `{"state":"rotated"}` | N is the sender's current key here |
+| `202` | `{"state":"pending"}` | the receiver's operator must confirm N (section 12.3, case 4) |
+| `409` `rotation-refused` | problem document | N doesn't match the stored commitment, N is another peer's key or a forgotten one, or the sender is suspended and N doesn't match |
+| `400` `invalid-request` | problem document | a bad body, a signature that doesn't verify, or a date more than 5 minutes from the receiver's clock |
+
+Every answer is signed with the receiver's own key.
+
+### 9.4 revoke
+
+`revoke`, under the peer's base path. A server revoking its key K sends it
+to every peer it can reach, signed with K (section 6). Section 12.6 says
+what follows.
+
+Request:
+
+| Field | Type | Required | Content |
+|-------|------|----------|---------|
+| `date` | integer | yes | the statement's date, Unix seconds |
+| `signature` | string | yes | K's signature of the revocation statement (section 12.6) |
+
+Answers: `200` `{"state":"suspended"}`, also when the key was already
+suspended; `400` `invalid-request` for a bad body, a signature that
+doesn't verify, or a date more than 5 minutes from the receiver's clock.
+Every answer is signed with the receiver's own key.
+
+## 10. Versions and parts
+
+### 10.1 The parts
+
+| Name | What it holds | Calls | Needs |
+|------|---------------|-------|-------|
+| core | encodings, transport, keys, the code, signatures, pairing, states, rotation, addresses, versions | `pair`, `hello`, `rotate`, `revoke` | — |
+| `catalog` | libraries, titles, title keys | `libraries`, `titles` | the core |
+| `playback` | starting, keeping and stopping a playback; limits | `play`, `progress`, `stop` | `catalog` and `media` |
+| `media` | what the stream URLs serve: HLS, file, subtitles, PGS, previews | plain `GET`s under the stream root | the core |
+
+The core and each part have their own version, an integer. Version 0 of
+each is [spec/v0.md](../v0.md) (as corrected): the core is its sections 2
+to 8, `catalog` its sections 9.3, 9.4 and 11, `playback` its sections 9.5
+to 9.7 and 12, `media` its section 10. Version 1 of each is this document
+and [catalog.md](catalog.md), [playback.md](playback.md) and
+[media.md](media.md).
+
+`playback` plays title keys from `titles` and points at media URLs, so it
+needs both other parts. The `limits` member of `libraries` belongs to
+`playback`: a server sends it only to a peer it speaks `playback` with.
+
+### 10.2 Announcing versions
+
+Versions travel in `hello`, request and answer, in `core` and `parts`
+(section 9.2):
+
+```json
+{"state":"paired","core":[1],"parts":{"catalog":[1],"playback":[1],"media":[1,2]}}
+```
+
+- **Absent means version 0.** A `hello` without `core` means `[0]`.
+  Without `parts`, it means `catalog`, `playback` and `media` at `[0]`.
+  So a version 0 peer is understood as speaking all of version 0.
+- **Part names** are lowercase ASCII letters and `-`, at most 32
+  characters. Unknown names are ignored.
+- **Lists.** At most 8 versions each, each a non-negative integer. A
+  receiver ignores entries beyond 8 and entries that aren't such
+  integers. An empty list means the sender doesn't speak that part.
+- A server lists every version it speaks, not only the highest. A server
+  that speaks both cores lists `[0,1]`.
+
+### 10.3 Choosing
+
+- **Choice.** For the core and for each part, the version used between
+  two servers is the highest one both list. No common version: that part
+  is off between them.
+- **Dependencies.** A part whose dependency is off is off too.
+- **The core.** No common core version: the servers can't talk; the
+  panel says so. Core 1 is used only toward a peer whose stored address is
+  `https`, from a server whose own address is `https`; otherwise core 0
+  (section 16.4).
+- **Memory.** Each side stores, per peer, what the peer's latest signed
+  `hello` (request or answer, latest by arrival) listed, and recomputes
+  the choices. Before any `hello`, it assumes version 0 of every part,
+  and the core of the code the pairing started with (section 7.1). The
+  parts are used only by `paired` peers, and a pairing becomes `paired`
+  through a `hello` exchange, so the versions are known by then.
+
+### 10.4 A part that is off
+
+- The caller must not make that part's calls to the peer, and must not
+  show its people anything that needs them. For example, it doesn't offer
+  a peer's titles for playing when `playback` is off.
+- A receiver answers a call of a part it doesn't speak with the caller
+  with a signed `404` problem of type `not-supported`.
+- A caller must not take that `404` as "gone" or "not paired". It
+  recomputes the choices from a fresh `hello`, at most once an hour per
+  peer.
+
+### 10.5 Which core a message uses
+
+A message's core shows in its labels and headers (section 16.2). A server
+that speaks cores 0 and 1:
+
+- reads both code prefixes, and makes `msfp-pair-1.` codes unless its
+  operator asks for a version 0 code;
+- accepts requests in either header set, and checks each under its own
+  core's rules ([v0 section 6](../v0.md#6-signing-requests-and-answers)
+  for `Overfin-*` headers, section 6 here for `MSFP-*`);
+- signs requests toward a peer in the core chosen for it;
+- answers in the core of the request.
+
+A `hello` is sent in the highest core the sender believes the peer speaks
+(the chosen one, or the code's before any `hello`). On an unsigned `404`,
+the sender tries the next lower core once.
+
+## 11. The discovery document
+
+A server may serve, at `GET /.well-known/msfp` on its address (RFC 8615),
+an `application/json` document:
+
+```json
+{"core":[1],"parts":{"catalog":[1],"playback":[1],"media":[1]},"base":"/srv/media/api/v1/federation/"}
+```
+
+| Field | Type | Content |
+|-------|------|---------|
+| `core` | array of integer, optional | as in `hello` |
+| `parts` | object, optional | as in `hello` |
+| `base` | string, optional | where the federation calls are, as an absolute path; absent: `/api/v1/federation/` |
+
+- **Off by default.** A server serves the document only when its operator
+  switches it on: a server that serves it tells anyone that it federates,
+  which section 14 ("Probing") otherwise avoids. A server that serves
+  none answers that path like any path that doesn't exist.
+- **`base`** is at most 256 bytes, ASCII, made of `/`-separated segments
+  of `A–Z a–z 0–9 . _ ~ -`, and ends in `/api/v1/federation/`. The part
+  before that ending is the server's **prefix** (`/srv/media` in the
+  example; empty by default). The media's stream root is
+  `<address><prefix>/api/v1/stream/` ([media](media.md#1-the-urls)).
+  A document whose `base` breaks this counts as no document.
+- **It proves nothing.** The document is not signed. It lets a server
+  find a peer's API and see, before pairing, whether they have a version
+  in common. The versions used are always those of the signed `hello`
+  (section 10.3).
+- **Fetching it.** A server fetches a peer's document when it learns the
+  peer's address: before calling `pair` on a code's address, after
+  storing a redeemer's address, and after an address change (section 13).
+  The fetch is a plain `GET` with no signature headers, any certificate
+  accepted (section 3.2), no redirects followed, and a body of at most
+  16 KiB. A `404`, or any answer that isn't a valid document, means the
+  default base. The server stores the base with the peer, and may fetch
+  the document again when calls at the stored base keep failing.
+- With discovery, a server hosted under a path can federate: its address
+  stays `https://host[:port]` (section 5.2), and `base` gives the path.
+  Section 6.2's `<target>` is the full path as sent.
+
+`msfp` is to be registered in IANA's Well-Known URIs registry when the
+specification reaches a stable version.
+
+## 12. Key rotation and revocation
+
+### 12.1 Why
+
+A server is its key. Without rotation, moving to a new machine, restoring
+from a backup made by another tool, or following a key-lifetime policy
+would mean every peer pairs again by hand; and a stolen key would have no
+answer but each peer's operator ending the pairing. This section lets a
+key change, and lets a server tell its peers that a key is compromised.
+
+### 12.2 The rotation statement
+
+A server that rotates from key O to key N makes this statement: five
+lines joined by `\n`, no trailing `\n`, ASCII.
+
+```
+msfp-key-rotation-1
+<O, base64url>
+<N, base64url>
+<the commitment to the key after N, base64url, or "-">
+<date, Unix seconds, decimal>
+```
+
+It signs the statement with O (`oldSignature`) and with N
+(`newSignature`), under section 2.1's rules. The second signature proves
+the server holds N, so nobody can rotate a server to a key someone else
+holds. N must be a valid key (section 2.1), and not O.
+
+### 12.3 Receiving a rotation
+
+The receiver of a `rotate` (section 9.3), signed with O:
+
+1. rebuilds the statement from the request (O from `MSFP-Key`, `-` when
+   `nextCommitment` is absent), and checks both signatures, N under
+   section 2.1 too. It checks that the date is within 5 minutes of its
+   clock. It refuses (`409` `rotation-refused`) when N is a key it knows
+   as another peer, or has forgotten.
+2. **If it holds a commitment for that peer, and SHA-256(N) matches
+   it**, it makes N the current key at once, and answers `200` `rotated`.
+3. **If it holds a commitment and N doesn't match**, it refuses the
+   rotation (`409` `rotation-refused`), keeps O, and shows its operator a
+   warning: someone holding O tried to move the pairing to another key.
+4. **If it holds no commitment** (pairings from version 0, or after a
+   rotation statement with `-`), it keeps O, marks the rotation to N
+   pending, and asks its operator to confirm N's fingerprint with the
+   other operator, as in pairing (section 7.1, step 6). It answers `202`
+   `pending`. Once its operator confirms, N becomes the current key; the
+   next `rotate` to N is answered `200` `rotated`.
+5. When N becomes current, it stores the statement's commitment as the
+   new commitment (or none, for `-`), keeps the statement and its two
+   signatures in the peer's history, and keeps O as the previous key
+   (section 12.4).
+
+A peer that is suspended (section 12.6) is handled by case 2 only: a
+rotation to a key matching the stored commitment lifts the suspension and
+rotates; any other is refused (`409` `rotation-refused`). After a
+compromise, only the committed key, or a new pairing, can restore trust.
+
+A `rotate` to N after N became current, still signed with O within the
+10 minutes of section 12.4, is answered `200` `rotated` again and changes
+nothing, so a server can retry safely. A pending rotation stays pending
+through repeated `rotate`s to the same N; a `rotate` to another N
+replaces it.
+
+A rotation changes nothing else: address, name, state, offers, wants,
+limits, pins and catalogs stay.
+
+### 12.4 What each side does during the change
+
+**The rotating server** keeps O until every peer has rotated, or until
+30 days have passed, whichever comes first:
+
+- toward a peer that hasn't answered `rotated`, it signs requests and
+  answers with O, and sends `rotate` again, with a newly dated statement,
+  at each contact and at least daily;
+- toward a peer that answered `rotated`, it signs with N only;
+- when a request signed with O gets an unsigned `404` from a peer it sent
+  `rotate` to (the answer to a `rotate` may have been lost, and O no
+  longer heard there), it sends that peer a `hello` signed with N; a
+  signed answer means the peer has rotated;
+- after 30 days, it deletes O. A peer still on O must pair again; the
+  rotating server's panel says which, and why.
+
+Toward a peer that doesn't speak core 1 (section 10.3), no rotation is
+possible: the rotating server keeps O for that peer only, for as long as
+the pairing lasts, or until its operator pairs again. Holding O longer is
+safe if O isn't compromised.
+
+**The receiving server**, after N became current, still hears requests
+signed with O for 10 minutes (requests already on the way), and checks
+answers from that peer against N only.
+
+### 12.5 The next key commitment
+
+- A server keeps a next key ready: a key pair made in advance, not used
+  for anything yet. Its commitment is SHA-256 of its 32 public-key bytes,
+  base64url (43 characters).
+- `pair` requests and answers carry `nextCommitment` (section 9.1). Each
+  side stores the other's.
+- A commitment is set only by `pair` or by a rotation statement. `hello`
+  can't change one. Otherwise a thief holding the current key could
+  replace the commitment, then rotate.
+- One exception, for pairings made before commitments existed (core 0
+  pairings, section 16): the first `hello` that carries `nextCommitment`
+  sets it, if that peer never had a commitment from `pair` or from a
+  rotation. This is trust on first use, signed by the current key: weaker
+  than a commitment from `pair`, and the panel says so. A sender includes
+  `nextCommitment` in its `hello`s to a peer while that pairing has no
+  commitment from `pair` or a rotation; a receiver ignores it in every
+  other case.
+- A server keeps the seed of its next key apart from the current one. It
+  should let its operator export it (as text to keep offline) and then
+  delete it from the server. With the seed offline, a thief who copies the
+  server's storage can't rotate. Next to the export, the panel should show
+  the fingerprint of the committed key (section 4.2), so the operator can
+  check that the exported key is the committed one.
+- After a rotation, the server makes a new next key, whose commitment is
+  the one in the statement.
+
+### 12.6 Revocation
+
+A server revoking its key K makes this statement: three lines joined by
+`\n`, no trailing `\n`, ASCII.
+
+```
+msfp-key-revocation-1
+<K, base64url>
+<date, Unix seconds, decimal>
+```
+
+It signs the statement with K, and sends it in `revoke` (section 9.4),
+signed with K, to every peer it can reach. Anyone holding the key can
+send it, and gains nothing by it: a thief could already misuse the
+pairing, and revoking only stops it.
+
+What the receiver does, after checking the statement's signature and its
+date (within 5 minutes):
+
+- It marks the peer suspended. It answers no call from that key except
+  `rotate` and `revoke`: `hello` and every other call get the signed `404`
+  of a forgotten key. Its own calls to that peer stop, and its people are
+  shown nothing that needs them.
+- It shows its operator a warning.
+- A `rotate` from the suspended key to a key matching the stored
+  commitment lifts the suspension and rotates (section 12.3).
+- Its operator can end the pairing (section 7.4) at any time.
+
+### 12.7 What to do on compromise
+
+1. If the next key's seed is safe (offline): the operator revokes the
+   current key and rotates to the next key, in one action. Peers that
+   hold the commitment follow at once.
+2. If it isn't, or no commitment exists: the operator revokes the key,
+   then pairs again with each peer, with new codes and fingerprint calls.
+   Revoking first stops the thief at once at every peer the server can
+   reach.
+3. In both cases, the operator makes a new next key and stores it
+   offline.
+
+## 13. Changing a server's address
+
+A peer's address is where to call it, and its host is in every request
+signed for it (section 6.2). This section lets an address change (a new
+name, a new port) without pairing again.
+
+### 13.1 The server that moves
+
+A server whose address changes from A1 to A2:
+
+1. accepts requests whose signed host is A1's host or A2's host, for
+   30 days, or until every peer has moved (it knows a peer has moved when
+   that peer's requests are signed for A2's host);
+2. sends `hello` with `address` A2 to every peer, at once and then at
+   each contact;
+3. names A2 in its `hello` answers too, including those given on A1, so a
+   peer that calls first also learns;
+4. after the 30 days, accepts A2's host only.
+
+Accepting two hosts for a while doesn't weaken section 6.2's goal: a
+request signed for one server still fails at every other server, since no
+other server has A1 or A2 as its own.
+
+Its panel should tell its operator, when the configured address changes,
+that peers will be told and how many have moved, and warn when a peer
+hasn't moved after some days. Toward a peer that doesn't speak core 1,
+the moving server may keep accepting A1's host longer, at its operator's
+choice, or the operators pair again.
+
+### 13.2 A peer that learns of a move
+
+What a server does with a signed `hello`, request or answer, whose
+`address` differs from the one it stores for that peer:
+
+1. It checks the address against section 5.2.
+2. It fetches the peer's discovery document at the new address
+   (section 11), then calls `hello` there, signed for the new host. If
+   the answer verifies under the peer's current key, it stores the new
+   address and base. This proves the key holder actually answers there.
+3. If that `hello` fails, it keeps the old address and tries again
+   later, at most once an hour, and shows its operator a warning after a
+   day of failures.
+4. It never moves to an address that is only in an unsigned message, or
+   in an answer it couldn't verify.
+
+When the stored address changes, the pins learnt from the old address
+are dropped; the confirming `hello`'s answer gives the new ones. Playbacks
+in progress keep their old URLs until they end.
+
+## 14. Security considerations
+
+- **Trust is the key, nothing else.** A server is its public key. A name,
+  address or certificate never identifies it. The pairing code carries
+  the maker's key; the operators' fingerprint check catches a code
+  changed on the way. Skipping that check leaves only the secrecy of the
+  channel the code travelled on.
+- **Strict Ed25519.** The point checks of section 2.1 close the identity
+  key, under which one signature verifies every message, and make every
+  implementation agree on every signature. That matters for statements
+  that more than one server checks (section 12).
+- **The code is a secret.** Whoever holds a live code can pair with its
+  maker, until the maker's operator refuses them. It works once, for 24
+  hours. The secret never travels: only its hash and an HMAC bound to the
+  redeemer's key and address.
+- **Consent on both sides.** The redeemer's operator consents by pasting
+  the code. The maker's operator accepts after the fingerprint check.
+  Neither server can move the other to `paired`.
+- **Replay.** The nonce, the 5-minute window and the restart rule
+  (section 6.5) stop replays. A request names its receiver's host, so it
+  can't be sent to another server. Answers name the request's nonce, so an
+  answer can't be swapped for another. Statements carry a date checked
+  within 5 minutes, and travel inside signed requests.
+- **HTTPS only.** Titles, names and tickets never travel in the clear,
+  and media can't be changed on the way without breaking TLS. Media is
+  still not signed: TLS is all that protects it (section 18).
+- **Certificates (section 3.2).** An attacker on the path who presents a
+  certificate of its own sees `pair`, `hello` and the discovery document
+  only: it can't change the first two, since both ways are signed, nor
+  have its certificate named, since pins come only in signed `hello`s and
+  a `hello` can't be replayed. Every other call, and the media, refuses
+  its certificate. Removing pins needs the peer's key, and only makes
+  calls fail: pins never refuse a trusted certificate. What stays open: a
+  certificate a public authority wrongly issued passes, as for any site;
+  and a server that reads its own certificate at its own address names
+  whatever it is served there, so someone who can redirect that
+  connection (the server's DNS, say) can have their certificate named.
+  Pins set by the operator avoid that.
+- **Split-horizon names.** A server that is served another certificate
+  inside its network than outside, and reads its own certificate, names
+  the inside one, and its peers are refused on every call that needs
+  *trusted* or *named*. Nothing is opened to an attacker, but calls fail;
+  such a server sets its pins by hand.
+- **A stolen key.** Its holder is the server toward every peer, until
+  the real server revokes it (section 12.6). With a commitment whose seed
+  is offline, the real server rotates and its peers follow; the thief
+  can't rotate them elsewhere, since a rotation must match the
+  commitment. Without one, a rotation needs both operators, as pairing
+  does. A thief can't replace a commitment through `hello`. It can name
+  any certificate, and announce an address, but a peer moves only after
+  the new address answers under the key (section 13.2), which the thief
+  holds: so a stolen key can redirect a peer, until it is revoked.
+- **Discovery.** A served discovery document tells anyone that the server
+  federates; it is off by default. Its content is unsigned and only finds
+  the API: versions come from signed `hello`s, and a wrong `base` only
+  makes calls fail.
+- **Unsigned refusals.** Strangers get unsigned refusals. An attacker on
+  the path can fake those, which spoils one pairing attempt. A known
+  peer's refusals are signed, and unsigned ones change nothing.
+- **Probing.** A server should answer unknown keys with the same `404` as
+  a missing path (section 3), so nobody learns that federation is on
+  without a code or a discovery document.
+- **A compromised peer** can't reach the other's people or data beyond
+  what was shared. The parts say what it can still do.
+- **Hostile answers.** Treat everything a peer sends as untrusted input.
+  The parts say what to check.
+- **Clocks.** Keep clocks set by the network. A clock off by more than 5
+  minutes stops all calls, rotations and revocations. A clock behind
+  delays calls after the other's restarts.
+
+## 15. Versioning
+
+This document is core version 1. The policy for new versions of the core
+and of the parts, and what needs one, is in
+[README.md](README.md#versioning). In short: a change to keys,
+signatures, the code or pairing is a new core version, with new labels; a
+new optional member needs no new version as long as its absence keeps
+the old behaviour.
+
+The strings `msfp-1` and `msfp-pair-1.` contain a `1`: they are core 1's
+labels. The statements' labels `msfp-key-rotation-1` and
+`msfp-key-revocation-1` are versioned on their own: a change to a
+statement's form changes its label.
+
+## 16. Coexisting with version 0
+
+Version 0 ([spec/v0.md](../v0.md), as corrected on 2026-11-16) is what
+existing servers speak. A version 1 server talks to them in version 0,
+and moves each pairing to version 1 when both sides can.
+
+### 16.1 What a version 1 server keeps of version 0
+
+A server that speaks version 1 should also speak core 0 and the version 0
+parts, for as long as it has a peer that speaks only those. Its panel
+should show which peers are still on version 0. It may drop core 0 when
+none is left.
+
+### 16.2 The renamed labels and headers
+
+Core 1 renames every label and header, so that a request signed under
+one core never verifies under the other:
+
+| Version 0 | Core version 1 |
+|-----------|----------------|
+| `overfin-federation-1 request` | `msfp-1 request` |
+| `overfin-federation-1 response` (four lines) | `msfp-1 response` (five lines, with the media type, section 6.3) |
+| `overfin-federation-1 pairing` | `msfp-1 pairing` |
+| `Overfin-Key`, `Overfin-Date`, `Overfin-Nonce`, `Overfin-Signature` | `MSFP-Key`, `MSFP-Date`, `MSFP-Nonce`, `MSFP-Signature` |
+| code prefix `overfin-pair-1.` | code prefix `msfp-pair-1.` |
+
+The paths stay the same (`/api/v1/federation/…` by default, and
+`/api/v1/stream/…`). Section 10.5 says which core a server uses for each
+message.
+
+### 16.3 New pairings
+
+- A pairing starts in the core of the code used: `msfp-pair-1.` codes
+  pair in core 1 (section 7), `overfin-pair-1.` codes in core 0
+  ([v0 section 7](../v0.md#7-pairing-step-by-step)).
+- A server that speaks both makes `msfp-pair-1.` codes, unless its
+  operator asks for a version 0 code, to pair with a server that speaks
+  only version 0.
+- A core 0 pairing whose two servers then list core 1 in `hello` moves to
+  core 1 (section 16.4).
+- A version 1 server makes no pairing with an `http` address, in either
+  core: it refuses a code whose address is `http`, and a pair request
+  whose `address` is `http`.
+
+### 16.4 Moving an existing pairing to core 1
+
+A core 0 pairing moves to core 1 when both servers list core 1 in their
+`hello`s and both addresses are `https` (section 10.3). From then on,
+each side signs in core 1 and checks answers in core 1; requests in
+flight in core 0 are still answered in core 0. Nothing else changes: the
+key, states, offers, wants and limits stay.
+
+The pairing has no next key commitment yet: it gets one by trust on first
+use (section 12.5), or by pairing again. Parts move on their own: each
+uses the highest version both list (section 10.3).
+
+### 16.5 `http` pairings during the transition
+
+Version 0 allowed `http` addresses; version 1 doesn't.
+
+- An upgraded server keeps existing `http` pairings working in core 0 for
+  a transition period, and makes no new ones. Its panel shows them as
+  "insecure, move to HTTPS".
+- Moving a pairing from `http` to `https` is an address change. The server
+  whose address is `http` gets a certificate (section 3.2), and announces
+  its `https` address in `hello`, as in section 13. A server that speaks
+  core 1 reads and sends the `address` member in core 0 `hello`s too, with
+  a peer that lists core 1, for this purpose. The peer confirms with a
+  `hello` at the new address (section 13.2). Once both addresses are
+  `https`, the pairing moves to core 1 (section 16.4).
+- Without that, both operators pair again.
+- After the transition, `http` pairings stop. Its length is open: one
+  release, or a date (section 18).
+
+### 16.6 Talking to a version 0 peer
+
+Toward a peer whose chosen core is 0, a version 1 server follows
+[spec/v0.md](../v0.md), as corrected, with these points:
+
+- **`null`.** It treats a member whose value is `null` as absent, as
+  version 0 says, and never sends `null` itself.
+- **Strict rules.** Version 0's corrections already apply version 1's
+  canonical forms (v0 section 2.1), except that version 0 allows `http`.
+- **No rotation.** `rotate` and `revoke` don't exist in core 0 (a version
+  0 server answers them with an unsigned `404`). The rotating server
+  keeps its old key for that peer (section 12.4).
+- **No address change**, unless the peer lists core 1 (section 16.5).
+- **Parts at version 0.** Libraries, titles, playback and media follow
+  v0 sections 9.3 to 12, with version 0's title keys (no `with`, no
+  `ids`) and version 0's answer message (no media type).
+
+### 16.7 Choosing libraries again
+
+Version 0's corrections and version 1 both make library and version IDs
+opaque ([catalog](catalog.md#2-libraries)). An owning server whose IDs
+broke that rule (Overfin's were its media server's own library IDs)
+changes them once, when it adopts the rule:
+
+- There is no mapping from the old IDs to the new ones (no `formerId`).
+  Each peer's stored wants then name IDs that are no longer offered, and
+  `titles` ignores them.
+- Each peer's operator chooses the libraries it wants from that server
+  again. A caller should tell its operator when a library it wants is no
+  longer in a peer's offer.
+- The owning server treats the change as a change of what it offers, so
+  each peer's next `titles` reading is a whole one.
+- A viewer's server that names its menu entries after peer library IDs
+  sees them change once.
+
+## 17. Test vectors
+
+The values below are in [vectors/v1/](../../vectors/v1/), for an
+implementation's tests to check against. They come from the generator in
+[tools/vectors/](../../tools/vectors/), not from an implementation: no
+implementation speaks version 1 yet. The generator also checks them.
+
+| File | What it holds |
+|------|---------------|
+| `keys.json` | the keys "a" and "b" of version 0, server A's next keys "a2" and "a3", server B's "b2", with their fingerprints and commitments; two certificate keys with their pins |
+| `code.json` | the code of section 5.3, its secret hash, and the pairing proof of redeemer "b" at `https://192.0.2.10:8096` |
+| `exchanges.json` | `pair` (B calls A, with commitments), `hello` (A to B, with `core`, `parts`, `certificates` and `address`; B answers without `playback`), a refused `hello` (signed `404`), and a `play` refused with `not-supported` |
+| `rotation.json` | A rotates from "a" to "a2", committing to "a3": the statement, both signatures, and the `rotate` exchange |
+| `revocation.json` | A revokes "a": the statement, its signature, and the `revoke` exchange |
+| `strict.json` | addresses and codes with their verdicts under core 1 (`https` only) |
+
+The cases of [vectors/v0-strict.json](../../vectors/v0-strict.json)
+(keys, signatures, base64url, dates, integers, JSON) hold for core 1 too.
+
+Seeds are the 32-byte Ed25519 seeds of RFC 8032, in hex:
+
+| | Key "a" (server A, `https://a.example.org`) | Key "b" (server B, `https://192.0.2.10:8096`) |
+|---|---|---|
+| seed | `000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f` | `202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f` |
+| public key | `A6EHv_POEL4dcN0Y50vAmWfk1jCbpQ1fHdyGZBJVMbg` | `Kay64UG8yvCyLhqU000LxzYeUm0L_hLIl5S8kyKWbdc` |
+| fingerprint | `KZDV-VJ2U-MNDU-YAUF-35O3-6K6K` | `ET3O-22WL-7YIA-TQBQ-27FF-M7BT` |
+
+The code of section 5.3 has the secret
+`404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f`. Its
+`secretHash` is `yipP5yf6rs8W7NEwqG4IhcVUDAU3U0BEUHHAZXVV_UI`, and the
+proof of redeemer "b" at `https://192.0.2.10:8096` is
+`KdOcK6rkzzfX8MiXMaFn_9ofUWN96vJ1SciOG9Fjv7M`.
+
+### 17.1 hello: A to B
+
+A signs at `1800000060`, with the nonce bytes
+`707172737475767778797a7b7c7d7e7f`. The receiver's host is
+`192.0.2.10:8096`.
+
+```
+POST /api/v1/federation/hello HTTP/1.1
+Host: 192.0.2.10:8096
+Content-Type: application/json
+MSFP-Key: A6EHv_POEL4dcN0Y50vAmWfk1jCbpQ1fHdyGZBJVMbg
+MSFP-Date: 1800000060
+MSFP-Nonce: cHFyc3R1dnd4eXp7fH1-fw
+MSFP-Signature: UQYAmgfgxhYeAuzKgxBsRSlh_FezzwFuLoSr-1rAaZiBrU3i05X_7XGNhrvOTK4hK5r3-5ruNEeaHfIMguF4Dw
+```
+
+Body (exact bytes, no trailing line feed):
+
+```
+{"state":"paired","core":[0,1],"parts":{"catalog":[1],"playback":[1],"media":[1]},"certificates":["JN-hf1COiASAAUsiYeHXMNVvNnxYR2dKYnBT2Zx_6Fo"],"address":"https://a.example.org"}
+```
+
+Signed message:
+
+```
+msfp-1 request
+POST
+192.0.2.10:8096
+/api/v1/federation/hello
+1800000060
+cHFyc3R1dnd4eXp7fH1-fw
+88ff4600620f9c7d34511e67286727cfe6ed68e2840d2b0121a20a48a52902a6
+```
+
+B answers `200`, `Content-Type: application/json`, with the body:
+
+```
+{"state":"paired","core":[1],"parts":{"catalog":[1]},"certificates":["E7UUIjYbkigLNKPjmSGixyA-pslmiFKckCEX_A6IZlM"]}
+```
+
+B speaks `catalog` but not `playback` or `media`: between A and B,
+`catalog` 1 is on, `playback` and `media` are off. The signed message:
+
+```
+msfp-1 response
+cHFyc3R1dnd4eXp7fH1-fw
+200
+application/json
+7149e8f2222ae23fb93c91403e6003582967dcb11ded3b902a2c50fdd4011faa
+```
+
+and the header, signed with key "b":
+
+```
+MSFP-Signature: 8ty8w7X8aFGZylOq14hZcE-PTHuuJ6gsnt_hlAznawV22CX7ETRVekJQB4YG5YSOy_FrH_zZRdLybNIf-98GBg
+```
+
+### 17.2 A rotation statement
+
+A rotates from "a" to "a2", with the commitment to "a3"
+(`oYESsLe0Il_zBSfg9896HjdC9jKwO2X0VCcDw6VlTck`), dated `1800100000`:
+
+```
+msfp-key-rotation-1
+A6EHv_POEL4dcN0Y50vAmWfk1jCbpQ1fHdyGZBJVMbg
+zRSzf5VulTGU_3-3Oz2B3MVh1hp1OAlLfD4aZD7l86o
+oYESsLe0Il_zBSfg9896HjdC9jKwO2X0VCcDw6VlTck
+1800100000
+```
+
+- `oldSignature` (key "a"):
+  `kQSI82v99bIhytamL0mL8akMYD6yqncLjjHzXPOowG_iJhMaXTEGjTZRy0gJflMXERdpJag-9YouRkQBJ68RDg`
+- `newSignature` (key "a2"):
+  `QpQyWP0uZ4fUS5cQvYal3GolQJkdMR1n3syq3I8IgoQDE1b5-9ImP3kye4qVJP-AJRovQPE9hl4hwSOTQct_AA`
+
+The commitment to "a2", which A sent in its `pair` answer, is
+`UZyuk-k60BHXhTVYlEBe2PqBYsblStoTO7ttu5Mt9Xs`: SHA-256 of "a2"'s public
+key matches it, so B rotates at once.
+
+### 17.3 A revocation statement
+
+A revokes "a", dated `1800200000`:
+
+```
+msfp-key-revocation-1
+A6EHv_POEL4dcN0Y50vAmWfk1jCbpQ1fHdyGZBJVMbg
+1800200000
+```
+
+Its signature with key "a":
+`WVNTbO_TC06833zcHZksGCPv-Hwe9ilbWlI8oqyh5grn5W0OHKiDvIo-3S9CLj6-A6VheBQuguJTzmSpFTPoDQ`
+
+## 18. Open questions
+
+None of these is decided. Where a proposal of 2026-11-16 left a point
+open, the text above follows the proposal's own default, and the point is
+listed here, with its source in [proposals/](../../proposals/README.md).
+
+**Rules and checks**
+
+1. **Point checks in other languages** (proposal 1, open point 2).
+   PyNaCl's `crypto_core_ed25519_is_valid_point` and `@noble/curves`
+   (`isTorsionFree`) are believed to cover section 2.1's point checks.
+   Not verified.
+2. **A problem type for non-canonical input** (proposal 1, open point 3).
+   Should a refusal for a non-canonical form, after the signature checked
+   out, carry a specific `type` (`invalid-request`) to help implementers
+   debug? Section 2 gives the status that call gives a bad body, with its
+   usual `type`.
+3. **An external review** of the signing scheme (proposal 6, open point
+   2). It would settle the "custom crypto protocol" concern more directly
+   than switching to HTTP Message Signatures (RFC 9421), which proposal 6
+   compared and set aside.
+4. **Rate limits.** There is none on federation calls beyond the nonce
+   memory caps of section 6.5.
+
+**Rotation and revocation**
+
+5. **The 30-day overlap** (proposal 3, open point 1): long enough for a
+   peer that is off for a holiday, long enough also to keep a retired key
+   around. A shorter default with an operator setting is possible.
+   Section 13's overlap is the same question (proposal 8, open point 1);
+   both could share one setting.
+6. **A rotation from an unknown key** (proposal 3, open point 2). Should
+   a rotation statement also be accepted from N, carrying O's signature,
+   so that a server that lost O after rotating can still catch up a peer?
+   This needs care with section 6.5's "who is heard" rule. Not allowed in
+   this draft.
+7. **Suspension forever?** (proposal 3, open point 3). Should a suspended
+   peer become `gone` after some time without a valid rotation? In this
+   draft it stays suspended until its operator ends the pairing.
+8. **Proving the exported key** (proposal 3, open point 4). Section 12.5
+   shows the committed key's fingerprint next to the export; probably
+   enough.
+
+**Versions and parts**
+
+9. **`media` as its own part** (proposal 4, open point 2), or a
+   sub-version of `playback`. Separate in this draft, because the media
+   formats are where most change is expected.
+10. **Versions in `pair`** (proposal 4, open point 3). Should `pair`
+    requests and answers carry `core` and `parts` too, so that a new
+    pairing knows them before the first `hello`? Only `hello` carries them
+    in this draft.
+11. **The 8-entry caps** on version lists (proposal 4, open point 4) are
+    arbitrary limits against abuse.
+
+**HTTPS and addresses**
+
+12. **The transition for `http` pairings** (proposal 7, open point 1):
+    its length, and whether the cut-off is a version or a date. Section
+    16.5 leaves it open: one release, or a date the owner picks.
+13. **Making a self-signed certificate** (proposal 7, open point 2).
+    Should the specification say more (key type, names, lifetime) than
+    section 3.2's recommendation?
+14. **Local testing** (proposal 7, open point 3). Section 3.1 leaves plain
+    `http` to an implementation's test switch, outside the protocol.
+15. **Several addresses** (proposal 8, open point 2), for example a public
+    name and a LAN address. Not allowed: one address per server keeps the
+    signed host simple.
+16. **A change of base path** (proposal 8, open point 3). Section 13
+    announces addresses only. A peer learns a new base by fetching the
+    discovery document again when calls fail (section 11); whether a
+    change of `base` should be announced like an address is open.
+
+**Choices this draft made where the proposals were silent** (to confirm)
+
+17. The answer message's media type is a fifth line, before the body
+    hash, written as type/subtype in lowercase without parameters, and
+    `-` when there is no `Content-Type` (section 6.3).
+18. `revoke` is answered `200` `{"state":"suspended"}`; `rotate`'s and
+    `revoke`'s bad bodies get `400` `invalid-request` (sections 9.3, 9.4).
+19. A suspended peer is a flag beside the state, not a fifth state; it may
+    still send `revoke` (section 12.6).
+20. `base` must end in `/api/v1/federation/`, and the media's stream root
+    follows the same prefix (section 11).
+21. A rotating server whose request under O gets an unsigned `404` tries a
+    `hello` under N (section 12.4); repeated `rotate`s carry newly dated
+    statements.
+22. Core 1 is used only when both servers' addresses are `https`; until
+    then a pairing stays in core 0, and the `address` member of `hello` is
+    read in core 0 between servers that list core 1, so that `http`
+    pairings can move (sections 10.3 and 16.5).
