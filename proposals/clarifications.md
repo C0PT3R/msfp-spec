@@ -1,6 +1,6 @@
 # Clarifications
 
-Status: Proposed, each item on its own.
+Status: All 34 accepted (2026-11-16).
 
 Small fixes to [spec/v0.md](../spec/v0.md) that need no design decision
 beyond "yes". Most come from the plugin's SPEC-GAPS.md (cited by its
