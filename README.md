@@ -18,3 +18,11 @@ it paired with. Larger federations are planned, not specified.
   describes what it does.
 
 Questions and gaps in the specification are welcome as issues.
+
+## License
+
+- The specification and this README: [CC BY 4.0](LICENSE). Copy, translate
+  or adapt them, with credit. Implementing the protocol needs no permission
+  and carries no condition.
+- The test vectors (`vectors/`): [CC0 1.0](vectors/LICENSE), no conditions.
+  Copy them into any test suite.
