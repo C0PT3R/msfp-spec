@@ -1,6 +1,6 @@
 # Proposal 2: Opaque library IDs
 
-Status: Proposed.
+Status: Adopted (2026-11-16): migration by choosing again (no `formerId`, open point 1).
 Touches: sections 9.3, 9.4, 12 and open question 2 of
 [spec/v0.md](../spec/v0.md).
 
