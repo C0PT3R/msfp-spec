@@ -42,7 +42,15 @@ stream root:
 <stream root><ticket>/<name>
 ```
 
-- `<ticket>` matches `^[A-Za-z0-9_-]{1,64}$`. It is the only credential.
+- `<ticket>` matches `^[A-Za-z0-9_-]{1,64}$`. It is the only credential:
+  a bearer capability. The owning server makes each ticket from at least
+  128 bits of a cryptographically secure random source, never from a
+  counter, a time or any other value a peer could predict. A ticket is
+  never reused, for another playback or after its own has ended. The
+  owning server compares tickets in a way whose time doesn't depend on
+  how much of a ticket matches (a lookup by a hash of the ticket is
+  enough), and neither side writes tickets into logs, diagnostics or
+  error messages.
 - `stream.protocol` is `hls`, with `<name>` `master.m3u8` and
   `stream.mimeType` `application/vnd.apple.mpegurl`; or `file`, with
   `<name>` `file` (the file as it is, served with byte ranges).
@@ -57,7 +65,13 @@ stream root:
 
 The viewer's server refuses any URL that doesn't start with the owning
 server's stream root, or that names another ticket, or another file
-shape. `<name>` and `<track>` match `^[A-Za-z0-9._-]{1,64}$`.
+shape. `<name>` and `<track>` match `^[A-Za-z0-9._-]{1,64}$` and are
+never `.` or `..`, which a URL resolves as folders, not files. These
+checks apply to the URL's path split at `/` into its parts, compared
+exactly as sent: no part is decoded, normalized or resolved before the
+check, and a URL with an empty part, a `.` or `..` part, a `%`, a query or
+a fragment is refused. Test cases: `mediaNames` in
+[vectors/v1/strict.json](../../vectors/v1/strict.json).
 
 ## 2. Requests
 
@@ -83,7 +97,7 @@ A fetch refused for its certificate makes the viewer's server send a
 
 - **HLS.** Fetch `master.m3u8`. Every URI in it, and in the playlists it
   names, is a bare file name of the same stream (it matches
-  `^[A-Za-z0-9._-]{1,64}$`), relative to `<stream root><ticket>/`. Fetch
+  `^[A-Za-z0-9._-]{1,64}$`, and is not `.` or `..`), relative to `<stream root><ticket>/`. Fetch
   each the same way. The viewer's server refuses a playlist that doesn't
   start with `#EXTM3U`, or that names anything else, including an
   unquoted `URI=` attribute. Playlists are at most 2 MiB.

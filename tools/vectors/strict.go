@@ -355,3 +355,53 @@ func makeCode(prefix string, key, secret []byte, expires uint64, address string)
 	b = append(b, address...)
 	return prefix + b64.EncodeToString(b)
 }
+
+// checkMediaName applies the rule for a file or track name in a media URL
+// (spec/v1/media.md section 1): 1 to 64 characters of A-Z a-z 0-9 . _ -,
+// and never "." or "..", which a URL resolves as folders.
+func checkMediaName(s string) error {
+	if s == "." || s == ".." {
+		return errors.New(`"." and ".." are not names`)
+	}
+	if len(s) < 1 || len(s) > 64 {
+		return errors.New("not 1 to 64 characters")
+	}
+	for _, c := range []byte(s) {
+		if !(c >= 'A' && c <= 'Z' || c >= 'a' && c <= 'z' || c >= '0' && c <= '9' || c == '.' || c == '_' || c == '-') {
+			return errors.New("a character outside A-Z a-z 0-9 . _ -")
+		}
+	}
+	return nil
+}
+
+// checkBase applies the rule for the discovery document's base
+// (spec/v1/core.md, the discovery document): at most 256 bytes, an
+// absolute path of segments of A-Z a-z 0-9 . _ ~ -, no empty segment
+// before the end, no "." or ".." segment, ending in /api/v1/federation/.
+func checkBase(s string) error {
+	const end = "/api/v1/federation/"
+	if len(s) > 256 {
+		return errors.New("over 256 bytes")
+	}
+	if !strings.HasSuffix(s, end) {
+		return errors.New("doesn't end in /api/v1/federation/")
+	}
+	segs := strings.Split(strings.TrimSuffix(strings.TrimPrefix(s, "/"), "/"), "/")
+	if !strings.HasPrefix(s, "/") {
+		return errors.New("not an absolute path")
+	}
+	for _, seg := range segs {
+		switch seg {
+		case "":
+			return errors.New("an empty segment")
+		case ".", "..":
+			return errors.New(`a "." or ".." segment`)
+		}
+		for _, c := range []byte(seg) {
+			if !(c >= 'A' && c <= 'Z' || c >= 'a' && c <= 'z' || c >= '0' && c <= '9' || c == '.' || c == '_' || c == '~' || c == '-') {
+				return errors.New("a character outside A-Z a-z 0-9 . _ ~ - (no percent-encoding)")
+			}
+		}
+	}
+	return nil
+}

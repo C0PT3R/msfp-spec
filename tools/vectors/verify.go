@@ -173,6 +173,8 @@ func verifyAll(read func(string) []byte) []error {
 	verdicts("v0-strict.json", "codes", func(x obj) error { _, err := readCode(str(x, "text"), core0.prefix, true); return err })
 	verdicts("v1/strict.json", "addresses", func(x obj) error { return checkAddress(str(x, "text"), false) })
 	verdicts("v1/strict.json", "codes", func(x obj) error { _, err := readCode(str(x, "text"), core1.prefix, false); return err })
+	verdicts("v1/strict.json", "mediaNames", func(x obj) error { return checkMediaName(str(x, "text")) })
+	verdicts("v1/strict.json", "bases", func(x obj) error { return checkBase(str(x, "text")) })
 
 	// vectors/v1/
 	keys := load("v1/keys.json")

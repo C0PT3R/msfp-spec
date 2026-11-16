@@ -1117,8 +1117,12 @@ an `application/json` document:
   switches it on: a server that serves it tells anyone that it federates,
   which section 14 ("Probing") otherwise avoids. A server that serves
   none answers that path like any path that doesn't exist.
-- **`base`** is at most 256 bytes, ASCII, made of `/`-separated segments
-  of `A–Z a–z 0–9 . _ ~ -`, and ends in `/api/v1/federation/`. The part
+- **`base`** is at most 256 bytes, ASCII, an absolute path made of
+  `/`-separated segments of `A–Z a–z 0–9 . _ ~ -`, and ends in
+  `/api/v1/federation/`. No segment is empty, `.` or `..`, and there is no
+  percent-encoding at all, so the path means the same before and after
+  any normalization. Test cases: `bases` in
+  [vectors/v1/strict.json](../../vectors/v1/strict.json). The part
   before that ending is the server's **prefix** (`/srv/media` in the
   example; empty by default). The media's stream root is
   `<address><prefix>/api/v1/stream/` ([media](media.md#1-the-urls)).
