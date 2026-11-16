@@ -1,6 +1,6 @@
 # Proposal 7: HTTPS only
 
-Status: Proposed.
+Status: Adopted (2026-11-16); open points still open.
 Touches: sections 3, 3.1, 5.2, 10, 14 and open question 4 of
 [spec/v0.md](../spec/v0.md).
 
