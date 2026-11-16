@@ -1,0 +1,236 @@
+package main
+
+// verifyAll reads the vector files back and re-checks every value from
+// the files' own fields: keys from seeds, codes from their parts,
+// messages rebuilt from their fields, every signature under the strict
+// rules, every verdict against this program's checks.
+
+import (
+	"crypto/ed25519"
+	"encoding/hex"
+	"encoding/json"
+	"fmt"
+	"strconv"
+)
+
+type obj = map[string]any
+
+func str(o obj, k string) string { s, _ := o[k].(string); return s }
+func num(o obj, k string) int64  { f, _ := o[k].(float64); return int64(f) }
+
+func verifyAll(read func(string) []byte) []error {
+	var errs []error
+	bad := func(format string, a ...any) { errs = append(errs, fmt.Errorf(format, a...)) }
+	load := func(rel string) obj {
+		var o obj
+		b := read(rel)
+		if err := checkIJSON(b); err != nil {
+			bad("%s: %v", rel, err)
+		}
+		if err := json.Unmarshal(b, &o); err != nil {
+			bad("%s: %v", rel, err)
+		}
+		return o
+	}
+
+	// Keys: public key and fingerprint from the seed, and the key valid.
+	pubs := map[string][]byte{}
+	checkKeys := func(file string, keys obj, withCommitment bool) {
+		for name, v := range keys {
+			k := v.(obj)
+			seed, err := hex.DecodeString(str(k, "seed"))
+			if err != nil || len(seed) != 32 {
+				bad("%s: key %s: bad seed", file, name)
+				continue
+			}
+			pub := ed25519.NewKeyFromSeed(seed).Public().(ed25519.PublicKey)
+			if b64.EncodeToString(pub) != str(k, "public") {
+				bad("%s: key %s: public key isn't the seed's", file, name)
+			}
+			if err := checkKey(pub); err != nil {
+				bad("%s: key %s: %v", file, name, err)
+			}
+			if fingerprint(pub) != str(k, "fingerprint") {
+				bad("%s: key %s: wrong fingerprint", file, name)
+			}
+			if withCommitment && commitment(pub) != str(k, "commitment") {
+				bad("%s: key %s: wrong commitment", file, name)
+			}
+			pubs[name] = pub
+		}
+	}
+
+	checkCode := func(file string, c core, allowHTTP bool, cd, pf obj) {
+		got, err := readCode(str(cd, "text"), c.prefix, allowHTTP)
+		if err != nil {
+			bad("%s: code: %v", file, err)
+			return
+		}
+		secret, _ := hex.DecodeString(str(cd, "secret"))
+		if b64.EncodeToString(got.key) != b64.EncodeToString(pubs[str(cd, "key")]) ||
+			hex.EncodeToString(got.secret) != str(cd, "secret") ||
+			got.expires != num(cd, "expires") || got.address != str(cd, "address") {
+			bad("%s: code: its parts differ from the fields", file)
+		}
+		if b64.EncodeToString(sha(secret)) != str(cd, "secretHash") {
+			bad("%s: wrong secretHash", file)
+		}
+		if err := checkAddress(str(pf, "address"), allowHTTP); err != nil {
+			bad("%s: proof address: %v", file, err)
+		}
+		if c.proof(secret, pubs[str(pf, "redeemer")], str(pf, "address")) != str(pf, "value") {
+			bad("%s: wrong proof", file)
+		}
+	}
+
+	checkSig := func(where, signer, msg, sig string) {
+		s, err := checkB64(sig, 64)
+		if err != nil {
+			bad("%s: signature: %v", where, err)
+			return
+		}
+		if err := verifyStrict(pubs[signer], []byte(msg), s); err != nil {
+			bad("%s: signature: %v", where, err)
+		}
+	}
+
+	checkExchange := func(file string, c core, e obj) {
+		where := file + ": " + str(e, "name")
+		nonce, err := hex.DecodeString(str(e, "nonce"))
+		if err != nil || len(nonce) != 16 || b64.EncodeToString(nonce) != str(e, "nonceText") {
+			bad("%s: nonce and nonceText differ", where)
+		}
+		if err := checkDate(str(e, "date")); err != nil {
+			bad("%s: date: %v", where, err)
+		}
+		for _, k := range []string{"body", "answerBody"} {
+			if err := checkIJSON([]byte(str(e, k))); err != nil {
+				bad("%s: %s: %v", where, k, err)
+			}
+		}
+		msg := c.requestMessage(str(e, "method"), str(e, "host"), str(e, "target"), str(e, "date"), str(e, "nonceText"), str(e, "body"))
+		if msg != str(e, "message") {
+			bad("%s: message isn't rebuilt from the fields", where)
+		}
+		checkSig(where+" request", str(e, "signer"), msg, str(e, "signature"))
+		am := c.answerMessage(str(e, "nonceText"), int(num(e, "status")), str(e, "answerContentType"), str(e, "answerBody"))
+		if am != str(e, "answerMessage") {
+			bad("%s: answerMessage isn't rebuilt from the fields", where)
+		}
+		checkSig(where+" answer", str(e, "answerer"), am, str(e, "answerSignature"))
+	}
+
+	// vectors/v0.json
+	v0 := load("v0.json")
+	checkKeys("v0.json", v0["keys"].(obj), false)
+	checkCode("v0.json", core0, true, v0["code"].(obj), v0["proof"].(obj))
+	for _, e := range v0["exchanges"].([]any) {
+		checkExchange("v0.json", core0, e.(obj))
+	}
+
+	// vectors/v0-strict.json and vectors/v1/strict.json
+	verdicts := func(file, list string, f func(obj) error) {
+		o := load(file)
+		for _, v := range o[list].([]any) {
+			x := v.(obj)
+			err := f(x)
+			if (err == nil) != (x["valid"] == true) {
+				bad("%s: %s %q%q: the file says valid=%v, the check says %v", file, list, str(x, "name"), str(x, "text"), x["valid"], err)
+			}
+		}
+	}
+	text := func(x obj) []byte {
+		if h := str(x, "hex"); h != "" {
+			b, _ := hex.DecodeString(h)
+			return b
+		}
+		return []byte(str(x, "text"))
+	}
+	verdicts("v0-strict.json", "keys", func(x obj) error {
+		b, err := b64.DecodeString(str(x, "text"))
+		if err != nil {
+			return err
+		}
+		return checkKey(b)
+	})
+	verdicts("v0-strict.json", "signatures", func(x obj) error {
+		pub, _ := b64.DecodeString(str(x, "public"))
+		sig, _ := b64.DecodeString(str(x, "signature"))
+		return verifyStrict(pub, []byte(str(x, "message")), sig)
+	})
+	verdicts("v0-strict.json", "base64url", func(x obj) error {
+		n := 32
+		if len(str(x, "name")) >= 7 && str(x, "name")[:7] == "a nonce" {
+			n = 16
+		}
+		_, err := checkB64(str(x, "text"), n)
+		return err
+	})
+	verdicts("v0-strict.json", "dates", func(x obj) error { return checkDate(str(x, "text")) })
+	verdicts("v0-strict.json", "integers", func(x obj) error { return checkInteger(str(x, "text")) })
+	verdicts("v0-strict.json", "json", func(x obj) error { return checkIJSON(text(x)) })
+	verdicts("v0-strict.json", "addresses", func(x obj) error { return checkAddress(str(x, "text"), true) })
+	verdicts("v0-strict.json", "codes", func(x obj) error { _, err := readCode(str(x, "text"), core0.prefix, true); return err })
+	verdicts("v1/strict.json", "addresses", func(x obj) error { return checkAddress(str(x, "text"), false) })
+	verdicts("v1/strict.json", "codes", func(x obj) error { _, err := readCode(str(x, "text"), core1.prefix, false); return err })
+
+	// vectors/v1/
+	keys := load("v1/keys.json")
+	checkKeys("v1/keys.json", keys["keys"].(obj), true)
+	for name, v := range keys["certificates"].(obj) {
+		c := v.(obj)
+		der, _ := hex.DecodeString(str(c, "spki"))
+		if b64.EncodeToString(sha(der)) != str(c, "pin") {
+			bad("v1/keys.json: certificate %s: wrong pin", name)
+		}
+		seed, _ := hex.DecodeString(str(c, "seed"))
+		if hex.EncodeToString(spki(newKey(seed))) != str(c, "spki") {
+			bad("v1/keys.json: certificate %s: spki isn't the seed's", name)
+		}
+	}
+	cf := load("v1/code.json")
+	checkCode("v1/code.json", core1, false, cf["code"].(obj), cf["proof"].(obj))
+	for _, e := range load("v1/exchanges.json")["exchanges"].([]any) {
+		checkExchange("v1/exchanges.json", core1, e.(obj))
+	}
+
+	rf := load("v1/rotation.json")
+	r := rf["rotation"].(obj)
+	old, nu := pubs[str(r, "from")], pubs[str(r, "to")]
+	if b64.EncodeToString(old) != str(r, "oldKey") || b64.EncodeToString(nu) != str(r, "newKey") ||
+		commitment(pubs[str(r, "next")]) != str(r, "nextCommitment") {
+		bad("v1/rotation.json: keys or commitment differ from keys.json")
+	}
+	st := rotationStatement(old, nu, str(r, "nextCommitment"), num(r, "date"))
+	if st != str(r, "statement") {
+		bad("v1/rotation.json: statement isn't rebuilt from the fields")
+	}
+	checkSig("v1/rotation.json old", str(r, "from"), st, str(r, "oldSignature"))
+	checkSig("v1/rotation.json new", str(r, "to"), st, str(r, "newSignature"))
+	re := rf["exchange"].(obj)
+	checkExchange("v1/rotation.json", core1, re)
+	var rb obj
+	_ = json.Unmarshal([]byte(str(re, "body")), &rb)
+	if str(rb, "newKey") != str(r, "newKey") || str(rb, "nextCommitment") != str(r, "nextCommitment") ||
+		num(rb, "date") != num(r, "date") || str(rb, "oldSignature") != str(r, "oldSignature") ||
+		str(rb, "newSignature") != str(r, "newSignature") || str(re, "signer") != str(r, "from") {
+		bad("v1/rotation.json: the rotate request doesn't carry the statement")
+	}
+
+	vf := load("v1/revocation.json")
+	v := vf["revocation"].(obj)
+	vs := revocationStatement(pubs[str(v, "key")], num(v, "date"))
+	if vs != str(v, "statement") || b64.EncodeToString(pubs[str(v, "key")]) != str(v, "public") {
+		bad("v1/revocation.json: statement isn't rebuilt from the fields")
+	}
+	checkSig("v1/revocation.json", str(v, "key"), vs, str(v, "signature"))
+	ve := vf["exchange"].(obj)
+	checkExchange("v1/revocation.json", core1, ve)
+	var vb obj
+	_ = json.Unmarshal([]byte(str(ve, "body")), &vb)
+	if strconv.FormatInt(num(vb, "date"), 10) != strconv.FormatInt(num(v, "date"), 10) ||
+		str(vb, "signature") != str(v, "signature") || str(ve, "signer") != str(v, "key") {
+		bad("v1/revocation.json: the revoke request doesn't carry the statement")
+	}
+	return errs
+}
