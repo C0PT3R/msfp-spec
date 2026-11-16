@@ -1,6 +1,6 @@
 # Proposal 8: Changing a server's address
 
-Status: Proposed.
+Status: Adopted (2026-11-16); open points still open.
 Touches: sections 5.2, 6.2, 7.2 and 9.2 of [spec/v0.md](../spec/v0.md).
 
 ## Problem

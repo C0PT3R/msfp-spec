@@ -20,7 +20,7 @@ read or assumed, it says so.
 | 5 | [Title identity beyond TMDB, and episode order](0005-title-identity-and-episode-order.md): TMDB's numbering in keys, `with` for double episodes, `e0`, `ids` for IMDb and TVDB | Adopted |
 | 6 | [Request signatures vs RFC 9421](0006-request-signatures-vs-rfc9421.md): a comparison; recommends keeping MSFP's scheme | Adopted: own scheme, plus Content-Type |
 | 7 | [HTTPS only](0007-https-only.md): drop plain `http`, now that pins allow self-signed certificates | Adopted |
-| 8 | [Changing a server's address](0008-address-changes.md): a signed, confirmed address change in `hello` | Proposed |
+| 8 | [Changing a server's address](0008-address-changes.md): a signed, confirmed address change in `hello` | Adopted |
 | – | [Clarifications](clarifications.md): 34 small fixes that need only a "yes" | Proposed |
 
 Some proposals lean on others; each says how it reads without them:
