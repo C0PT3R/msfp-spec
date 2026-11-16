@@ -986,16 +986,32 @@ has a value:
   retried a few times; the owning server ends an unused playback within
   2 minutes anyway ([media section 4](media.md#4-how-long-a-ticket-works)).
 
-**Overfin.** Overfin has none of the limits of items 1 to 5 on federation
-calls today, besides the pairing's streams and transcodes, the server's
-transcode budget, the nonce caps and the body size. Behind its gateway,
-the gateway limits requests by network address (50 a second, bursts of
-400) and answers a plain-text, unsigned `429` with `Retry-After: 5`; a
-single Overfin without a gateway doesn't. It never sends `rate-limited`
-on federation calls, and its `server-busy` carries no `retryAfter`. Its
-client reads neither, and doesn't back off beyond its schedules: titles
-read every 30 minutes, a pending pairing asked at most every 20 seconds
-while its operator waits, one try for `progress` and `stop`.
+**Overfin.** Overfin's numbers, fixed, with no settings:
+
+| Limit | Overfin |
+|-------|---------|
+| Per network address, before any signature check | 50 a second, bursts of 400; past it, the unsigned `404` |
+| Per peer | 20 calls a second, bursts of 200 |
+| All peers together | 200 calls a second, bursts of 2,000 |
+| `play` per peer | 30 a minute, bursts of 20 |
+| Requests at once | 8 per peer (a queue of 16), 64 in all (a queue of 128); a queue is waited in for 5 seconds at most |
+
+Past a peer's own limit it answers a signed `429` `rate-limited`, past
+all peers' a signed `503` `server-busy`, each with `retryAfter` (the
+seconds until a call would pass, at least 1) in the body and the same
+`Retry-After` header. Behind its gateway, the gateway also limits
+requests by network address, with the same numbers, and answers a
+plain-text, unsigned `429` with `Retry-After: 5`. Its `play` refusal
+for transcodes, a signed `503` `server-busy`, carries no `retryAfter`.
+
+As a caller, Overfin holds every call to a peer (but `pair`) until a
+signed `retryAfter` has passed. After no answer, an unsigned refusal, or
+a `429` or `503` without `retryAfter`, the calls it makes by itself
+(`progress`, catalog reads, a waiting pairing's `hello`) hold off from 2
+seconds, doubling, up to an hour, give or take a quarter; calls an
+operator or a viewer asks for go when asked. A catalog read told to wait
+up to a minute waits and reads on. A `play` held or refused this way
+tells the viewer "busy now".
 
 ### 8.4 Media answers
 
