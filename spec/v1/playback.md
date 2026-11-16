@@ -478,11 +478,11 @@ only then.
 **Overfin.** Overfin's check and count are one step under one lock
 (atomic), and it checks the pairing's streams once more before asking its
 media server, to refuse early. It looks for expired playbacks every 30
-seconds. A pairing that ends, or a library no longer offered, ends the
-playback at its next media request (answered `404`), or at expiry if no
-request comes: Overfin doesn't end them at the moment of the change.
-After a playback ends, it remembers why for an hour; `progress` gets
-`410` either way.
+seconds. A pairing that ends (by either side), a peer found no longer
+paired, or a change of what it offers a peer ends that peer's playbacks
+at the moment of the change, open media responses included; each media
+request checks again. After a playback ends, it remembers why for an
+hour; `progress` gets `410` either way.
 
 ## 7. Security considerations
 
