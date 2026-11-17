@@ -58,6 +58,14 @@ valid and invalid cases, for an implementation's tests.
   [tools/vectors/](tools/vectors/), which also checks every file. No
   implementation produced them yet.
 
+## Conformance suite
+
+[conformance/](conformance/README.md): a program that pairs with a server
+you run, as a peer, and checks it against version 0 (pairing, `hello`,
+signatures, the strict rules, replay, `libraries` and `titles`,
+refusals, and on request rate limits and ending). Python 3, standard
+library only. Its code is under the MIT license.
+
 ## Implementations
 
 - [Overfin](https://github.com/Overfin/server), the first one. It speaks
@@ -72,3 +80,6 @@ Questions and gaps in the specification are welcome as issues.
   and carries no condition.
 - The test vectors (`vectors/`): [CC0 1.0](vectors/LICENSE), no conditions.
   Copy them into any test suite.
+- The conformance suite (`conformance/`): [MIT](conformance/LICENSE), and
+  its bundled Ed25519 reference code the IETF Trust's Simplified BSD
+  License.
