@@ -501,8 +501,9 @@ hour; `progress` gets `410` either way.
 
 No open point of the proposals of 2026-11-16 concerns this part alone.
 The core's open questions ([core section 18](core.md#18-open-questions))
-apply. Choices this draft made where the proposals were silent, to
-confirm:
+apply. Choices this draft made where the proposals were silent, all
+confirmed by the owner on 2026-11-17 (they may still change as
+implementations show):
 
 1. **`versionId` in the request** (section 2.1). Proposal 2 says a
    viewer's server passes version IDs back in a later `play` of the same
@@ -513,7 +514,7 @@ confirm:
    `startPositionMs` combines with it. This draft reads a non-zero
    `startPositionMs` as a position in the copy.
 
-Choices of the review round of 2026-11-16, to confirm:
+Choices of the review round of 2026-11-16, confirmed on 2026-11-17:
 
 3. **An `audioTrack` or `subtitleTrack` the copy doesn't have** is read
    as absent (section 2.6), not refused with `400`.

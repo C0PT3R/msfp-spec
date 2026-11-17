@@ -2048,7 +2048,8 @@ listed here, with its source in [proposals/](../../proposals/README.md).
     discovery document again when calls fail (section 11); whether a
     change of `base` should be announced like an address is open.
 
-**Choices this draft made where the proposals were silent** (to confirm)
+**Choices this draft made where the proposals were silent** (all confirmed by
+the owner on 2026-11-17; they may still change as implementations show)
 
 17. The answer message's media type is a fifth line, before the body
     hash, written as type/subtype in lowercase without parameters, and

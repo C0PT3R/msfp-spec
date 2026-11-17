@@ -476,7 +476,8 @@ URLs until it ends ([core section 13.2](core.md#132-a-peer-that-learns-of-a-move
    With HTTPS required, that is true in every case; signing media (per
    segment, or signed playlists with hashes) would cost far more.
 
-Choices of the review round of 2026-11-16, to confirm:
+Choices of the review round of 2026-11-16, all confirmed by the owner on
+2026-11-17 (they may still change as implementations show):
 
 2. **The HLS subset** (section 3.1) is what Overfin sends today. Separate
    audio renditions (`#EXT-X-MEDIA`), I-frame playlists and encryption
