@@ -2066,7 +2066,8 @@ listed here, with its source in [proposals/](../../proposals/README.md).
 23. Section 3.3 refuses the ranges listed, by default, and lets an
     operator allow loopback only. (Whether NAT64's `64:ff9b::/96` and
     6to4's `2002::/16` are judged by the IPv4 address they carry was open
-    here; closed on 2026-11-17: they are, as in version 0's section 3.2.)
+    here; closed on 2026-11-17: they are, as in version 0's section 3.2.) Confirmed by the
+    owner on 2026-11-17.
 24. Section 8.3's refusals: `429` `rate-limited` for one peer over its
     limit, `503` `server-busy` for a full server, and `retryAfter` in the
     signed body rather than in the unsigned header alone.
