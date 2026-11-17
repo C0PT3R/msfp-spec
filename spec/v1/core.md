@@ -2070,6 +2070,7 @@ listed here, with its source in [proposals/](../../proposals/README.md).
     owner on 2026-11-17.
 24. Section 8.3's refusals: `429` `rate-limited` for one peer over its
     limit, `503` `server-busy` for a full server, and `retryAfter` in the
-    signed body rather than in the unsigned header alone.
+    signed body rather than in the unsigned header alone. Confirmed by the owner on
+    2026-11-17.
 25. Section 8.3 suggests numbers only where Overfin has one. A per-peer
     call rate, a global one and a `play` rate have no suggested default.
