@@ -2055,7 +2055,7 @@ listed here, with its source in [proposals/](../../proposals/README.md).
 19. A suspended peer is a flag beside the state, not a fifth state; it may
     still send `revoke` (section 12.6). Confirmed by the owner on 2026-11-17.
 20. `base` must end in `/api/v1/federation/`, and the media's stream root
-    follows the same prefix (section 11).
+    follows the same prefix (section 11). Confirmed by the owner on 2026-11-17.
 21. A rotating server whose request under O gets an unsigned `404` tries a
     `hello` under N (section 12.4); repeated `rotate`s carry newly dated
     statements.
