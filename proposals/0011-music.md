@@ -1,7 +1,8 @@
 # Proposal 11: Music
 
 Status: Proposed (2026-11-17). Decided so far: identity (section 1),
-descriptions (section 2) and pictures (section 4), adopted 2026-11-17.
+descriptions (section 2), pictures (section 4) and playing a track
+(section 5), adopted 2026-11-17.
 Touches: [catalog](../spec/v1/catalog.md) sections 1, 3 and 4,
 [playback](../spec/v1/playback.md) sections 2 and 6, and
 [media](../spec/v1/media.md) section 3; adds a part, `music`
