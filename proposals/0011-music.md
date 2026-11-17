@@ -197,9 +197,14 @@ reads them from `titles`, in the same paging and the same `changes`.
 
 ### Where it lives
 
-- **In `catalog` 2 and `playback` 2**, not a part of its own. One fewer
-  name, but a video-only server would have to implement music to take
-  any later catalog change, or announce versions it only half speaks.
+- **In `catalog` 1, `playback` 1 and `media` 1 themselves**, not a part
+  of its own. Version 1 is still a draft that nobody implements, so this
+  breaks nothing. One fewer name, but music would no longer be optional:
+  a server that handles no music (a video-only server, or a first
+  version of an implementation) would have to play tracks to claim
+  `playback` 1, or claim it and refuse them, and an owning server
+  couldn't tell which peers to send music to. Music would also change
+  only with new versions of the video parts.
 
 ### Wider: one change for every kind
 
