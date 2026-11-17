@@ -152,6 +152,13 @@ proves nothing, and is off by default
   8.2); exact HLS, WebVTT and PGS rules and bounds on fetches
   ([media](media.md) sections 2 and 3); choosing the copy and tracks, and
   a playback's states ([playback](playback.md) sections 2.6 and 6).
+- **The live interop of 2026-11-17**, as in version 0's corrections: no
+  content codings (core sections 3, 6.3 and 6.6); answers' members of
+  the wrong JSON type ([catalog](catalog.md) sections 2.2 and 3.3);
+  `titles` without `libraries` (catalog section 3); a `hello`'s answer
+  names the certificate served now (core section 3.2); limits behind a
+  reverse proxy (core section 8.3); NAT64 and 6to4 addresses (core
+  section 3.3).
 
 The proposals and their decisions are in
 [proposals/](../../proposals/README.md). Points the proposals left open

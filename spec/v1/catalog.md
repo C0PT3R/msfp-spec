@@ -100,7 +100,15 @@ operators then choose their libraries again
 - names cleaned as in [core section 9.1](core.md#91-pair) (`?` when
   empty). Names are text, never markup: a receiver treats them as text
   wherever it shows them, and may clean further;
-- an unknown `kind` becomes `""`.
+- an unknown `kind` becomes `""`;
+- members of the wrong JSON type ([core section 2.3](core.md#23-json)): a
+  `libraries` that isn't an array, or a top-level `name` that isn't a
+  string, fails the answer (the caller treats the peer as unreachable and
+  keeps what it had); an entry of `libraries` that isn't an object, or
+  whose `id` isn't a string, is skipped; a library's `name` or `kind`
+  that isn't a string counts as absent (`?`, `""`); a `limits` that isn't
+  an object, or whose members aren't integers, is ignored, as are limits
+  out of range.
 
 Refusals: signed `404` when the caller isn't `paired`, or when the body
 isn't a JSON object; signed `404` `not-supported` when `catalog` is off;
@@ -201,8 +209,24 @@ Anything else is skipped, title by title:
   are skipped;
 - `gone` keys over 128 bytes are skipped.
 
+Members of the wrong JSON type ([core section 2.3](core.md#23-json)):
+
+- `titles` or `gone` that isn't an array, `next` that isn't a string,
+  `changes` that isn't a boolean, or `seq` that isn't an integer fails
+  the answer: the caller treats the peer as unreachable and keeps what it
+  had. Skipping one of them could end a reading early or mix the kinds of
+  reading, and the caller would then drop titles the peer still holds.
+- An entry of `titles` that isn't an object, or whose `key`, `kind` or
+  `library` isn't a string, is skipped.
+- An `audio`, `subtitles` or `with` member that isn't an array, or an
+  `ids` member that isn't an object, counts as absent; an entry of one
+  of those lists that isn't a string is skipped alone, as is a value of
+  `ids` that isn't in its scheme's form.
+- An entry of `gone` that isn't a string is skipped.
+
 Refusals: signed `404` when the caller isn't `paired`, or the body isn't
-valid JSON, or `after` is over 512 bytes, or `since` isn't an integer;
+valid JSON, or `libraries` is missing or isn't an array of strings, or
+`after` is over 512 bytes, or `since` isn't an integer;
 signed `404` `not-supported` when `catalog` is off; `500`.
 
 ## 4. Title keys

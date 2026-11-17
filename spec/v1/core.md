@@ -168,6 +168,10 @@ identity (subgroup).
   so. A receiver refuses `null` as an invalid value. (Toward a peer that
   speaks version 0, see section 16.6.)
 - A member of another JSON type than its field says is an invalid value.
+  That is for requests. In an answer, a member of the wrong type inside a
+  list skips its entry, or counts as absent, and one at the top of the
+  answer fails the answer, as each call's section says
+  ([catalog](catalog.md) sections 2.2 and 3.3).
 - String values are compared and signed after JSON decoding. Since
   addresses, keys and IDs are ASCII, a sender has no reason to escape any
   of them.
@@ -257,6 +261,19 @@ Cases for all of these, valid and not, are in
   4 MiB (4,194,304 bytes) of an answer; a longer answer fails its
   signature check.
 - **Timeouts.** A caller should give each call 15 seconds in all.
+- **Content codings: none.** A federation request and its answer carry
+  no `Content-Encoding` other than `identity`, and the signatures of
+  section 6 cover the body bytes as sent. A receiver sends its answers
+  uncoded, whatever the request's `Accept-Encoding` says: a host that
+  compresses answers by itself must leave the federation paths alone. A
+  caller should send no `Accept-Encoding` (or `identity` only), and
+  refuses an answer that carries a content coding like a badly signed one
+  (section 6.6), without decoding it. A receiver never decodes a coded
+  request either: its signature is checked over the bytes received, so it
+  fails as a bad signature or a bad body; a receiver may also refuse it at
+  once with the unsigned `404` of a failed check. Transfer codings
+  (`chunked`) are HTTP's framing, not a content coding: the body is the
+  bytes they carry.
 - **Proxies.** A server behind a reverse proxy must keep the path, query
   and body byte for byte: the signature covers them.
 
@@ -338,16 +355,24 @@ had (compared as sets), try the call once more. It does so for every call
 and for media fetches. A client sends at most one such `hello` to a peer
 at a time; calls and fetches that wait on it share its result.
 
-**Knowing one's own certificate.** A server behind a reverse proxy doesn't
-hold its certificate. It may connect to its own address, as a peer would,
-with SNI set to the address's host name (none for an IP address, as
-RFC 6066 says), read the leaf certificate served there, and name its pin.
-It reads it again when a `hello` is sent or answered a minute or more
-after the last reading. A failed reading keeps the last good one (none if
-there was never one), and the next attempt waits a minute. A server whose
-operator sets its pins in its configuration names those and reads
-nothing. A server may learn its pins any other way, as long as they are of
-the certificates its address really serves.
+A server's answer to a `hello` names the pins of the certificates its
+address serves when it answers, not those of an earlier reading. A peer
+sends a `hello` when a call was refused the certificate: an answer that
+named the pin from before a renewal would make that peer's one retry
+fail, and nothing would try again before its next scheduled call.
+
+**Knowing one's own certificate.** A server behind a reverse proxy
+doesn't hold its certificate. It may connect to its own address, as a
+peer would, with SNI set to the address's host name (none for an IP
+address, as RFC 6066 says), read the leaf certificate served there, and
+name its pin. It reads it again for each `hello` it answers, unless its
+last reading is at most a few seconds old (Overfin: 2 seconds), and when
+it sends a `hello` a minute or more after the last reading. A failed
+reading keeps the last good one (none if there was never one), and the
+next attempt waits a minute (Overfin: 5 seconds while no reading has
+ever worked). A server whose operator sets its pins in its configuration
+names those and reads nothing. A server may learn its pins any other
+way, as long as they are of the certificates its address really serves.
 
 A server that serves several certificates (RSA and ECDSA, several
 machines, a renewal rolling out) names all their pins. One reading sees
@@ -387,6 +412,15 @@ an IP address in any of these ranges:
 
 An IPv4-mapped IPv6 address (`::ffff:0:0/96`, for example
 `::ffff:127.0.0.1`) is judged as the IPv4 address it carries.
+
+So are a NAT64 address of the well-known prefix `64:ff9b::/96` (RFC
+6052; the IPv4 address is its last 32 bits) and a 6to4 address,
+`2002::/16` (RFC 3056; the IPv4 address is bits 16 to 47), by every rule
+of this section, operator policy included. Where a NAT64 gateway or a
+6to4 relay is on the path, `64:ff9b::a9fe:a9fe` reaches
+`169.254.169.254`. A server whose network uses another NAT64 prefix (a
+network-specific one, or RFC 8215's `64:ff9b:1::/48`) should judge
+addresses under it the same way.
 
 **Private ranges are allowed by default.** `10.0.0.0/8`, `172.16.0.0/12`,
 `192.168.0.0/16`, `100.64.0.0/10` and `fc00::/7` stay reachable: two
@@ -434,14 +468,18 @@ the fetch fails ([media section 2](media.md#2-requests)). A server may
 also refuse an address when it reads it (a code, a `pair` request), but
 must check again at connection time, since a name's answer can change.
 
-**Overfin.** Overfin refuses exactly the table above, by default, on
-every connection to a peer: calls, the media relay, preview sheets, the
-`hello` that confirms an address change, and the connection to its own
-address when it reads its own certificate. It checks at connection time
-only. Its one setting, `federation.allow_loopback`, allows loopback and
-nothing else. It offers no setting to refuse private ranges. A backend
-behind Overfin's gateway connects through the gateway, which makes the
-same check. It uses no proxy from the environment.
+**Overfin.** Overfin refuses the table above, by default, judged as this
+section says for IPv4-mapped, NAT64 (`64:ff9b::/96`, and
+`64:ff9b:1::/48` by its last 32 bits) and 6to4 addresses, and three
+cloud metadata addresses outside it (`100.100.100.200`, `168.63.129.16`,
+`fd00:ec2::254`), on every connection to a peer: calls, the media relay,
+preview sheets, the `hello` that confirms an address change, and the
+connection to its own address when it reads its own certificate. It
+checks at connection time only. Its one setting,
+`federation.allow_loopback`, allows loopback and nothing else. It offers
+no setting to refuse private ranges. A backend behind Overfin's gateway
+connects through the gateway, which makes the same check. It uses no
+proxy from the environment.
 
 ## 4. Identity and keys
 
@@ -609,8 +647,8 @@ msfp-1 request
 - `<date>`: exactly the text of the `MSFP-Date` header.
 - `<nonce>`: exactly the text of the `MSFP-Nonce` header.
 - `<body hash>`: SHA-256 of the exact body bytes sent, in hex (64
-  characters). An empty body hashes to
-  `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855`.
+  characters), which carry no content coding (section 3). An empty body
+  hashes to `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855`.
 
 The receiver rebuilds this message from one of **its own** current hosts,
 never from the `Host` header. A server has one current host, or two for a
@@ -641,7 +679,8 @@ msfp-1 response
   type and subtype, in lowercase, without parameters or white space
   (`application/json; charset=utf-8` gives `application/json`). An answer
   without `Content-Type` has `-` here.
-- `<body hash>`: SHA-256 of the exact answer body bytes, hex.
+- `<body hash>`: SHA-256 of the exact answer body bytes as sent, hex.
+  They carry no content coding (section 3).
 
 The caller builds `<media type>` from the `Content-Type` header it
 received. So a changed `Content-Type` makes the signature fail, and the
@@ -744,6 +783,8 @@ is the key in the code.
 - A `200` or `202` answer counts only when its signature verifies.
   Otherwise the caller treats the server as unreachable. Then it decodes
   the JSON body.
+- An answer with a `Content-Encoding` other than `identity` counts as
+  badly signed, whatever its signature (section 3).
 - Any other status counts only when its signature verifies. An unsigned
   or badly signed refusal may come from someone between the two servers;
   the caller treats it as "unreachable" and changes no state.
@@ -986,11 +1027,24 @@ has a value:
   retried a few times; the owning server ends an unused playback within
   2 minutes anyway ([media section 4](media.md#4-how-long-a-ticket-works)).
 
+**Implementation note: behind a reverse proxy.** A server behind a
+reverse proxy sees every request arrive from the proxy's address, so a
+limit by network address (item 1) would put every peer and stranger in
+one bucket. Such a server counts by the client address the proxy
+forwards (`X-Forwarded-For`, `Forwarded`, or the PROXY protocol), and
+only for a request that came from a proxy its operator names as trusted.
+It takes the address that trusted proxy added: read from the right, the
+first address that isn't one of its trusted proxies, never one written
+further left. It never trusts a forwarded address from any other source,
+since anyone can write those headers. An IPv6 address is best counted by
+its `/64`. The limits after a signature checks out are per key and need
+none of this.
+
 **Overfin.** Overfin's numbers, fixed, with no settings:
 
 | Limit | Overfin |
 |-------|---------|
-| Per network address, before any signature check | 50 a second, bursts of 400; past it, the unsigned `404` |
+| Per network address, before any signature check | 50 a second, bursts of 400, an IPv6 `/64` counting as one address; past it, the unsigned `404` |
 | Per peer | 20 calls a second, bursts of 200 |
 | All peers together | 200 calls a second, bursts of 2,000 |
 | `play` per peer | 30 a minute, bursts of 20 |
@@ -1001,7 +1055,12 @@ all peers' a signed `503` `server-busy`, each with `retryAfter` (the
 seconds until a call would pass, at least 1) in the body and the same
 `Retry-After` header. Behind its gateway, the gateway also limits
 requests by network address, with the same numbers, and answers a
-plain-text, unsigned `429` with `Retry-After: 5`. Its `play` refusal
+plain-text, unsigned `429` with `Retry-After: 5`. A single Overfin
+counts by the address its `identity.trusted_proxies` setting gives
+(`X-Forwarded-For` from those proxies only, read from the right). Behind
+its gateway, the backend counts by the visitor's address the gateway
+passes on, which the gateway takes from the PROXY protocol or
+`X-Forwarded-For` of the proxies it is told to trust. Its `play` refusal
 for transcodes, a signed `503` `server-busy`, carries no `retryAfter`.
 
 As a caller, Overfin holds every call to a peer (but `pair`) until a
@@ -2003,9 +2062,9 @@ listed here, with its source in [proposals/](../../proposals/README.md).
     read in core 0 between servers that list core 1, so that `http`
     pairings can move (sections 10.3 and 16.5).
 23. Section 3.3 refuses the ranges listed, by default, and lets an
-    operator allow loopback only. Other forms that embed an IPv4 address
-    (NAT64's `64:ff9b::/96`, 6to4's `2002::/16`) are not judged by the
-    IPv4 address they carry; whether they should be is open.
+    operator allow loopback only. (Whether NAT64's `64:ff9b::/96` and
+    6to4's `2002::/16` are judged by the IPv4 address they carry was open
+    here; closed on 2026-11-17: they are, as in version 0's section 3.2.)
 24. Section 8.3's refusals: `429` `rate-limited` for one peer over its
     limit, `503` `server-busy` for a full server, and `retryAfter` in the
     signed body rather than in the unsigned header alone.

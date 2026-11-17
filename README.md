@@ -21,7 +21,11 @@ its states, and the calls `pair`, `hello`, `libraries`, `titles`, `play`
 
 On 2026-11-16 it was corrected, without a new version: one strict rule set
 for Ed25519, encodings, JSON and addresses; library and version IDs that
-the owning server chooses; and 34 clarifications.
+the owning server chooses; and 34 clarifications. On 2026-11-17, the
+first live interop between Overfin and the Jellyfin plugin added six
+more: no content codings, answers' members of the wrong JSON type,
+`titles` without `libraries`, a certificate renewed right after a
+`hello`, limits behind a reverse proxy, and NAT64 and 6to4 addresses.
 [Section 17](spec/v0.md#17-changes) lists the corrections. Overfin's code
 doesn't follow all of them yet; the specification says where.
 

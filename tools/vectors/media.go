@@ -35,6 +35,11 @@ var refusedRanges = []struct {
 	{netip.MustParsePrefix("240.0.0.0/4"), "reserved or broadcast"},
 }
 
+var (
+	nat64     = netip.MustParsePrefix("64:ff9b::/96")
+	sixToFour = netip.MustParsePrefix("2002::/16")
+)
+
 // checkDestination says whether a server connects to ip for a peer by
 // default: nil when it does.
 func checkDestination(s string) error {
@@ -43,6 +48,13 @@ func checkDestination(s string) error {
 		return errors.New("not an IP address")
 	}
 	ip = ip.Unmap() // an IPv4-mapped address is judged as IPv4
+	// NAT64's well-known prefix (RFC 6052: the last 32 bits) and 6to4
+	// (RFC 3056: bits 16 to 47) are judged as the IPv4 address they carry.
+	if b := ip.As16(); ip.Is6() && nat64.Contains(ip) {
+		ip = netip.AddrFrom4([4]byte(b[12:16]))
+	} else if ip.Is6() && sixToFour.Contains(ip) {
+		ip = netip.AddrFrom4([4]byte(b[2:6]))
+	}
 	for _, r := range refusedRanges {
 		if r.prefix.Contains(ip) {
 			return fmt.Errorf("refused: %s", r.why)

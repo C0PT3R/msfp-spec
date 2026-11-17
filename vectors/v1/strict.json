@@ -448,6 +448,48 @@
       "text": "fe80::1%eth0",
       "valid": false,
       "reason": "not an IP address"
+    },
+    {
+      "text": "64:ff9b::c000:20a",
+      "valid": true
+    },
+    {
+      "text": "64:ff9b::a01:203",
+      "valid": true
+    },
+    {
+      "text": "64:ff9b::a9fe:a9fe",
+      "valid": false,
+      "reason": "refused: link-local"
+    },
+    {
+      "text": "64:ff9b::7f00:1",
+      "valid": false,
+      "reason": "refused: loopback"
+    },
+    {
+      "text": "64:ff9b::e000:1",
+      "valid": false,
+      "reason": "refused: multicast"
+    },
+    {
+      "text": "2002:c000:20a::1",
+      "valid": true
+    },
+    {
+      "text": "2002:a9fe:a9fe::1",
+      "valid": false,
+      "reason": "refused: link-local"
+    },
+    {
+      "text": "2002:7f00:1::",
+      "valid": false,
+      "reason": "refused: loopback"
+    },
+    {
+      "text": "2002::1",
+      "valid": false,
+      "reason": "refused: unspecified or this network"
     }
   ]
 }
