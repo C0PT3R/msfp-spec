@@ -2058,7 +2058,7 @@ listed here, with its source in [proposals/](../../proposals/README.md).
     follows the same prefix (section 11). Confirmed by the owner on 2026-11-17.
 21. A rotating server whose request under O gets an unsigned `404` tries a
     `hello` under N (section 12.4); repeated `rotate`s carry newly dated
-    statements.
+    statements. Confirmed by the owner on 2026-11-17.
 22. Core 1 is used only when both servers' addresses are `https`; until
     then a pairing stays in core 0, and the `address` member of `hello` is
     read in core 0 between servers that list core 1, so that `http`
