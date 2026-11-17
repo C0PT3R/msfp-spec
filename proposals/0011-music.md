@@ -1,7 +1,7 @@
 # Proposal 11: Music
 
-Status: Proposed (2026-11-17). Decided so far: identity (section 1) and
-descriptions (section 2), adopted 2026-11-17.
+Status: Proposed (2026-11-17). Decided so far: identity (section 1),
+descriptions (section 2) and pictures (section 4), adopted 2026-11-17.
 Touches: [catalog](../spec/v1/catalog.md) sections 1, 3 and 4,
 [playback](../spec/v1/playback.md) sections 2 and 6, and
 [media](../spec/v1/media.md) section 3; adds a part, `music`
@@ -129,9 +129,12 @@ As in catalog section 4.4, `ids` never replaces the key.
 
 ### 4. Pictures
 
-Album art comes from the **Cover Art Archive**, by release MBID
-(`mbrelease`), fetched by the viewer's server itself, as it fetches
-TMDB's pictures for films. The owning server sends no picture. An album
+Album art comes from the **Cover Art Archive**, fetched by the viewer's
+server itself, as it fetches TMDB's pictures for films: by the album key's
+release group (`/release-group/<mbid>/front`), or by the release in
+`mbrelease` when the edition's own cover is wanted. Sizes 250, 500 and
+1200 pixels exist. The Archive states no rate limit (checked 2026-11-17)
+but may answer `503`; a viewer's server caches each cover. The owning server sends no picture. An album
 whose release has no art there shows none.
 
 ### 5. Playing a track
