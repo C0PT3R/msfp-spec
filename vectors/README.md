@@ -14,9 +14,10 @@ The media and destination cases were checked against Overfin's own
 sanitizer and checks on 2026-11-16: they agree, except for the HLS cases
 that [media section 3.1](../spec/v1/media.md#31-hls-playlists) lists in
 its Overfin note.
-Overfin's code doesn't implement version 1 yet, nor the stricter rules of
-version 0's corrections. Those files come from the generator alone: an
-independent program written from the specification. When an
+Overfin's code doesn't implement version 1 yet. Since 2026-11-16 it
+follows the stricter rules of version 0's corrections, and runs every case
+of v0-strict.json through its own checks. Those files still come from the
+generator alone: an independent program written from the specification. When an
 implementation disagrees with them, check the specification first; either
 may be wrong, and a report is welcome.
 

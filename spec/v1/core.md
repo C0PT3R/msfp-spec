@@ -1030,6 +1030,12 @@ answers aren't signed either. Their statuses:
 A body that comes with a refusal is not read beyond a few kilobytes, and
 never shown.
 
+**Overfin.** Overfin speaks version 0, which says nothing of this. As the
+viewer's server, it answers a peer's `404` with a `404` to the viewer, for
+every kind of fetch, and doesn't end the playback itself: the player
+stops on its own, and the playback ends by `stop` or, on both sides, by
+expiry (playback section 6.3).
+
 ## 9. The core's calls
 
 ### 9.1 pair
