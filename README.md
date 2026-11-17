@@ -74,6 +74,8 @@ library only. Its code is under the MIT license.
 
 - [Overfin](https://github.com/Overfin/server), the first one. It speaks
   version 0.
+- [jellyfin-plugin-msfp](https://github.com/C0PT3R/jellyfin-plugin-msfp),
+  a Jellyfin plugin in C#. It speaks version 0.
 
 Questions and gaps in the specification are welcome as issues.
 
