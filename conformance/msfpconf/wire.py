@@ -294,6 +294,13 @@ class CertificateRefused(Exception):
 
 # ---- A call to the target --------------------------------------------------
 
+def content_coding(headers):
+    """The answer's Content-Encoding when it is other than identity, else ""."""
+    codings = [v.strip().lower() for k, v in headers if k.lower() == "content-encoding"]
+    coded = [x for v in codings for x in (s.strip() for s in v.split(",")) if x and x != "identity"]
+    return ", ".join(coded)
+
+
 class Answer:
     def __init__(self, status, headers, body, signed, sig_header_count, nonce, leaf_pin=None, trusted=None):
         self.status, self.headers, self.body = status, headers, body
@@ -302,6 +309,11 @@ class Answer:
         self.nonce = nonce
         self.leaf_pin, self.trusted = leaf_pin, trusted
         self._json, self._json_error = None, None
+        # A content coding other than identity: such an answer counts as
+        # badly signed, whatever its signature (section 3).
+        self.coding = content_coding(headers)
+        if self.coding:
+            self.signed = False
 
     @property
     def json(self):

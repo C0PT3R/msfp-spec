@@ -1,7 +1,8 @@
 # MSFP version 0 conformance suite
 
 A program that plays a peer against a server you run, and checks that
-server against [spec/v0.md](../spec/v0.md) as corrected on 2026-11-16.
+server against [spec/v0.md](../spec/v0.md) as corrected on 2026-11-16 and
+2026-11-17.
 It pairs with the server from a pairing code, then checks the pairing,
 `hello` in its states, signatures both ways, the strict forms of section
 2.1, replay and nonces, `libraries` and `titles` (whole, changes, paging,
@@ -112,6 +113,7 @@ needs no server.
 | G5 | 6.2 | the target is taken as received: a percent-encoded path signed in its decoded form fails |
 | G6 | 3 | no `Content-Type`, or `text/plain`: refused, unsigned (`404`; Overfin's `415` is its version 0 note) |
 | G7 | 3 | a cross-site `Sec-Fetch-Site`: refused, unsigned |
+| G8 | 3, 6.3 | a `hello` sent with `Accept-Encoding: gzip`: `200` signed, with no `Content-Encoding` (any answer with a content coding counts as unsigned) |
 | N1 | 6.5 | a request replayed with its nonce: the unsigned `404` |
 | N2 | 6.5 | a nonce used again in a new, validly signed request: the unsigned `404` |
 | N3 | 6.3 | the answer's signature is bound to the request's nonce |

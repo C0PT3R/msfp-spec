@@ -635,6 +635,16 @@ class Suite:
             return "unsigned %d" % a.status
         self.check("G7", "3", "a cross-site Sec-Fetch-Site is refused, unsigned", cross_site)
 
+        def no_content_coding():
+            a = c.raw(p, body, h() + [("Accept-Encoding", "gzip, deflate, br")])
+            if a.coding:
+                raise Fail("asked with Accept-Encoding: gzip, the answer came with Content-Encoding: %s; "
+                           "a federation answer is sent uncoded, whatever Accept-Encoding says" % a.coding)
+            if not (a.status == 200 and a.signed):
+                raise Fail(a.short())
+            return "200 signed, no Content-Encoding"
+        self.check("G8", "3, 6.3", "an answer carries no content coding, even to a request with Accept-Encoding: gzip", no_content_coding)
+
     def replay_rules(self):
         c = self.client
         p = FED + "hello"
