@@ -2050,7 +2050,8 @@ listed here, with its source in [proposals/](../../proposals/README.md).
     `-` when there is no `Content-Type` (section 6.3). Confirmed by the
     owner on 2026-11-17.
 18. `revoke` is answered `200` `{"state":"suspended"}`; `rotate`'s and
-    `revoke`'s bad bodies get `400` `invalid-request` (sections 9.3, 9.4).
+    `revoke`'s bad bodies get `400` `invalid-request` (sections 9.3, 9.4). Confirmed by the
+    owner on 2026-11-17.
 19. A suspended peer is a flag beside the state, not a fifth state; it may
     still send `revoke` (section 12.6).
 20. `base` must end in `/api/v1/federation/`, and the media's stream root
