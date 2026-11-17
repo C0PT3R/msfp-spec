@@ -22,6 +22,7 @@ read or assumed, it says so.
 | 7 | [HTTPS only](0007-https-only.md): drop plain `http`, now that pins allow self-signed certificates | Adopted |
 | 8 | [Changing a server's address](0008-address-changes.md): a signed, confirmed address change in `hello` | Adopted |
 | 9 | [Private servers](0009-private-servers.md): a server that can't be called says so in `hello` and pulls rotation and revocation (option 1); a reverse connection, the optional part `transport` (option 2) | Proposed |
+| 10 | [The mesh](0010-mesh.md): servers learn that others exist (signed, expiring announcements: key, name, address or "can't be called", versions), never catalogs; knowing is not trusting; spread through pairings (option a), open gossip (b) or a DHT (c); asks that end in an ordinary pairing; optional vouching; the optional part `mesh` | Proposed |
 | – | [Clarifications](clarifications.md): 34 small fixes that need only a "yes" | Accepted, all 34 |
 
 Some proposals lean on others; each says how it reads without them:
@@ -33,3 +34,7 @@ Some proposals lean on others; each says how it reads without them:
 - 7's migration of existing pairings uses 8.
 - 9's option 2 uses option 1's `inbound` member, codes and address rule,
   and 4's parts; its pulled rotation and revocation use 3.
+- 10 uses 4's parts and 1's Ed25519 rules for its statements, carries 3's
+  rotation and revocation statements, applies 8's address confirmation to
+  addresses learnt from the mesh, and 9's `inbound` member when 9 is
+  adopted.
