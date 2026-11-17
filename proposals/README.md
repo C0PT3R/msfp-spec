@@ -21,7 +21,7 @@ read or assumed, it says so.
 | 6 | [Request signatures vs RFC 9421](0006-request-signatures-vs-rfc9421.md): a comparison; recommends keeping MSFP's scheme | Adopted: own scheme, plus Content-Type |
 | 7 | [HTTPS only](0007-https-only.md): drop plain `http`, now that pins allow self-signed certificates | Adopted |
 | 8 | [Changing a server's address](0008-address-changes.md): a signed, confirmed address change in `hello` | Adopted |
-| 9 | [Private servers](0009-private-servers.md): a server that can't be called says so in `hello` and pulls rotation and revocation (option 1); a reverse connection, the optional part `transport` (option 2) | Proposed |
+| 9 | [Private servers](0009-private-servers.md): a server that can't be called says so in `hello` and pulls rotation and revocation (option 1); a reverse connection, the optional part `transport` (option 2) | Option 1 adopted; option 2 set aside |
 | 10 | [The mesh](0010-mesh.md): servers learn that others exist (signed, expiring announcements: key, name, address or "can't be called", versions), never catalogs; knowing is not trusting; spread through pairings (option a), open gossip (b) or a DHT (c); asks that end in an ordinary pairing; optional vouching; the optional part `mesh` | Proposed |
 | – | [Clarifications](clarifications.md): 34 small fixes that need only a "yes" | Accepted, all 34 |
 

@@ -1,6 +1,6 @@
 # Proposal 9: Private servers
 
-Status: Proposed (2026-11-16).
+Status: Option 1 adopted (2026-11-16); option 2 (the reverse connection) set aside for now. Open points still open.
 Touches: sections 3, 5.2, 7.1, 7.4, 9.1, 9.2, 11, 12.4, 12.6 and 13.2 of
 [spec/v1/core.md](../spec/v1/core.md), and sections 1, 2 and 4 of
 [spec/v1/media.md](../spec/v1/media.md); option 2 adds a part.
