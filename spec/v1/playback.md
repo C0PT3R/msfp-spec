@@ -97,8 +97,9 @@ listed above, lowercase, each once, sorted; `maxHeight` stepped down to
   said about `audioCodecs`: AAC only. Nothing said about `hdr`: standard
   range only.
 
-**Overfin.** Overfin lowercases each entry before comparing it, so
-`H264` counts as `h264`; a correct sender writes lowercase anyway.
+**Overfin.** Since 2026-11-16, Overfin compares each entry a peer sends
+exactly, so `H264` is an unknown entry (before, it lowercased them).
+Its own apps' API, which is not MSFP, still lowercases.
 
 ### 2.2 What the owning server does
 
