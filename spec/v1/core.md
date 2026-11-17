@@ -2053,7 +2053,7 @@ listed here, with its source in [proposals/](../../proposals/README.md).
     `revoke`'s bad bodies get `400` `invalid-request` (sections 9.3, 9.4). Confirmed by the
     owner on 2026-11-17.
 19. A suspended peer is a flag beside the state, not a fifth state; it may
-    still send `revoke` (section 12.6).
+    still send `revoke` (section 12.6). Confirmed by the owner on 2026-11-17.
 20. `base` must end in `/api/v1/federation/`, and the media's stream root
     follows the same prefix (section 11).
 21. A rotating server whose request under O gets an unsigned `404` tries a
