@@ -2062,7 +2062,7 @@ listed here, with its source in [proposals/](../../proposals/README.md).
 22. Core 1 is used only when both servers' addresses are `https`; until
     then a pairing stays in core 0, and the `address` member of `hello` is
     read in core 0 between servers that list core 1, so that `http`
-    pairings can move (sections 10.3 and 16.5).
+    pairings can move (sections 10.3 and 16.5). Confirmed by the owner on 2026-11-17.
 23. Section 3.3 refuses the ranges listed, by default, and lets an
     operator allow loopback only. (Whether NAT64's `64:ff9b::/96` and
     6to4's `2002::/16` are judged by the IPv4 address they carry was open
