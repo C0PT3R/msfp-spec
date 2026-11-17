@@ -987,14 +987,19 @@ of these:
    below. Never a hang, a dropped connection, or an answer that gets
    slower without bound.
 
-The numbers are each implementation's. Suggested defaults, where Overfin
-has a value:
+The numbers are each implementation's. Suggested defaults, Overfin's
+(the Jellyfin plugin uses the same call rates and requests at once); a
+server sets its own to fit its machine:
 
 | Limit | Suggested default |
 |-------|-------------------|
 | Request body | 64 KiB (section 3) |
 | Nonces remembered | 100,000 of known peers, 1,000 of strangers (section 6.5) |
 | Requests per network address, before any signature check | 50 a second, in bursts of up to 400 |
+| Calls per peer (item 1) | 20 a second, in bursts of up to 200 |
+| Calls of all peers together (item 2) | 200 a second, in bursts of up to 2,000 |
+| Requests at once (item 3) | 8 per peer and 64 in all, each with a queue twice as long, waited in for 5 seconds at most |
+| `play` per peer (item 4) | 30 a minute, in bursts of up to 20 |
 | Playbacks per pairing | 2 streams, 1 of them transcoded ([playback section 6](playback.md#6-what-the-owning-server-enforces)) |
 | Subtitle and playlist reads at once, on the viewer's server | 4 ([media section 2](media.md#2-requests)) |
 | Preview sheet reads at once, on the viewer's server | 4 ([media section 3](media.md#3-what-is-fetched)) |
@@ -2072,5 +2077,7 @@ listed here, with its source in [proposals/](../../proposals/README.md).
     limit, `503` `server-busy` for a full server, and `retryAfter` in the
     signed body rather than in the unsigned header alone. Confirmed by the owner on
     2026-11-17.
-25. Section 8.3 suggests numbers only where Overfin has one. A per-peer
-    call rate, a global one and a `play` rate have no suggested default.
+25. Section 8.3 suggests a number for every limit it requires, the
+    values Overfin uses. Confirmed by the owner on
+    2026-11-17 (before, the per-peer, global, concurrent and `play`
+    limits had none).
