@@ -2047,7 +2047,8 @@ listed here, with its source in [proposals/](../../proposals/README.md).
 
 17. The answer message's media type is a fifth line, before the body
     hash, written as type/subtype in lowercase without parameters, and
-    `-` when there is no `Content-Type` (section 6.3).
+    `-` when there is no `Content-Type` (section 6.3). Confirmed by the
+    owner on 2026-11-17.
 18. `revoke` is answered `200` `{"state":"suspended"}`; `rotate`'s and
     `revoke`'s bad bodies get `400` `invalid-request` (sections 9.3, 9.4).
 19. A suspended peer is a flag beside the state, not a fifth state; it may
