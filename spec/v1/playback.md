@@ -313,11 +313,11 @@ always says what plays (`versionId`, `audioTrack`, `subtitleTrack`), and
 the viewer's server shows that, not what it asked for.
 
 **Overfin.** Overfin speaks version 0, whose `play` has no `versionId`:
-it chooses the copy by `audioLanguage`, then the first. An `audioTrack`
-that isn't a track of the copy is passed to its media server as is,
-whose answer then decides; Overfin doesn't check it first. A
-`subtitleTrack` that isn't a track of the copy is echoed in the answer,
-and fetching its parts gets `404`. The rest is as above.
+it chooses the copy by `audioLanguage`, then the first. Since
+2026-11-16, an `audioTrack` or `subtitleTrack` that isn't a track of the
+copy counts as absent, as above (before, the audio track was passed to
+its media server as is, and the subtitle track echoed). The rest is as
+above.
 
 ## 3. progress
 
