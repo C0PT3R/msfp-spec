@@ -632,6 +632,9 @@ it; the operator types none. Example (from
 - A peer refuses `inbound: false` with any other address, as a bad body
   (sections 9.1 and 9.2). The address checked is the message's `address`
   member, or, in a `hello` without one, the address the peer stores.
+  A `hello` answer carrying `inbound: false` with any other address
+  fails, as a badly signed answer does (section 6.6), and changes
+  nothing.
 - A server that becomes reachable announces its real address by an
   address change (section 13), in a `hello` without `inbound: false`.
 
@@ -2427,7 +2430,7 @@ made optional parts on 2026-11-17, [proposal 11](../../proposals/0011-music.md))
     of section 10.2 lists `music` too. B's answer in section 17.1 is
     unchanged: it lists `catalog` only, so B shares no titles with A.
 
-**Choices this draft made, to confirm (proposal 9, 2026-11-17)** (when
+**Choices this draft made, confirmed by the owner on 2026-11-17 (proposal 9)** (when
 option 1 of [proposal 9](../../proposals/0009-private-servers.md) was
 written in)
 
@@ -2456,3 +2459,5 @@ written in)
 35. When a peer's `inbound` turns `true` in a `hello` that also names a
     new address, the confirming `hello` goes to the new address, and
     confirms both (sections 7.5 and 13.2).
+36. A `hello` answer with `inbound: false` and an address of another form
+    fails, as a badly signed answer does (section 5.2).
