@@ -173,7 +173,8 @@ identity (subgroup).
   −(2^53 − 1) to 2^53 − 1.
 - `null` is not a valid value for any MSFP member. A sender leaves an
   empty optional member out, or sends `[]` or `""` where the field says
-  so. A receiver refuses `null` as an invalid value. (Toward a peer that
+  so. A receiver refuses `null` in a request as an invalid value; in an
+  answer, `null` is a member of the wrong type (below). (Toward a peer that
   speaks version 0, see section 16.6.)
 - A member of another JSON type than its field says is an invalid value.
   That is for requests. In an answer, a member of the wrong type inside a
