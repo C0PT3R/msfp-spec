@@ -186,6 +186,31 @@ func verifyAll(read func(string) []byte) []error {
 		}
 	}
 
+	mf := load("v1/music.json")
+	var libs []string
+	for _, l := range mf["libraries"].([]any) {
+		libs = append(libs, l.(string))
+	}
+	for _, v := range mf["keys"].([]any) {
+		x := v.(obj)
+		kind, err := checkMusicKey(str(x, "text"))
+		if (err == nil) != (x["valid"] == true) || kind != str(x, "kind") {
+			bad("v1/music.json: key %q: the file says valid=%v, kind %q; the rules give %v, %q", str(x, "text"), x["valid"], str(x, "kind"), err, kind)
+		}
+	}
+	for _, v := range mf["titles"].([]any) {
+		x := v.(obj)
+		got, err := keepMusicTitle([]byte(str(x, "text")), libs)
+		if (err == nil) != (x["valid"] == true) || string(got) != str(x, "output") {
+			bad("v1/music.json: title %q: the file says valid=%v, output %q; the rules give %v, %q", str(x, "name"), x["valid"], str(x, "output"), err, got)
+		}
+		if err == nil {
+			if e := checkIJSON(got); e != nil {
+				bad("v1/music.json: title %q: output: %v", str(x, "name"), e)
+			}
+		}
+	}
+
 	// vectors/v1/
 	keys := load("v1/keys.json")
 	checkKeys("v1/keys.json", keys["keys"].(obj), true)
