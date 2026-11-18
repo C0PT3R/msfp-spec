@@ -1401,7 +1401,11 @@ What the caller does with the answer:
 
 The one-way members are ignored where the table doesn't put them:
 `knownKey` in an answer, `revocation` and `callsFailed` in a request. A
-request's `rotation` other than `pending` or `refused` is ignored too.
+request's `rotation` other than `pending` or `refused` is ignored too. The
+main table's members are type-checked in every request; `knownKey` and
+`rotation` only in requests from a server that can't be called, where
+one of the wrong type is refused like any other member, and from any
+other caller they are ignored, whatever their value.
 - `200` with `paired`: as the receiver would do with `paired` above.
 - signed `404`: the peer doesn't know the caller, or has suspended its
   key. The caller marks it `gone`.
