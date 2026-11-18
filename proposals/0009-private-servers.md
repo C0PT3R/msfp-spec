@@ -1,6 +1,6 @@
 # Proposal 9: Private servers
 
-Status: Option 1 adopted (2026-11-16); option 2 (the reverse connection) set aside for now. Open points: 1 and 2 decided, 4 to 7 and 9 set aside with option 2 (2026-11-17); 3 and 8 still open.
+Status: Option 1 adopted (2026-11-16); option 2 (the reverse connection) set aside for now. Open points: 1, 2 and 3 decided, 4 to 7 and 9 set aside with option 2 (2026-11-17); 8 still open.
 Touches: sections 3, 5.2, 7.1, 7.4, 9.1, 9.2, 11, 12.4, 12.6 and 13.2 of
 [spec/v1/core.md](../spec/v1/core.md), and sections 1, 2 and 4 of
 [spec/v1/media.md](../spec/v1/media.md); option 2 adds a part.
@@ -731,7 +731,12 @@ What changes:
    setting.
 3. **The address of a server that can't be called.** Whether section 5.2
    should reserve the `https://msfp-<26>.invalid` form, or only recommend
-   it.
+   it. **Decided 2026-11-17: required.** A server that sends
+   `inbound: false` must have an address of that form, made by the
+   implementation (the operator types none), and a peer refuses
+   `inbound: false` with any other address, as a bad body. A server that
+   becomes reachable announces its real address by an address change
+   (proposal 8). Section 1.3, item 3 changes from "recommended" to this.
 4. **The upgrade's form** *Set aside with option 2 (2026-11-17).*: an `Upgrade` token of MSFP's own (this draft),
    WebSocket (alternative 6), or HTTP/2's extended `CONNECT` (RFC 8441),
    which works on a Q reached over HTTP/2 but is less supported. And `GET`
