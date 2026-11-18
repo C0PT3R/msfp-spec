@@ -9,7 +9,11 @@ pairing code, signed requests and answers, pairing and its states, key
 rotation and revocation, address changes, and how versions are agreed.
 The parts build on it: [catalog](catalog.md) (libraries and titles),
 [playback](playback.md) (starting and stopping a playback) and
-[media](media.md) (what the stream URLs serve).
+[media](media.md) (what the stream URLs serve) hold the shared
+mechanics; the content parts, [video](video.md) (films and series by
+TMDB) and [music](music.md) (artists, albums and tracks by MusicBrainz),
+say what the titles are and how they play. Every content part is
+optional.
 
 The words "must", "must not" and "should" carry their usual meaning in
 specifications. Every example uses `example.org` names and RFC 5737
@@ -59,8 +63,9 @@ each trusts only the servers it paired with.
   It holds the maker's address, public key, a one-time secret and an
   expiry time (section 5).
 - **Core**: this document. **Part**: a separately versioned set of calls
-  and rules built on the core: `catalog`, `playback`, `media`
-  (section 10).
+  and rules built on the core: `catalog`, `playback`, `media`, `video`,
+  `music` (section 10). **Content part**: a part that names one kind of
+  content's titles and says how they play: `video` and `music`.
 - **Current key**: the key a peer knows a server by now. It may change by
   a rotation (section 12).
 - **Next key commitment**: SHA-256 of a public key a server has made but
@@ -171,7 +176,9 @@ identity (subgroup).
   That is for requests. In an answer, a member of the wrong type inside a
   list skips its entry, or counts as absent, and one at the top of the
   answer fails the answer, as each call's section says
-  ([catalog](catalog.md) sections 2.2 and 3.3).
+  ([catalog](catalog.md) sections 2.2 and 3.3, and the content parts'
+  titles: [video section 3.1](video.md#31-what-the-caller-keeps),
+  [music section 3.2](music.md#32-what-the-caller-keeps)).
 - String values are compared and signed after JSON decoding. Since
   addresses, keys and IDs are ASCII, a sender has no reason to escape any
   of them.
@@ -199,7 +206,9 @@ case-sensitive and has one case:
 - enumerated values (`paired`, `movies`, `direct`, `hls`…): exactly as
   listed;
 - part names: lowercase, as listed;
-- title keys: exactly as [catalog](catalog.md#4-title-keys) writes them;
+- title keys: exactly as the content parts write them
+  ([video](video.md#4-title-keys), [music](music.md#2-title-keys);
+  [catalog](catalog.md#4-title-keys) gives the general rules);
 - language tags: the case conventions of BCP 47 (RFC 5646 section
   2.1.1): language lowercase, script title case, region uppercase
   (`fr-CA`, `zh-Hant-TW`). Receivers compare tags case-insensitively, so
@@ -1230,7 +1239,7 @@ call for a `hello` (section 10.4).
 Example, from [vectors/v1/exchanges.json](../../vectors/v1/exchanges.json):
 
 ```json
-{"state":"paired","core":[0,1],"parts":{"catalog":[1],"playback":[1],"media":[1]},"certificates":["JN-hf1COiASAAUsiYeHXMNVvNnxYR2dKYnBT2Zx_6Fo"],"address":"https://a.example.org"}
+{"state":"paired","core":[0,1],"parts":{"catalog":[1],"playback":[1],"media":[1],"video":[1]},"certificates":["JN-hf1COiASAAUsiYeHXMNVvNnxYR2dKYnBT2Zx_6Fo"],"address":"https://a.example.org"}
 ```
 
 ### 9.3 rotate
@@ -1285,20 +1294,34 @@ Every answer is signed with the receiver's own key.
 | Name | What it holds | Calls | Needs |
 |------|---------------|-------|-------|
 | core | encodings, transport, keys, the code, signatures, pairing, states, rotation, addresses, versions | `pair`, `hello`, `rotate`, `revoke` | — |
-| `catalog` | libraries, titles, title keys | `libraries`, `titles` | the core |
+| `catalog` | libraries, titles, the general rules of title keys | `libraries`, `titles` | the core |
 | `playback` | starting, keeping and stopping a playback; limits | `play`, `progress`, `stop` | `catalog` and `media` |
-| `media` | what the stream URLs serve: HLS, file, subtitles, PGS, previews | plain `GET`s under the stream root | the core |
+| `media` | what the stream URLs serve: HLS, the file | plain `GET`s under the stream root | the core |
+| `video` | films and series by TMDB: title keys, episode order, subtitles, PGS, WebVTT, skip markers, previews | none: it adds to `titles`, `play` and the media | `catalog`, `playback` and `media` |
+| `music` | artists, albums and tracks by MusicBrainz: keys, descriptions, cover art, audio-only playback | none: it adds to `titles`, `play` and `limits` | `catalog`, `playback` and `media` |
 
 The core and each part have their own version, an integer. Version 0 of
 each is [spec/v0.md](../v0.md) (as corrected): the core is its sections 2
 to 8, `catalog` its sections 9.3, 9.4 and 11, `playback` its sections 9.5
-to 9.7 and 12, `media` its section 10. Version 1 of each is this document
-and [catalog.md](catalog.md), [playback.md](playback.md) and
-[media.md](media.md).
+to 9.7 and 12, `media` its section 10. `video` and `music` have no
+version 0: version 0's `catalog` and `playback` hold films and series
+themselves (section 16). Version 1 of each is this document and
+[catalog.md](catalog.md), [playback.md](playback.md),
+[media.md](media.md), [video.md](video.md) and [music.md](music.md).
 
 `playback` plays title keys from `titles` and points at media URLs, so it
 needs both other parts. The `limits` member of `libraries` belongs to
 `playback`: a server sends it only to a peer it speaks `playback` with.
+
+The content parts say what titles are, which of them `play` takes and
+what media they add, so each needs all three. `video` 1 and `music` 1
+don't work with version 0 of any of the three: with one of them at
+version 0, they are off. Every content part is optional: a server lists
+in `hello` the ones it handles, and two servers share only titles of the
+content parts both list
+([catalog section 5](catalog.md#5-what-is-shared)). A receiver skips
+keys of a content part it doesn't speak
+([catalog section 3.3](catalog.md#33-what-the-caller-keeps-of-each-title)).
 
 ### 10.2 Announcing versions
 
@@ -1306,12 +1329,13 @@ Versions travel in `hello`, request and answer, in `core` and `parts`
 (section 9.2):
 
 ```json
-{"state":"paired","core":[1],"parts":{"catalog":[1],"playback":[1],"media":[1,2]}}
+{"state":"paired","core":[1],"parts":{"catalog":[1],"playback":[1],"media":[1,2],"video":[1],"music":[1]}}
 ```
 
 - **Absent means version 0.** A `hello` without `core` means `[0]`.
-  Without `parts`, it means `catalog`, `playback` and `media` at `[0]`.
-  So a version 0 peer is understood as speaking all of version 0.
+  Without `parts`, it means `catalog`, `playback` and `media` at `[0]`,
+  which share films and series as version 0 says (section 16). So a
+  version 0 peer is understood as speaking all of version 0.
 - **Part names** are lowercase ASCII letters and `-`, at most 32
   characters. Unknown names are ignored.
 - **Lists.** At most 8 versions each, each a non-negative integer. A
@@ -1375,7 +1399,7 @@ A server may serve, at `GET /.well-known/msfp` on its address (RFC 8615),
 an `application/json` document:
 
 ```json
-{"core":[1],"parts":{"catalog":[1],"playback":[1],"media":[1]},"base":"/srv/media/api/v1/federation/"}
+{"core":[1],"parts":{"catalog":[1],"playback":[1],"media":[1],"video":[1]},"base":"/srv/media/api/v1/federation/"}
 ```
 
 | Field | Type | Content |
@@ -1793,7 +1817,9 @@ key, states, offers, wants and limits stay.
 
 The pairing has no next key commitment yet: it gets one by trust on first
 use (section 12.5), or by pairing again. Parts move on their own: each
-uses the highest version both list (section 10.3).
+uses the highest version both list (section 10.3). Once `catalog` and
+`playback` are at version 1, films and series are shared only when both
+servers list `video`.
 
 ### 16.5 `http` pairings during the transition
 
@@ -1828,7 +1854,9 @@ Toward a peer whose chosen core is 0, a version 1 server follows
 - **No address change**, unless the peer lists core 1 (section 16.5).
 - **Parts at version 0.** Libraries, titles, playback and media follow
   v0 sections 9.3 to 12, with version 0's title keys (no `with`, no
-  `ids`) and version 0's answer message (no media type).
+  `ids`) and version 0's answer message (no media type). Version 0's
+  `catalog` and `playback` correspond to `catalog`, `playback`, `media`
+  and `video` in version 1: films and series only, no music.
 
 ### 16.7 Choosing libraries again
 
@@ -1864,7 +1892,8 @@ implementation speaks version 1 yet. The generator also checks them.
 | `revocation.json` | A revokes "a": the statement, its signature, and the `revoke` exchange |
 | `strict.json` | addresses and codes with their verdicts under core 1 (`https` only) |
 | `strict.json`, `destinations` | IP addresses a server connects to for a peer by default, or refuses (section 3.3) |
-| `media.json` | WebVTT parts and what rebuilding them gives, HLS playlists and PGS parts, with their verdicts ([media section 3](media.md#3-what-is-fetched)) |
+| `media.json` | WebVTT parts and what rebuilding them gives, HLS playlists and PGS parts, with their verdicts ([media section 3](media.md#3-what-is-fetched), [video section 6](video.md#6-media)) |
+| `music.json` | music title keys and music titles, with their verdicts and what the caller keeps of each title ([music sections 2 and 3](music.md#2-title-keys)) |
 
 The cases of [vectors/v0-strict.json](../../vectors/v0-strict.json)
 (keys, signatures, base64url, dates, integers, JSON) hold for core 1 too.
@@ -1896,13 +1925,13 @@ Content-Type: application/json
 MSFP-Key: A6EHv_POEL4dcN0Y50vAmWfk1jCbpQ1fHdyGZBJVMbg
 MSFP-Date: 1800000060
 MSFP-Nonce: cHFyc3R1dnd4eXp7fH1-fw
-MSFP-Signature: UQYAmgfgxhYeAuzKgxBsRSlh_FezzwFuLoSr-1rAaZiBrU3i05X_7XGNhrvOTK4hK5r3-5ruNEeaHfIMguF4Dw
+MSFP-Signature: cDZNDBT3Prl8nRADnFRvmJECD80POFoROrx6bCs9bx2fhbPmrcoMSJxyyx2776hgaspFgbeKQ7Z4wobnyF0ZBQ
 ```
 
 Body (exact bytes, no trailing line feed):
 
 ```
-{"state":"paired","core":[0,1],"parts":{"catalog":[1],"playback":[1],"media":[1]},"certificates":["JN-hf1COiASAAUsiYeHXMNVvNnxYR2dKYnBT2Zx_6Fo"],"address":"https://a.example.org"}
+{"state":"paired","core":[0,1],"parts":{"catalog":[1],"playback":[1],"media":[1],"video":[1]},"certificates":["JN-hf1COiASAAUsiYeHXMNVvNnxYR2dKYnBT2Zx_6Fo"],"address":"https://a.example.org"}
 ```
 
 Signed message:
@@ -1914,7 +1943,7 @@ POST
 /api/v1/federation/hello
 1800000060
 cHFyc3R1dnd4eXp7fH1-fw
-88ff4600620f9c7d34511e67286727cfe6ed68e2840d2b0121a20a48a52902a6
+f399f7c9da2c66871dce32fa1a06350e36d6526e14763f788b747728f39bf09a
 ```
 
 B answers `200`, `Content-Type: application/json`, with the body:
@@ -1924,7 +1953,9 @@ B answers `200`, `Content-Type: application/json`, with the body:
 ```
 
 B speaks `catalog` but not `playback` or `media`: between A and B,
-`catalog` 1 is on, `playback` and `media` are off. The signed message:
+`catalog` 1 is on, `playback` and `media` are off, and so is `video`,
+which needs them and which B doesn't list. B can list its libraries to
+A, and shares no titles. The signed message:
 
 ```
 msfp-1 response
@@ -2096,8 +2127,21 @@ the owner on 2026-11-17; they may still change as implementations show)
        schemes are identifier namespaces.
     2. Optional descriptions for video titles (name, year), as music
        titles carry ([proposal 11](../../proposals/0011-music.md), open
-       point 2), so that a viewer's server can list a peer's titles
-       without TMDB.
+       point 2, now [music open question 2](music.md#8-open-questions)
+       and [video open question 4](video.md#8-open-questions)), so that
+       a viewer's server can list a peer's titles without TMDB.
     3. Wikidata (CC0, a nonprofit) as a later neutral scheme: it links
        TMDB, IMDb, TVDB and MusicBrainz identifiers, a way out if TMDB
        ever became a problem.
+
+**Choices this draft made, to confirm** (when the content types were
+made optional parts on 2026-11-17, [proposal 11](../../proposals/0011-music.md))
+
+27. `video` and `music` have no version 0, and `video` 1 and `music` 1
+    are off when `catalog`, `playback` or `media` is at version 0
+    (section 10.1).
+    Between servers whose parts are at version 0, films and series are
+    shared as version 0 says, without `video` (section 16.6).
+28. The examples of sections 9.2, 11 and 17.1 list `video`; the example
+    of section 10.2 lists `music` too. B's answer in section 17.1 is
+    unchanged: it lists `catalog` only, so B shares no titles with A.
