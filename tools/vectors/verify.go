@@ -219,6 +219,24 @@ func verifyAll(read func(string) []byte) []error {
 		}
 	}
 
+	videoFile := load("v1/video.json")
+	var vlibs []string
+	for _, l := range videoFile["libraries"].([]any) {
+		vlibs = append(vlibs, l.(string))
+	}
+	for _, v := range videoFile["titles"].([]any) {
+		x := v.(obj)
+		got, err := keepVideoTitle([]byte(str(x, "text")), vlibs)
+		if (err == nil) != (x["valid"] == true) || string(got) != str(x, "output") {
+			bad("v1/video.json: title %q: the file says valid=%v, output %q; the rules give %v, %q", str(x, "name"), x["valid"], str(x, "output"), err, got)
+		}
+		if err == nil {
+			if e := checkIJSON(got); e != nil {
+				bad("v1/video.json: title %q: output: %v", str(x, "name"), e)
+			}
+		}
+	}
+
 	// vectors/v1/
 	keys := load("v1/keys.json")
 	checkKeys("v1/keys.json", keys["keys"].(obj), true)

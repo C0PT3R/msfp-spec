@@ -461,7 +461,7 @@ server). Defaults: the suggested numbers of
 | Kind | Fields |
 |------|--------|
 | common | `key`, `kind`, `library` (a public ID toward peers; the host's IDs from `Catalog`) |
-| `VideoTitle` | `audio`, `subtitles` (tags), `with` (episode keys), `ids` (`imdb`, `tvdb`…) |
+| `VideoTitle` | `audio`, `subtitles` (tags), `pictures` (the host's: each copy's `height` and `hdr`) or `video` (a peer's: the best copy's, stepped and cleaned), `with` (episode keys), `ids` (`imdb`, `tvdb`…) |
 | `MusicTitle` | `name`, `artists`, `artistNames`, `album`, `disc`, `number`, `year`, `durationMs`, `ids` (`mbrelease`, `mbtrack`, `isrc`) |
 
 The toolkit parses keys: `wire.ParseKey(s) -> TitleKey` (kind, scheme,

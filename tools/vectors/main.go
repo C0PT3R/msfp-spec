@@ -34,6 +34,7 @@ func main() {
 		{"v1/strict.json", genV1Strict},
 		{"v1/media.json", genV1Media},
 		{"v1/music.json", genV1Music},
+		{"v1/video.json", genV1Video},
 	}
 
 	failed := false

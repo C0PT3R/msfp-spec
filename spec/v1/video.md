@@ -53,13 +53,14 @@ A video title in `titles` carries the members of
 | `kind` | string | `movie`, `series`, `season` or `episode`: the kind its key names |
 | `audio` | array of string, optional | films and episodes only: its copies' audio languages, as language tags ([catalog section 3](catalog.md#3-titles)) |
 | `subtitles` | array of string, optional | films and episodes only: its copies' subtitle languages, as tags |
+| `video` | object, optional | films and episodes only: what its best copy offers for playing (section 3.2) |
 | `with` | array of string, optional | episodes only: the keys of the other episodes the same copy holds (section 4.2) |
 | `ids` | object, optional | films, series and episodes: other identifiers of the same title, by scheme (section 4.3) |
 
-Series and seasons carry no `audio` or `subtitles`.
+Series and seasons carry no `audio`, `subtitles` or `video`.
 
-A change of any of these members (a new `ids` value, say) is a change of
-the title: a changes reading sends it again
+A change of any of these members (a new `ids` value, or another `video`,
+say) is a change of the title: a changes reading sends it again
 ([catalog section 3.2](catalog.md#32-whole-list-or-changes)).
 
 ### 3.1 What the caller keeps
@@ -80,6 +81,73 @@ Members of the wrong JSON type ([core section 2.3](core.md#23-json)): an
 member that isn't an object, counts as absent; an entry of one of those
 lists that isn't a string is skipped alone, as is a value of `ids` that
 isn't in its scheme's form.
+
+Of `video` (section 3.2), for films and episodes only:
+
+- a `video` that isn't an object counts as absent, as does one whose
+  `height` is missing or isn't one of the six values of section 3.2 as an
+  integer ([core section 2.3](core.md#23-json): `1080.0` and `"1080"`
+  aren't), or whose `hdr` is present and isn't an array;
+- in `hdr`, an entry that isn't a string, or isn't one of `hdr10`, `hlg`
+  and `dv`, is skipped alone, as is a repeat; the caller keeps the rest
+  in that order (`hdr10`, `hlg`, `dv`), and an `hdr` left empty means
+  standard range;
+- other members of `video` are ignored;
+- the caller keeps `video` with the title, and shows it as it likes (it
+  describes the title, not a copy: no version is named).
+
+Test cases: `titles` in
+[vectors/v1/video.json](../../vectors/v1/video.json), each with what the
+caller keeps.
+
+### 3.2 The picture
+
+`video` says what a film's or an episode's picture looks like when it is
+played, so that a viewer's server can tell its people before they play
+it:
+
+| Field | Type | Content |
+|-------|------|---------|
+| `height` | integer | the picture's height, stepped: 480, 720, 1080, 1440, 2160 or 4320 |
+| `hdr` | array of string, optional | its high dynamic range formats: `hdr10`, `hlg`, `dv` (Dolby Vision); absent for standard range |
+
+Example: `"video": {"height": 2160, "hdr": ["hdr10", "dv"]}`.
+
+- **`height`** is the picture's height in pixels or, for a picture wider
+  than 16:9, the height of a 16:9 picture as wide (a 3840 × 1600 film
+  counts as 2160, a 1920 × 800 one as 1080). It is stepped down as
+  `maxHeight` is (section 5.1): to the greatest of the six values not
+  above it, and 480 below 480.
+- **`hdr`** lists each format the copy offers, each once, in that order:
+  `hdr10` for HDR10 and HDR10+, `hlg` for HLG, `dv` for Dolby Vision,
+  with its base layer's format besides (Dolby Vision on an HDR10 base is
+  `["hdr10", "dv"]`; on a standard-range base, `["dv"]`). A format
+  outside the list isn't sent; a copy whose only formats are outside it
+  is sent as standard range.
+- **The best copy.** With several copies, `video` describes the best:
+  the one `play` without `versionId` would choose for the most capable
+  device, one that plays every size and format. The best copy is the
+  one of the greatest height, then the one with HDR before one without,
+  then the one with more formats. The owning server lists the title's
+  copies in that order, best first, so that `play` without `versionId`
+  and without an `audioLanguage` that another copy matches plays it
+  ([playback section 2.6](playback.md#26-choosing-the-copy-and-the-tracks)).
+  A viewer whose language only a lesser copy has gets that copy.
+- A copy whose picture size the owning server doesn't know doesn't
+  count; when it knows none, it leaves `video` out.
+
+`video` says what the copy is, not how it reaches a viewer: a device
+that can't play it gets it converted
+([playback section 2.6](playback.md#26-choosing-the-copy-and-the-tracks)).
+
+**Overfin.** As an owning server, Overfin takes each copy's size and
+range from its file's video stream, as the media server reports it
+(`HDR10` and `HDR10Plus` are `hdr10`, `HLG` is `hlg`, the `DOVI` kinds
+`dv` with their base layer's format; a stream said only to be HDR,
+without its kind, is `hdr10`, which is what Overfin's index knows of its
+files today), and lists a title's copies best first. As a viewer's server, it keeps `video` with the peer's title and
+shows it on the title's page, with the languages the peer sent, when
+that peer is where the title would play from.
 
 ## 4. Title keys
 
@@ -580,3 +648,15 @@ out of `catalog`, `playback` and `media` on 2026-11-17):
    [vectors/v1/media.json](../../vectors/v1/media.json)**, a file named
    for the part that held these rules before, rather than in a new file
    for `video`.
+
+**Decided by the owner on 2026-11-18.**
+
+9. **What the picture looks like** (section 3.2). Films and episodes
+   carry an optional `video`, the stepped height and HDR formats of the
+   best copy, so that a viewer's server can describe a peer's title
+   before it is played. A change of it is a change of the title
+   ([catalog section 3.2](catalog.md#32-whole-list-or-changes)).
+   Its test cases, with the rest of what a caller keeps of a video title
+   (section 3.1), are in a file of their own,
+   [vectors/v1/video.json](../../vectors/v1/video.json); the WebVTT and
+   PGS cases stay where point 8 says.

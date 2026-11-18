@@ -200,7 +200,8 @@ that can't be called (`uncallableAddresses` in `strict.json`), the
 destinations a server
 refuses to connect to (`destinations` in `strict.json`), and WebVTT,
 HLS and PGS cases with their verdicts (`media.json`, media section 3 and
-video section 6), and music keys and titles with what a caller keeps
-(`music.json`, music sections 2 and 3). They come from the
+video section 6), music keys and titles with what a caller keeps
+(`music.json`, music sections 2 and 3), and video titles with what a
+caller keeps (`video.json`, video section 3). They come from the
 generator in [tools/vectors/](../../tools/vectors/), not from an
 implementation.

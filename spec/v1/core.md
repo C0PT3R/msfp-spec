@@ -2151,6 +2151,7 @@ generator also checks them.
 | `strict.json`, `helloVersions` | `hello` bodies and the versions a receiver keeps of them, or a bad body: `"core":[1,2.5]` lists core 1, and an unknown member or part of `null` is ignored (sections 2.3 and 10.2) |
 | `media.json` | WebVTT parts and what rebuilding them gives, HLS playlists and PGS parts, with their verdicts ([media section 3](media.md#3-what-is-fetched), [video section 6](video.md#6-media)) |
 | `music.json` | music title keys and music titles, with their verdicts and what the caller keeps of each title ([music sections 2 and 3](music.md#2-title-keys)) |
+| `video.json` | video titles, with their verdicts and what the caller keeps of each, `video` included ([video section 3](video.md#3-titles)) |
 
 The cases of [vectors/v0-strict.json](../../vectors/v0-strict.json)
 (keys, signatures, base64url, dates, integers, JSON) hold for core 1 too.

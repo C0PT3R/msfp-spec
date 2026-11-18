@@ -155,7 +155,7 @@ Titles(libraries: List<String>, after: String, limit: Int) -> TitlePage
   once.
 - Each `Title` carries its key, its kind, the host libraries that hold
   it, and the members of its content part: for video `audio`,
-  `subtitles`, `with`, `ids`; for music `name`, `artists`,
+  `subtitles`, `pictures`, `with`, `ids`; for music `name`, `artists`,
   `artistNames`, `album`, `disc`, `number`, `year`, `durationMs`, `ids`
   ([engine.md section 7](engine.md#7-data-objects)).
 - `TitlePage`: `titles`, and `more` (whether titles remain after the
@@ -195,6 +195,17 @@ Copies(key: String, libraries: List<String>) -> List<Copy>
   as tags, for choosing the copy).
 - For an episode inside a copy holding several (`with`), the copy that
   holds it.
+- Best first, as [video 3.2](../spec/v1/video.md#32-the-picture) ranks
+  copies (the greatest height, then HDR): `play` without a version
+  and without an `audioLanguage` another copy matches plays the first,
+  the one a title's `video` describes.
+
+**Pictures.** A film's or an episode's `pictures` are each copy's
+picture as its files say: `height` (pixels; for a picture wider than
+16:9, a 16:9 picture's as wide) and `hdr` (formats among `hdr10`, `hlg`,
+`dv`). A copy whose size isn't known is left out. The engine sends the
+best one, stepped, as the title's `video`; a peer's title carries that
+`video` instead.
 
 **Telling the engine.** The host calls `engine.CatalogChanged()` when its
 titles change (a hint: the engine refreshes its own log, if it keeps one)

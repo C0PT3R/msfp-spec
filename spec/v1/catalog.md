@@ -203,7 +203,7 @@ sent.
   `titles` (new or changed) and drops `gone`.
 - A title has changed when anything sent for it changes: its `kind` or
   `library`, or any member its content part adds (video's `audio`,
-  `subtitles`, `with` and `ids`, music's descriptions). A changes reading
+  `subtitles`, `video`, `with` and `ids`, music's descriptions). A changes reading
   sends it again, whole.
 - A receiver that sends no `seq` gets asked for the whole list every
   time.
