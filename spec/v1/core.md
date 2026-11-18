@@ -1496,6 +1496,10 @@ themselves (section 16). Version 1 of each is this document and
 [catalog.md](catalog.md), [playback.md](playback.md),
 [media.md](media.md), [video.md](video.md) and [music.md](music.md).
 
+Rotation and revocation (`rotate`, `revoke`, section 12) are part of
+the core, not a part: a server without them doesn't speak core 1. Every
+pairing must be able to cut off a stolen key.
+
 `playback` plays title keys from `titles` and points at media URLs, so it
 needs both other parts. The `limits` member of `libraries` belongs to
 `playback`: a server sends it only to a peer it speaks `playback` with.
