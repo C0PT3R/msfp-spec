@@ -12,7 +12,10 @@ content types become two optional parts, **`video`** (films and series by
 TMDB: keys, episode order, subtitles, PGS, skip markers, previews) and
 **`music`** (this proposal). A server lists the ones it handles in
 `hello`. Named by what identifies the titles, not "audio": audiobooks
-and podcasts would be parts of their own. Not yet written into spec/v1.
+and podcasts would be parts of their own. Written into spec/v1 on
+2026-11-17: [video.md](../spec/v1/video.md) and
+[music.md](../spec/v1/music.md); this proposal's open points are
+[music.md's open questions](../spec/v1/music.md#8-open-questions).
 Touches: [catalog](../spec/v1/catalog.md) sections 1, 3 and 4,
 [playback](../spec/v1/playback.md) sections 2 and 6, and
 [media](../spec/v1/media.md) section 3; adds a part, `music`

@@ -31,7 +31,7 @@ doesn't follow all of them yet; the specification says where.
 
 ## Version 1: a draft, not implemented yet
 
-[spec/v1/](spec/v1/README.md) is a core plus three parts, each with its
+[spec/v1/](spec/v1/README.md) is a core plus five parts, each with its
 own version, agreed per peer in `hello`:
 
 - [core](spec/v1/core.md): the strict rules, HTTPS only, MSFP's own labels
@@ -40,15 +40,20 @@ own version, agreed per peer in `hello`:
   discovery document (`/.well-known/msfp`, off by default), and how
   version 1 coexists with version 0;
 - [catalog](spec/v1/catalog.md): libraries and titles, opaque library
-  IDs, title identity (TMDB's numbering, several episodes in one copy,
-  IMDb and TVDB identifiers);
+  IDs, the general rules of title keys;
 - [playback](spec/v1/playback.md): starting, keeping and stopping a
-  playback, limits, seek-bar previews;
-- [media](spec/v1/media.md): what the stream URLs serve.
+  playback, limits;
+- [media](spec/v1/media.md): what the stream URLs serve;
+- two content parts, each optional:
+  [video](spec/v1/video.md), films and series by TMDB (TMDB's
+  numbering, several episodes in one copy, IMDb and TVDB identifiers,
+  subtitles, skip markers, seek-bar previews), and
+  [music](spec/v1/music.md), artists, albums and tracks by MusicBrainz.
 
-Nothing implements version 1 yet. It comes from the eight proposals and
-the clarifications in [proposals/](proposals/README.md), all adopted on
-2026-11-16.
+Nothing implements version 1 yet. It comes from proposals 1 to 8 and the
+clarifications in [proposals/](proposals/README.md), all adopted on
+2026-11-16, and proposal 11 (music, every content type optional), adopted
+on 2026-11-17.
 
 ## Test vectors
 
