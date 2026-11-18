@@ -561,7 +561,7 @@ Choices confirmed by the owner on 2026-11-17, moved here from
    and PGS fields beyond sizes (sections 6.3 and 6.4). An open PGS object
    at the end of a part isn't refused.
 
-**Choices this draft made, to confirm** (when the video rules were moved
+**Choices this draft made, confirmed by the owner on 2026-11-17** (when the video rules were moved
 out of `catalog`, `playback` and `media` on 2026-11-17):
 
 8. **The WebVTT and PGS vectors stay in

@@ -320,7 +320,7 @@ The open points of proposal 5 (TMDB's numbering, IMDb episode IDs, the
 cap of 16 for `with`) moved to [video](video.md#8-open-questions) with the
 rules they concern.
 
-**Choices this draft made, to confirm** (when the video rules were moved
+**Choices this draft made, confirmed by the owner on 2026-11-17** (when the video rules were moved
 out of this part on 2026-11-17):
 
 4. **Language tags stay defined here** (section 3), since `play`'s

@@ -478,7 +478,7 @@ Choices of the review round of 2026-11-16, confirmed on 2026-11-17:
    whether the transcode must also stop at the moment of the change is
    left to implementations.
 
-**Choices this draft made, to confirm** (when the video rules were moved
+**Choices this draft made, confirmed by the owner on 2026-11-17** (when the video rules were moved
 out of this part on 2026-11-17):
 
 6. **The track object stays here** (section 2.3), with its `forced` and

@@ -2158,7 +2158,7 @@ the owner on 2026-11-17; they may still change as implementations show)
        TMDB, IMDb, TVDB and MusicBrainz identifiers, a way out if TMDB
        ever became a problem.
 
-**Choices this draft made, to confirm** (when the content types were
+**Choices this draft made, confirmed by the owner on 2026-11-17** (when the content types were
 made optional parts on 2026-11-17, [proposal 11](../../proposals/0011-music.md))
 
 27. `video` and `music` have no version 0, and `video` 1 and `music` 1

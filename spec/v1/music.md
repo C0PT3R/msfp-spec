@@ -232,7 +232,7 @@ later versions of this part:
    "watched": nothing in this part shares it, as nothing shares it for
    video either.
 
-**Choices this draft made, to confirm** (when proposal 11 was written
+**Choices this draft made, confirmed by the owner on 2026-11-17** (when proposal 11 was written
 into this part on 2026-11-17):
 
 8. **A title without a name is skipped** (section 3.2). The proposal

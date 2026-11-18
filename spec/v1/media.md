@@ -315,7 +315,7 @@ Choices of the review round of 2026-11-16, all confirmed by the owner on
 The choices on timestamp tags in WebVTT and on checks left to the player
 moved to [video](video.md#8-open-questions) with the WebVTT and PGS rules.
 
-**Choices this draft made, to confirm** (when the video rules were moved
+**Choices this draft made, confirmed by the owner on 2026-11-17** (when the video rules were moved
 out of this part on 2026-11-17):
 
 5. **Bounds stay here**: the sizes of WebVTT parts, PGS parts and sheets
