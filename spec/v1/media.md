@@ -1,7 +1,6 @@
 # MSFP version 1: the media part, version 1
 
-**Draft.** Nothing implements version 1 yet. [Version 0](../v0.md) is what
-Overfin and the Jellyfin plugin speak today.
+**Draft.**
 
 The `media` part says what the stream URLs of a playback serve, and how
 a viewer's server fetches them: HLS and the file itself. The content

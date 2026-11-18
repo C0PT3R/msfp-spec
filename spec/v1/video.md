@@ -1,7 +1,6 @@
 # MSFP version 1: the video part, version 1
 
-**Draft.** Nothing implements version 1 yet. [Version 0](../v0.md) is what
-Overfin and the Jellyfin plugin speak today.
+**Draft.**
 
 The `video` part shares films and series, named by their TMDB IDs. It is
 a content part: it has no calls of its own, and says what the shared

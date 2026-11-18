@@ -1,8 +1,8 @@
 # MSFP version 1: the core, version 1
 
-**Draft.** Nothing implements version 1 yet. [Version 0](../v0.md) is what
-Overfin and the Jellyfin plugin speak today, and stays the compatibility
-baseline. How the parts fit together is in [README.md](README.md).
+**Draft.** Version 1 stands alone: it doesn't work with version 0,
+which was a test draft ([history](README.md#history)). How the parts fit
+together is in [README.md](README.md).
 
 The core is what every MSFP server speaks: encodings, transport, keys, the
 pairing code, signed requests and answers, pairing and its states, key
@@ -37,7 +37,7 @@ addresses. The test vectors are in [vectors/v1/](../../vectors/v1/)
 13. [Changing a server's address](#13-changing-a-servers-address)
 14. [Security considerations](#14-security-considerations)
 15. [Versioning](#15-versioning)
-16. [Coexisting with version 0](#16-coexisting-with-version-0)
+16. [Coexisting with version 0](#16-coexisting-with-version-0) (removed)
 17. [Test vectors](#17-test-vectors)
 18. [Open questions](#18-open-questions)
 
@@ -174,8 +174,7 @@ identity (subgroup).
 - `null` is not a valid value for any MSFP member. A sender leaves an
   empty optional member out, or sends `[]` or `""` where the field says
   so. A receiver refuses `null` in a request as an invalid value; in an
-  answer, `null` is a member of the wrong type (below). (Toward a peer that
-  speaks version 0, see section 16.6.)
+  answer, `null` is a member of the wrong type (below).
 - A member of another JSON type than its field says is an invalid value.
   That is for requests. In an answer, a member of the wrong type inside a
   list skips its entry, or counts as absent, and one at the top of the
@@ -576,10 +575,6 @@ when the code is redeemed, and refuses it then.
 
 A server that can't be called makes no codes (section 7.5).
 
-A server that also speaks core 0 reads version 0 codes too (prefix
-`overfin-pair-1.`, [v0 section 5](../v0.md#5-the-pairing-code)); see
-section 16.3.
-
 ### 5.2 Addresses
 
 An address, in a code, in the pair request, in `hello`, and wherever a
@@ -667,10 +662,6 @@ Every signed answer carries one:
 |--------|-------|
 | `MSFP-Signature` | the answering server's Ed25519 signature of the answer message, base64url |
 
-A request that carries both these headers and version 0's `Overfin-Key`,
-`Overfin-Date`, `Overfin-Nonce` or `Overfin-Signature` is refused, with an
-unsigned `404`.
-
 ### 6.2 The request message
 
 The sender signs these bytes: seven lines, joined by `\n`, with no
@@ -748,9 +739,8 @@ A caller refuses a signed `200` or `202` whose media type isn't
 
 The receiver checks, in this order, and refuses at the first failure:
 
-1. Each of the four signature headers appears exactly once, no version 0
-   signature header is present (section 6.1), the request has no query,
-   and `MSFP-Key` is base64url of exactly 32 bytes.
+1. Each of the four signature headers appears exactly once, the request
+   has no query, and `MSFP-Key` is base64url of exactly 32 bytes.
 2. `MSFP-Date` is a positive decimal integer in the form of section 2.2.
 3. The date is within 5 minutes of the receiver's clock: the difference
    between the receiver's current time and the date, in either direction,
@@ -900,8 +890,7 @@ operator gives it at step 6. B can't make A accept: a `hello` saying
 `paired` from a peer in state `ours` changes nothing.
 
 A pairing made from a core 1 code starts in core 1: `pair` is signed
-under section 6. A pairing made from a version 0 code starts in core 0
-(section 16.3).
+under section 6.
 
 ### 7.2 What each side stores
 
@@ -1027,8 +1016,8 @@ Until that `hello` succeeds, it goes on as if `inbound` were `false`.
 **What the server that can't be called does.**
 
 1. **No codes.** It makes no pairing code: its panel tells its operator to
-   ask the other operator for one. It can redeem codes of core 1
-   (section 16.3). Two servers that both can't be called can't pair.
+   ask the other operator for one. It can redeem codes. Two servers that
+   both can't be called can't pair.
 2. **`hello` on a schedule**, to every peer, suspended ones included,
    whether or not its panel is open:
    - every 20 seconds while the peer is `theirs`, for 24 hours after the
@@ -1358,10 +1347,9 @@ A request and an answer may also carry members that go one way only:
 | `callsFailed` | boolean | answers | `true`: the answering server's last calls to the caller couldn't connect (section 7.5) |
 
 A server that speaks version 1 sends `core` and `parts` in every `hello`,
-request and answer: their absence means version 0 (section 10.2). It
-should send `address` in every `hello`. It leaves `certificates` out when
-it names none, and leaves out everything but `state` when it sends or
-answers `ended`.
+request and answer (section 10.2). It should send `address` in every
+`hello`. It leaves `certificates` out when it names none, and leaves out
+everything but `state` when it sends or answers `ended`.
 
 What the receiver does:
 
@@ -1487,14 +1475,10 @@ Every answer is signed with the receiver's own key.
 | `video` | films and series by TMDB: title keys, episode order, subtitles, PGS, WebVTT, skip markers, previews | none: it adds to `titles`, `play` and the media | `catalog`, `playback` and `media` |
 | `music` | artists, albums and tracks by MusicBrainz: keys, descriptions, cover art, audio-only playback | none: it adds to `titles`, `play` and `limits` | `catalog`, `playback` and `media` |
 
-The core and each part have their own version, an integer. Version 0 of
-each is [spec/v0.md](../v0.md) (as corrected): the core is its sections 2
-to 8, `catalog` its sections 9.3, 9.4 and 11, `playback` its sections 9.5
-to 9.7 and 12, `media` its section 10. `video` and `music` have no
-version 0: version 0's `catalog` and `playback` hold films and series
-themselves (section 16). Version 1 of each is this document and
-[catalog.md](catalog.md), [playback.md](playback.md),
-[media.md](media.md), [video.md](video.md) and [music.md](music.md).
+The core and each part have their own version, an integer. Version 1 of
+each is this document and [catalog.md](catalog.md),
+[playback.md](playback.md), [media.md](media.md), [video.md](video.md)
+and [music.md](music.md).
 
 Rotation and revocation (`rotate`, `revoke`, section 12) are part of
 the core, not a part: a server without them doesn't speak core 1. Every
@@ -1505,10 +1489,8 @@ needs both other parts. The `limits` member of `libraries` belongs to
 `playback`: a server sends it only to a peer it speaks `playback` with.
 
 The content parts say what titles are, which of them `play` takes and
-what media they add, so each needs all three. `video` 1 and `music` 1
-don't work with version 0 of any of the three: with one of them at
-version 0, they are off. Every content part is optional: a server lists
-in `hello` the ones it handles, and two servers share only titles of the
+what media they add, so each needs all three. Every content part is
+optional: a server lists in `hello` the ones it handles, and two servers share only titles of the
 content parts both list
 ([catalog section 5](catalog.md#5-what-is-shared)). A receiver skips
 keys of a content part it doesn't speak
@@ -1523,10 +1505,9 @@ Versions travel in `hello`, request and answer, in `core` and `parts`
 {"state":"paired","core":[1],"parts":{"catalog":[1],"playback":[1],"media":[1,2],"video":[1],"music":[1]}}
 ```
 
-- **Absent means version 0.** A `hello` without `core` means `[0]`.
-  Without `parts`, it means `catalog`, `playback` and `media` at `[0]`,
-  which share films and series as version 0 says (section 16). So a
-  version 0 peer is understood as speaking all of version 0.
+- **Absent means none.** A `hello` without `core` leaves no common core:
+  the sender doesn't speak MSFP 1. Without `parts`, the sender speaks no
+  part: only the core is on.
 - **Part names** are lowercase ASCII letters and `-`, at most 32
   characters. Unknown names are ignored, whatever their value, so that a
   later version may announce a part in another shape.
@@ -1538,7 +1519,7 @@ Versions travel in `hello`, request and answer, in `core` and `parts`
   (section 8.2): the whole `hello` is refused, nothing is stored. An
   empty `core` list leaves no common core.
 - A server lists every version it speaks, not only the highest. A server
-  that speaks both cores lists `[0,1]`.
+  that speaks cores 1 and 2 lists `[1,2]`.
 
 ### 10.3 Choosing
 
@@ -1547,13 +1528,11 @@ Versions travel in `hello`, request and answer, in `core` and `parts`
   is off between them.
 - **Dependencies.** A part whose dependency is off is off too.
 - **The core.** No common core version: the servers can't talk; the
-  panel says so. Core 1 is used only toward a peer whose stored address is
-  `https`, from a server whose own address is `https`; otherwise core 0
-  (section 16.4).
+  panel says so. Addresses are `https` only (section 3).
 - **Memory.** Each side stores, per peer, what the peer's latest signed
   `hello` (request or answer, latest by arrival) listed, and recomputes
-  the choices. Before any `hello`, it assumes version 0 of every part,
-  and the core of the code the pairing started with (section 7.1). The
+  the choices. Before any `hello`, it assumes no part is on, and the
+  core of the code the pairing started with (section 7.1). The
   parts are used only by `paired` peers, and a pairing becomes `paired`
   through a `hello` exchange, so the versions are known by then.
 
@@ -1570,20 +1549,9 @@ Versions travel in `hello`, request and answer, in `core` and `parts`
 
 ### 10.5 Which core a message uses
 
-A message's core shows in its labels and headers (section 16.2). A server
-that speaks cores 0 and 1:
-
-- reads both code prefixes, and makes `msfp-pair-1.` codes unless its
-  operator asks for a version 0 code;
-- accepts requests in either header set, and checks each under its own
-  core's rules ([v0 section 6](../v0.md#6-signing-requests-and-answers)
-  for `Overfin-*` headers, section 6 here for `MSFP-*`);
-- signs requests toward a peer in the core chosen for it;
-- answers in the core of the request.
-
-A `hello` is sent in the highest core the sender believes the peer speaks
-(the chosen one, or the code's before any `hello`). On an unsigned `404`,
-the sender tries the next lower core once.
+A message's core shows in its labels and headers: core 1 uses
+`msfp-1 …`, `MSFP-*` and the code prefix `msfp-pair-1.` (section 15). A
+server answers in the core of the request.
 
 ## 11. The discovery document
 
@@ -1676,8 +1644,8 @@ The receiver of a `rotate` (section 9.3), signed with O:
 3. **If it holds a commitment and N doesn't match**, it refuses the
    rotation (`409` `rotation-refused`), keeps O, and shows its operator a
    warning: someone holding O tried to move the pairing to another key.
-4. **If it holds no commitment** (pairings from version 0, or after a
-   rotation statement with `-`), it keeps O, marks the rotation to N
+4. **If it holds no commitment** (a `pair` without `nextCommitment`, or
+   after a rotation statement with `-`), it keeps O, marks the rotation to N
    pending, and asks its operator to confirm N's fingerprint with the
    other operator, as in pairing (section 7.1, step 6). It answers `202`
    `pending`. Once its operator confirms, N becomes the current key; the
@@ -1770,8 +1738,8 @@ pulled. When Q rotates from O to N and P can't be called:
 - A commitment is set only by `pair` or by a rotation statement. `hello`
   can't change one. Otherwise a thief holding the current key could
   replace the commitment, then rotate.
-- One exception, for pairings made before commitments existed (core 0
-  pairings, section 16): the first `hello` that carries `nextCommitment`
+- One exception, for pairings that have none (a `pair` without
+  `nextCommitment`): the first `hello` that carries `nextCommitment`
   sets it, if that peer never had a commitment from `pair` or from a
   rotation. This is trust on first use, signed by the current key: weaker
   than a commitment from `pair`, and the panel says so. A sender includes
@@ -2035,138 +2003,19 @@ statement's form changes its label.
 
 ## 16. Coexisting with version 0
 
-Version 0 ([spec/v0.md](../v0.md), as corrected on 2026-11-16) is what
-existing servers speak. A version 1 server talks to them in version 0,
-and moves each pairing to version 1 when both sides can.
-
-### 16.1 What a version 1 server keeps of version 0
-
-A server that speaks version 1 should also speak core 0 and the version 0
-parts, for as long as it has a peer that speaks only those. Its panel
-should show which peers are still on version 0. It may drop core 0 when
-none is left.
-
-### 16.2 The renamed labels and headers
-
-Core 1 renames every label and header, so that a request signed under
-one core never verifies under the other:
-
-| Version 0 | Core version 1 |
-|-----------|----------------|
-| `overfin-federation-1 request` | `msfp-1 request` |
-| `overfin-federation-1 response` (four lines) | `msfp-1 response` (five lines, with the media type, section 6.3) |
-| `overfin-federation-1 pairing` | `msfp-1 pairing` |
-| `Overfin-Key`, `Overfin-Date`, `Overfin-Nonce`, `Overfin-Signature` | `MSFP-Key`, `MSFP-Date`, `MSFP-Nonce`, `MSFP-Signature` |
-| code prefix `overfin-pair-1.` | code prefix `msfp-pair-1.` |
-
-The paths stay the same (`/api/v1/federation/…` by default, and
-`/api/v1/stream/…`). Section 10.5 says which core a server uses for each
-message.
-
-### 16.3 New pairings
-
-- A pairing starts in the core of the code used: `msfp-pair-1.` codes
-  pair in core 1 (section 7), `overfin-pair-1.` codes in core 0
-  ([v0 section 7](../v0.md#7-pairing-step-by-step)).
-- A server that speaks both makes `msfp-pair-1.` codes, unless its
-  operator asks for a version 0 code, to pair with a server that speaks
-  only version 0.
-- A core 0 pairing whose two servers then list core 1 in `hello` moves to
-  core 1 (section 16.4).
-- A version 1 server makes no pairing with an `http` address, in either
-  core: it refuses a code whose address is `http`, and a pair request
-  whose `address` is `http`.
-- A server that can't be called (section 7.5) redeems `msfp-pair-1.`
-  codes only (section 16.6).
-
-### 16.4 Moving an existing pairing to core 1
-
-A core 0 pairing moves to core 1 when both servers list core 1 in their
-`hello`s and both addresses are `https` (section 10.3). From then on,
-each side signs in core 1 and checks answers in core 1; requests in
-flight in core 0 are still answered in core 0. Nothing else changes: the
-key, states, offers, wants and limits stay.
-
-The pairing has no next key commitment yet: it gets one by trust on first
-use (section 12.5), or by pairing again. Parts move on their own: each
-uses the highest version both list (section 10.3). Once `catalog` and
-`playback` are at version 1, films and series are shared only when both
-servers list `video`.
-
-### 16.5 `http` pairings during the transition
-
-Version 0 allowed `http` addresses; version 1 doesn't.
-
-- An upgraded server keeps existing `http` pairings working in core 0 for
-  a transition period, and makes no new ones. Its panel shows them as
-  "insecure, move to HTTPS".
-- Moving a pairing from `http` to `https` is an address change. The server
-  whose address is `http` gets a certificate (section 3.2), and announces
-  its `https` address in `hello`, as in section 13. A server that speaks
-  core 1 reads and sends the `address` member in core 0 `hello`s too, with
-  a peer that lists core 1, for this purpose. The peer confirms with a
-  `hello` at the new address (section 13.2). Once both addresses are
-  `https`, the pairing moves to core 1 (section 16.4).
-- Without that, both operators pair again.
-- After the transition, `http` pairings stop. The transition lasts one
-  release: the first stable release of version 1 keeps `http` pairings
-  in core 0, the next one drops them.
-
-### 16.6 Talking to a version 0 peer
-
-Toward a peer whose chosen core is 0, a version 1 server follows
-[spec/v0.md](../v0.md), as corrected, with these points:
-
-- **`null`.** It treats a member whose value is `null` as absent, as
-  version 0 says, and never sends `null` itself.
-- **Strict rules.** Version 0's corrections already apply version 1's
-  canonical forms (v0 section 2.1), except that version 0 allows `http`.
-- **No rotation.** `rotate` and `revoke` don't exist in core 0 (a version
-  0 server answers them with an unsigned `404`). The rotating server
-  keeps its old key for that peer (section 12.4).
-- **No address change**, unless the peer lists core 1 (section 16.5).
-- **No `inbound`.** `inbound` in `pair` and `hello`, and the members that
-  go with it (`callsFailed`, `knownKey`, `rotation`, `revocation`), are
-  core 1 only. Unlike `address` (section 16.5), they are neither sent nor
-  read in core 0 messages: a version 0 peer never sees them. So a server
-  that can't be called pairs only with peers that speak core 1. A core 0
-  pairing it already has moves to core 1 first (section 16.4; its
-  address is `https`, so no pairing of its is an `http` one of section
-  16.5); until then the peer keeps calling it, and those calls fail.
-- **Parts at version 0.** Libraries, titles, playback and media follow
-  v0 sections 9.3 to 12, with version 0's title keys (no `with`, no
-  `ids`) and version 0's answer message (no media type). Version 0's
-  `catalog` and `playback` correspond to `catalog`, `playback`, `media`
-  and `video` in version 1: films and series only, no music.
-
-### 16.7 Choosing libraries again
-
-Version 0's corrections and version 1 both make library and version IDs
-opaque ([catalog](catalog.md#2-libraries)). An owning server whose IDs
-broke that rule (Overfin's were its media server's own library IDs)
-changes them once, when it adopts the rule:
-
-- There is no mapping from the old IDs to the new ones (no `formerId`).
-  Each peer's stored wants then name IDs that are no longer offered, and
-  `titles` ignores them.
-- Each peer's operator chooses the libraries it wants from that server
-  again. A caller should tell its operator when a library it wants is no
-  longer in a peer's offer.
-- The owning server treats the change as a change of what it offers, so
-  each peer's next `titles` reading is a whole one.
-- A viewer's server that names its menu entries after peer library IDs
-  sees them change once.
+Removed on 2026-11-17, with every rule that existed only for it:
+version 1 doesn't work with version 0 ([history](README.md#history)).
 
 ## 17. Test vectors
 
 The values below are in [vectors/v1/](../../vectors/v1/), for an
 implementation's tests to check against. They come from the generator in
-[tools/vectors/](../../tools/vectors/), not from an implementation: no
-implementation speaks version 1 yet. The generator also checks them.
+[tools/vectors/](../../tools/vectors/), not from an implementation. The
+generator also checks them.
 
 | File | What it holds |
 |------|---------------|
-| `keys.json` | the keys "a" and "b" of version 0, server A's next keys "a2" and "a3", server B's "b2", with their fingerprints and commitments; two certificate keys with their pins |
+| `keys.json` | the keys "a" and "b" (the same as in version 0's vectors), server A's next keys "a2" and "a3", server B's "b2", with their fingerprints and commitments; two certificate keys with their pins |
 | `code.json` | the code of section 5.3, its secret hash, and the pairing proof of redeemer "b" at `https://192.0.2.10:8096` |
 | `exchanges.json` | `pair` (B calls A, with commitments), `hello` (A to B, with `core`, `parts`, `certificates` and `address`; B answers without `playback`), a refused `hello` (signed `404`), and a `play` refused with `not-supported`; then B can't be called (section 7.5): its `hello` with `inbound: false`, its new address and `knownKey`, A's answer carrying `rotation` and `revocation` objects (A revokes "a" and rotates to "a2" in one action, sections 12.4, 12.6 and 12.7), and B's next `hello` with `knownKey` "a2", answered under "a2" |
 | `rotation.json` | A rotates from "a" to "a2", committing to "a3": the statement, both signatures, and the `rotate` exchange |
@@ -2360,6 +2209,8 @@ were settled by the owner on 2026-11-17; each says how.
 12. **The transition for `http` pairings** (proposal 7, open point 1):
     its length, and whether the cut-off is a version or a date.
     **Settled:** one release (section 16.5).
+    **Moot since version 0 was dropped (2026-11-17)**: there are no
+    `http` pairings to move.
 13. **Making a self-signed certificate** (proposal 7, open point 2).
     Should the specification say more (key type, names, lifetime) than
     section 3.2's recommendation?
@@ -2395,10 +2246,13 @@ the owner on 2026-11-17; they may still change as implementations show)
 21. A rotating server whose request under O gets an unsigned `404` tries a
     `hello` under N (section 12.4); repeated `rotate`s carry newly dated
     statements. Confirmed by the owner on 2026-11-17.
-22. Core 1 is used only when both servers' addresses are `https`; until
-    then a pairing stays in core 0, and the `address` member of `hello` is
-    read in core 0 between servers that list core 1, so that `http`
-    pairings can move (sections 10.3 and 16.5). Confirmed by the owner on 2026-11-17.
+22. **Moot since version 0 was dropped (2026-11-17)**: core 1 is the
+    only core, and addresses are `https` only (section 3). The choice
+    was: core 1 is used only when both servers' addresses are `https`;
+    until then a pairing stays in core 0, and the `address` member of
+    `hello` is read in core 0 between servers that list core 1, so that
+    `http` pairings can move (sections 10.3 and 16.5). Confirmed by the
+    owner on 2026-11-17.
 23. Section 3.3 refuses the ranges listed, by default, and lets an
     operator allow loopback only. (Whether NAT64's `64:ff9b::/96` and
     6to4's `2002::/16` are judged by the IPv4 address they carry was open
@@ -2436,11 +2290,12 @@ the owner on 2026-11-17; they may still change as implementations show)
 **Choices this draft made, confirmed by the owner on 2026-11-17** (when the content types were
 made optional parts on 2026-11-17, [proposal 11](../../proposals/0011-music.md))
 
-27. `video` and `music` have no version 0, and `video` 1 and `music` 1
+27. **Moot since version 0 was dropped (2026-11-17).** The choice was:
+    `video` and `music` have no version 0, and `video` 1 and `music` 1
     are off when `catalog`, `playback` or `media` is at version 0
-    (section 10.1).
-    Between servers whose parts are at version 0, films and series are
-    shared as version 0 says, without `video` (section 16.6).
+    (section 10.1). Between servers whose parts are at version 0, films
+    and series are shared as version 0 says, without `video` (section
+    16.6).
 28. The examples of sections 9.2, 11 and 17.1 list `video`; the example
     of section 10.2 lists `music` too. B's answer in section 17.1 is
     unchanged: it lists `catalog` only, so B shares no titles with A.

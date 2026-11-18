@@ -1,9 +1,7 @@
 # MSFP version 1
 
-**Draft. Nothing implements version 1 yet.** [Version 0](../v0.md) is what
-Overfin and the Jellyfin plugin speak today, and stays the compatibility
-baseline: a version 1 server speaks version 0 to a peer that speaks only
-version 0 ([core section 16](core.md#16-coexisting-with-version-0)).
+**Draft.** Version 1 stands alone: a version 1 server speaks version 1
+only. [Version 0](../v0.md) was a test draft ([history](#history)).
 
 Version 1 is made of a core and five parts, each with its own version:
 three that hold the shared mechanics (`catalog`, `playback`, `media`),
@@ -17,7 +15,7 @@ media formats more often.
 
 | Document | Version | What it holds |
 |----------|---------|---------------|
-| [core.md](core.md) | core 1 | encodings and canonical forms, HTTPS, keys and fingerprints, the pairing code, signed requests and answers, pairing and its states, `pair`, `hello`, key rotation and revocation (`rotate`, `revoke`), address changes, versions and parts, the discovery document, coexisting with version 0 |
+| [core.md](core.md) | core 1 | encodings and canonical forms, HTTPS, keys and fingerprints, the pairing code, signed requests and answers, pairing and its states, `pair`, `hello`, key rotation and revocation (`rotate`, `revoke`), address changes, versions and parts, the discovery document |
 | [catalog.md](catalog.md) | `catalog` 1 | `libraries` and `titles`, opaque library IDs, the general rules of title keys |
 | [playback.md](playback.md) | `playback` 1 | `play`, `progress`, `stop`, limits, what the owning server enforces |
 | [media.md](media.md) | `media` 1 | what the stream URLs serve: HLS, the file; how long a ticket works |
@@ -94,23 +92,20 @@ versions and the part versions it speaks
 ([core section 10](core.md#10-versions-and-parts)):
 
 ```json
-{"state":"paired","core":[0,1],"parts":{"catalog":[1],"playback":[1],"media":[1],"video":[1],"music":[1]}}
+{"state":"paired","core":[1],"parts":{"catalog":[1],"playback":[1],"media":[1],"video":[1],"music":[1]}}
 ```
 
 - For the core and for each part, two servers use the highest version
   both list. No common version: that part is off between them.
-- A `hello` without `core` means core 0; without `parts`, it means
-  `catalog`, `playback` and `media` at version 0, which hold films and
-  series themselves. So a version 0 server, which sends neither, is
-  understood as speaking all of version 0.
+- A `hello` without `core` leaves no common core: the sender doesn't
+  speak MSFP 1. Without `parts`, the sender speaks no part.
 - Each side keeps what the peer's latest signed `hello` listed.
 - A caller makes no call of a part that is off, and shows its people
   nothing that needs it. A receiver answers such a call with a signed
   `404` of type `not-supported`, which doesn't mean "not paired".
 - The core's version also shows in every signed message: core 1 uses the
-  labels `msfp-1 …` and the headers `MSFP-*`; core 0 uses
-  `overfin-federation-1 …` and `Overfin-*`. A message signed under one
-  core never verifies under another.
+  labels `msfp-1 …` and the headers `MSFP-*`. A later core will have its
+  own, so a message signed under one core never verifies under another.
 
 An optional discovery document, `GET /.well-known/msfp`, lets a server
 see a peer's versions and base path before pairing. It is unsigned,
@@ -120,8 +115,7 @@ proves nothing, and is off by default
 ## Versioning
 
 - The core and each part have their own version: a non-negative integer.
-  Version 0 of each is [spec/v0.md](../v0.md), as corrected on
-  2026-11-16. Version 1 of each is the documents above.
+  Version 1 of each is the documents above.
 - **A new version of a part** is needed when an existing member's meaning
   changes, or when a receiver of the older version would misread a
   message.
@@ -135,10 +129,19 @@ proves nothing, and is off by default
 - A server lists in `hello` every version it speaks, and keeps an older
   one for as long as it has a peer that needs it.
 - Corrections that change nothing an honest sender writes may be made to
-  an existing version as errata, listed in that version's changes. That
-  is how version 0 was corrected.
+  an existing version as errata, listed in that version's changes.
 
-## What version 1 changes from version 0
+## History
+
+Version 0 ([spec/v0.md](../v0.md)) was a test draft. Version 1
+supersedes it, and doesn't work with it: no version 1 server speaks
+version 0, and version 0 is not to be implemented. It stays in this
+repository as history, with its vectors
+([vectors/v0.json](../../vectors/v0.json) and
+[vectors/v0-strict.json](../../vectors/v0-strict.json)), whose
+canonical-form cases hold for core 1 too.
+
+### What version 1 changes from version 0
 
 - **Strict rules** (proposal 1): one rule set for Ed25519, base64url,
   integers, JSON (I-JSON), headers and addresses. Version 0 received the

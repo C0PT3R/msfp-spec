@@ -1,7 +1,6 @@
 # MSFP version 1: the catalog part, version 1
 
-**Draft.** Nothing implements version 1 yet. [Version 0](../v0.md) is what
-Overfin and the Jellyfin plugin speak today.
+**Draft.**
 
 The `catalog` part says which libraries a server offers a peer, which
 titles they hold, and the rules every title key follows. It needs only
@@ -108,10 +107,6 @@ tickets ([playback](playback.md#2-play), [media](media.md#1-the-urls)).
 None may be, contain, or be computable from, an identifier of the media
 server, a file, a path or a name. Track IDs (`a<n>`, `s<n>`) are
 positions, not identifiers.
-
-A server whose former IDs broke this rule changes them once; its peers'
-operators then choose their libraries again
-([core section 16.7](core.md#167-choosing-libraries-again)).
 
 ### 2.2 What the caller keeps
 

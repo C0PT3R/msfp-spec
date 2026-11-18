@@ -1,7 +1,6 @@
 # MSFP version 1: the playback part, version 1
 
-**Draft.** Nothing implements version 1 yet. [Version 0](../v0.md) is what
-Overfin and the Jellyfin plugin speak today.
+**Draft.**
 
 The `playback` part lets a viewer's server start, keep and stop a
 playback of a title a peer holds, within limits the owning server sets.
@@ -265,12 +264,10 @@ avoid a transcode, and doesn't refuse for lack of a language. The answer
 always says what plays (`versionId`, `audioTrack`, `subtitleTrack`), and
 the viewer's server shows that, not what it asked for.
 
-**Overfin.** Overfin speaks version 0, whose `play` has no `versionId`:
-it chooses the copy by `audioLanguage`, then the first. Since
-2026-11-16, an `audioTrack` or `subtitleTrack` that isn't a track of the
-copy counts as absent, as above (before, the audio track was passed to
-its media server as is, and the subtitle track echoed). The rest is as
-above.
+**Overfin.** Since 2026-11-16, an `audioTrack` or `subtitleTrack` that
+isn't a track of the copy counts as absent, as above (before, the audio
+track was passed to its media server as is, and the subtitle track
+echoed). The rest is as above.
 
 ## 3. progress
 

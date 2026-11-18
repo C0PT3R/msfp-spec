@@ -1,7 +1,6 @@
 # MSFP version 1: the music part, version 1
 
-**Draft.** Nothing implements version 1 yet. [Version 0](../v0.md) is what
-Overfin and the Jellyfin plugin speak today; it has no music.
+**Draft.**
 
 The `music` part shares artists, albums and tracks, named by their
 MusicBrainz identifiers. It is a content part: it has no calls of its
