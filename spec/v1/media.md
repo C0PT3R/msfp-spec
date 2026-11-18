@@ -29,6 +29,12 @@ Media is fetched over `https` only, and every fetch needs a *trusted* or
 *named* certificate ([core section 3.2](core.md#32-https-certificates)),
 never just any: the ticket and the media have only TLS to protect them.
 
+A peer that can't be called
+([core section 7.5](core.md#75-a-peer-that-cant-be-called)) is never the
+owning server: nothing is fetched from its stream root, which is under an
+address that doesn't resolve. It fetches its peers' media as any viewer's
+server does.
+
 The **stream root** of a server is `<address><prefix>/api/v1/stream/`,
 where `<address>` is its address exactly as its peer stores it, and
 `<prefix>` is the part of its base path before `/api/v1/federation/`

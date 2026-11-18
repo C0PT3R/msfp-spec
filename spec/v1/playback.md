@@ -14,7 +14,10 @@ too ([core section 10.3](core.md#103-choosing)). Its calls follow
 [core section 8](core.md#8-common-rules-for-every-call): signed `POST`s
 under the peer's base path, answered only to peers in state `paired`. A
 server that doesn't speak `playback` with the caller answers its calls
-with a signed `404` `not-supported`.
+with a signed `404` `not-supported`. A peer that can't be called
+([core section 7.5](core.md#75-a-peer-that-cant-be-called)) is only ever
+the viewer's server: nobody calls `play`, `progress` or `stop` on it, and
+nothing of it is offered for playing.
 
 The words "must", "must not" and "should" carry their usual meaning in
 specifications.

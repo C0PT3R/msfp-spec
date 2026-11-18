@@ -43,6 +43,7 @@ one place, with where each is defined.
 | Fingerprint | a short form of a public key, which operators compare when pairing | [core 4.2](core.md#42-the-fingerprint) |
 | Current key | the key a peer knows a server by now | [core 12](core.md#12-key-rotation-and-revocation) |
 | Next key commitment | SHA-256 of a key made for a later rotation | [core 12.5](core.md#125-the-next-key-commitment) |
+| A server that can't be called | one that connects out but can't be connected to, and says so with `inbound: false`; its peers never call it | [core 7.5](core.md#75-a-peer-that-cant-be-called) |
 | Nonce | 16 random bytes that make each signed request unique | [core 6.5](core.md#65-nonces-replay-and-restarts) |
 | Pin | SHA-256 of a certificate's public key, which a server names in `hello` | [core 3.2](core.md#32-https-certificates) |
 | *Trusted*, *named* | a certificate a public authority vouches for; one the peer named by its pin | [core 3.2](core.md#32-https-certificates) |
@@ -158,6 +159,10 @@ proves nothing, and is off by default
   (RFC 9421).
 - **HTTPS only** (proposal 7).
 - **Address changes** (proposal 8), in the core.
+- **Servers that can't be called** (proposal 9, option 1), in the core:
+  `inbound: false` in `pair` and `hello`, peers that stop calling, a
+  `hello` on a schedule, rotation and revocation pulled in `hello`
+  answers, and the address `https://msfp-<26>.invalid`.
 - **The clarifications** (all 34), as in version 0's corrections.
 - The seek-bar previews already in version 0, in `video`.
 - **The review round of 2026-11-16**: which addresses a server connects
@@ -184,9 +189,12 @@ are listed in each document's open questions.
 
 [vectors/v1/](../../vectors/v1/) holds keys, a code, signed requests and
 answers under the MSFP labels and headers, a rotation statement, a
-revocation statement, and a `hello` carrying `core`, `parts`,
-`certificates` and `address`
-([core section 17](core.md#17-test-vectors)), the destinations a server
+revocation statement, a `hello` carrying `core`, `parts`,
+`certificates` and `address`, and the `hello`s of a server that can't be
+called, with a rotation and a revocation pulled in an answer
+([core section 17](core.md#17-test-vectors)), the addresses of servers
+that can't be called (`uncallableAddresses` in `strict.json`), the
+destinations a server
 refuses to connect to (`destinations` in `strict.json`), and WebVTT,
 HLS and PGS cases with their verdicts (`media.json`, media section 3 and
 video section 6), and music keys and titles with what a caller keeps

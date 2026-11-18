@@ -13,7 +13,10 @@ under the peer's base path, answered only to peers in state `paired`,
 and only when `catalog` is on between the two servers
 ([core section 10](core.md#10-versions-and-parts)). A server that doesn't
 speak `catalog` with the caller answers its calls with a signed `404`
-`not-supported`.
+`not-supported`. A peer that can't be called
+([core section 7.5](core.md#75-a-peer-that-cant-be-called)) is never
+called: it reads its peers' libraries and titles, and nobody reads its
+own.
 
 The words "must", "must not" and "should" carry their usual meaning in
 specifications.
@@ -208,7 +211,8 @@ sent.
 - `seq` is an opaque positive counter. Only the receiver gives it a
   meaning.
 - A receiver should keep its change log at least 30 days. A caller should
-  read every paired peer's titles at most every 30 minutes, and at once
+  read every paired peer's titles (never those of a peer that can't be
+  called) at most every 30 minutes, and at once
   when what it wants of one changes; it should give a reading 5 minutes.
 
 ### 3.3 What the caller keeps of each title

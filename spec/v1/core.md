@@ -71,6 +71,9 @@ each trusts only the servers it paired with.
 - **Next key commitment**: SHA-256 of a public key a server has made but
   not used yet, which its peers store and accept a rotation to
   (section 12).
+- **A server that can't be called**: one that can connect out but can't
+  be connected to, and says so with `inbound: false` (section 7.5). It
+  calls its peers; they never call it.
 - **Owning server**, **viewer's server**, **library**, **offer**, **want**,
   **title key**, **playback**, **ticket**: defined by the parts that use
   them ([catalog](catalog.md#1-terms), [playback](playback.md#1-terms)).
@@ -245,6 +248,10 @@ Cases for all of these, valid and not, are in
 
   The media is under the stream root, `<address><prefix>/api/v1/stream/`
   ([media](media.md#1-the-urls)).
+
+  A server never calls a peer that can't be called (section 7.5), and
+  never fetches its media: such a peer only makes calls, and is never
+  the owning server.
 - **Request headers.** `Content-Type: application/json` and the four
   signature headers of section 6.1 are required.
 - **No browser headers.** Requests must not carry `Sec-Fetch-Site` with a
@@ -566,6 +573,8 @@ A reader must:
 The reader doesn't check whether the code has expired. The maker does,
 when the code is redeemed, and refuses it then.
 
+A server that can't be called makes no codes (section 7.5).
+
 A server that also speaks core 0 reads version 0 codes too (prefix
 `overfin-pair-1.`, [v0 section 5](../v0.md#5-the-pairing-code)); see
 section 16.3.
@@ -598,6 +607,33 @@ ipv6    = an IPv6 address in the text form of RFC 5952 (lowercase,
   its discovery document (section 11); its address stays without a path.
 
 Examples: `https://a.example.org`, `https://192.0.2.10:8096`.
+
+**The address of a server that can't be called.** A server that sends
+`inbound: false` (section 7.5) must have an address of this form:
+
+```
+https://msfp-<26 characters>.invalid
+```
+
+The 26 characters are 16 random bytes in lowercase base32 (RFC 4648
+section 6, `a-z2-7`, no padding); the 2 unused bits of the last
+character are zero. The implementation makes the address once and keeps
+it; the operator types none. Example (from
+[vectors/v1/strict.json](../../vectors/v1/strict.json),
+`uncallableAddresses`): `https://msfp-4dq6fy7e4xtop2hj5lv6z3po54.invalid`.
+
+- It is an address like any other: the pairing proof binds it
+  (section 9.1), and requests to the server are signed for its host
+  (section 6.2). But nothing ever connects to it. `.invalid` never
+  resolves (RFC 6761 section 6.4), so a peer that ignores `inbound`
+  connects nowhere, and section 3.3 never comes into play. Never a LAN
+  address: a peer would send its calls to whatever answers there on
+  **its** network.
+- A peer refuses `inbound: false` with any other address, as a bad body
+  (sections 9.1 and 9.2). The address checked is the message's `address`
+  member, or, in a `hello` without one, the address the peer stores.
+- A server that becomes reachable announces its real address by an
+  address change (section 13), in a `hello` without `inbound: false`.
 
 ### 5.3 Example
 
@@ -840,9 +876,12 @@ Server A's operator makes the code. Server B's operator pastes it.
    `hello` with state `paired`, its versions and its pins (section 9.2).
    B, which was waiting, moves A to `paired`, and answers with its own
    versions and pins. Both now know which parts they share (section 10).
+   When B can't be called, A sends no `hello`: B learns at step 7
+   (section 7.5).
 7. **If B missed it.** If B couldn't be reached at step 6, B learns at its
    next `hello` to A: A answers `paired`. B should ask every 20 seconds at
-   most while its panel shows a peer in state `theirs`. Any call that A
+   most while its panel shows a peer in state `theirs`; a B that can't be
+   called must, on the schedule of section 7.5. Any call that A
    refuses with a signed `404` (other than `not-supported`) also makes B
    ask (section 9.2).
 
@@ -869,6 +908,7 @@ For each peer:
   whose signature verified);
 - the core and part versions of its latest signed `hello` (section 10);
 - its pins (section 3.2);
+- whether it can be called: its `inbound` (section 7.5);
 - what the parts keep: offers, wants and catalogs
   ([catalog](catalog.md)), limits ([playback](playback.md)).
 
@@ -891,7 +931,8 @@ The parts' calls answer only peers in state `paired`; others get a signed
 
 Besides its state, a peer may be **suspended**: its key was revoked
 (section 12.6). A suspended peer's calls are refused, except `rotate` and
-`revoke`, and no call is made to it.
+`revoke`, and no call is made to it, but the scheduled `hello` of a
+server that can't be called (section 7.5).
 
 ### 7.4 Ending a pairing
 
@@ -903,7 +944,8 @@ ending:
    SHA-256 of every key in the peer's history: its current key, its
    previous key, and every key of its rotation statements.
 2. Then it sends the peer a signed `hello` with state `ended`. If the peer
-   can't be reached, nothing more is done.
+   can't be reached, nothing more is done. To a peer that can't be called
+   it sends none (section 7.5).
 3. The peer that receives `ended` deletes the ender, in every state,
    waiting ones included, and answers `200` with state `ended`, signed. It
    doesn't record the ender as forgotten: the ender has deleted it too, so
@@ -916,6 +958,96 @@ starts again only with a new code.
 
 Entries of the forgotten list may be removed after a year. A removed
 entry only turns that key's signed `404` into an unsigned one.
+
+### 7.5 A peer that can't be called
+
+A server that can connect out but can't be connected to (no public
+address, no port forwarded, no gateway; at home behind a router or a
+carrier-grade NAT, say) says so, its peers stop calling it, and it asks,
+on a schedule, for what it would otherwise be told. It can then watch
+what its peers share, with their rotations and revocations reaching it.
+It shares nothing. A server whose public part is a gateway it runs itself
+is reachable at the gateway, and is not concerned.
+
+**The `inbound` member.** `pair` requests (section 9.1) and `hello`
+requests and answers (section 9.2) carry an optional boolean `inbound`.
+`false`: the sender can't be called. Absent or `true`: it can.
+
+- A receiver keeps, per peer, the value of the latest signed message that
+  carried one, request or answer, latest by arrival, as for pins
+  (section 3.2). A `hello` without `inbound` sets it back to `true`. In
+  `pair`, the maker stores it with the new peer.
+- A member that isn't a boolean is a bad body (section 9.2), as for the
+  other members. So is `inbound: false` with an address not of the form
+  of section 5.2.
+- A server sends `inbound: false` in every `pair` and `hello` it sends
+  (but those that say `ended`), and in every `hello` answer it gives,
+  while its operator says it can't be called. A server can't tell by
+  itself that it can't be reached, so this is the operator's setting.
+- A `hello` answer may carry `callsFailed: true`: "my last calls to you
+  couldn't connect". The receiver's panel shows it, with a suggestion to
+  turn on "this server can't be called". Nothing changes by itself, so a
+  lying peer can only put a message on a panel.
+
+**What a peer does toward a server that can't be called.** Toward a peer
+whose `inbound` is `false`, a server opens no connection at all. Each
+call it would make:
+
+| Call | Normally | Toward a peer that can't be called |
+|------|----------|-------------------------------------|
+| `hello` on acceptance (section 7.1, step 6) | sent | not sent; the peer's next `hello` gets `paired` |
+| `hello` to check, after a signed `404` (section 9.2), to recompute versions (section 10.4), after a refused certificate (section 3.2) | sent | not sent |
+| `hello` with `ended` (section 7.4, step 2) | sent | not sent; the peer's next `hello` gets the signed `404` of a forgotten key, and the peer marks it `gone` (section 9.2) |
+| `rotate` (sections 9.3, 12.4) | sent at each contact, at least daily | not sent; the statement travels in `hello` answers (section 12.4) |
+| `revoke` (sections 9.4, 12.6) | sent to every peer it can reach | not sent; the statement travels in `hello` answers (section 12.6) |
+| `hello` confirming an address change (section 13.2, step 2) | sent to the new address | not sent; the address is stored at once (section 13.2) |
+| the discovery document (section 11) | fetched after storing a redeemer's address | not fetched |
+| `libraries`, `titles` | called | not called; the peer's catalog isn't shown |
+| `play`, `progress`, `stop`, media | called, fetched | not called; nothing of the peer is offered for playing |
+
+Its panel says what that means: "this server can't be called: it can
+watch what you share with it, and can share nothing with you".
+
+When a peer's `inbound` changes from `false` to `true`, the server
+confirms the peer's address as section 13.2, step 2 does (a `hello`
+there, answered under the peer's key) before it makes any other call to
+it: the stored address, or the new one when the same `hello` names one.
+Until that `hello` succeeds, it goes on as if `inbound` were `false`.
+
+**What the server that can't be called does.**
+
+1. **No codes.** It makes no pairing code: its panel tells its operator to
+   ask the other operator for one. It can redeem codes of core 1
+   (section 16.3). Two servers that both can't be called can't pair.
+2. **`hello` on a schedule**, to every peer, suspended ones included,
+   whether or not its panel is open:
+   - every 20 seconds while the peer is `theirs`, for 24 hours after the
+     `pair`, then every 5 minutes (section 7.1, step 7 is a "must" for
+     it);
+   - every 5 minutes while it is `paired`;
+   - once an hour while it is `gone`, so that a pairing the peer restores
+     comes back (section 9.2);
+   - and at once on the occasions where it would send one anyway.
+
+   Each wait varies by a fifth either way. These `hello`s count against
+   the peer's limits like any other call, and a signed `retryAfter` is
+   obeyed (section 8.3). A suspended peer gets the scheduled `hello`
+   only, so that a rotation can still reach it (section 12.6).
+3. **Its address** is of the form of section 5.2, `https://msfp-<26
+   characters>.invalid`, made by the implementation and kept.
+4. **Pins.** It names none (nothing is served at its address). It keeps
+   learning its peers' pins from their answers.
+5. **`knownKey`.** Its `hello` requests carry `knownKey`, the key it
+   checks the peer's answers against now, so that a rotation of the
+   peer's key reaches it (section 12.4).
+
+What stays as it is: its own calls (`pair`, `hello`, `libraries`,
+`titles`, `play`, `progress`, `stop`, the media) and everything the peer
+checks about them; its ending a pairing (it sends `ended`, which it can);
+and the peer ending its playbacks at once when the pairing ends
+([playback section 6.3](playback.md#63-how-a-playback-ends)): its player
+then gets `404` on the next fetch, and treats the playback as ended
+(section 8.4).
 
 ## 8. Common rules for every call
 
@@ -1043,6 +1175,16 @@ server sets its own to fit its machine:
   retried a few times; the owning server ends an unused playback within
   2 minutes anyway ([media section 4](media.md#4-how-long-a-ticket-works)).
 
+**A server that can't be called** (section 7.5) sends its `hello`s on a
+schedule of its own: every 20 seconds while a peer is `theirs` (for 24
+hours after the `pair`, then every 5 minutes), every 5 minutes while it is
+`paired`, once an hour while it is `gone`, each wait give or take a fifth.
+They are calls like any other. They count against the peer's limits; a
+signed `retryAfter` holds them back; after no answer or an unsigned
+refusal they back off as above, or wait for their next turn on the
+schedule, whichever is later. One call every 20 seconds is far below any per-peer limit
+of the table above.
+
 **Implementation note: behind a reverse proxy.** A server behind a
 reverse proxy sees every request arrive from the proxy's address, so a
 limit by network address (item 1) would put every peer and stranger in
@@ -1128,6 +1270,7 @@ Request:
 | `secretHash` | string | yes | base64url of SHA-256(secret): 32 bytes |
 | `proof` | string | yes | the pairing proof, below |
 | `nextCommitment` | string | no | the caller's next key commitment (section 12.5): base64url of 32 bytes |
+| `inbound` | boolean | no | `false`: the caller can't be called (section 7.5); absent or `true`: it can |
 
 The proof is HMAC-SHA256, keyed with the 32-byte secret, over these bytes
 in order:
@@ -1154,7 +1297,9 @@ Refusals:
 - `404`, unsigned (signed when the key is already a peer): the key isn't
   heard, there's no live code with that hash, the code expired, the proof
   is wrong, the body isn't valid JSON, the address is invalid, the hash
-  isn't 32 bytes, or `nextCommitment` isn't 32 bytes of base64url.
+  isn't 32 bytes, `nextCommitment` isn't 32 bytes of base64url, `inbound`
+  isn't a boolean, or `inbound` is `false` and the address isn't of the
+  form of section 5.2 for a server that can't be called.
 - `409`: the caller's key is already a peer of the maker. The body is
   empty. It is signed, since the key is known.
 - `500`: the maker failed to store the result.
@@ -1191,6 +1336,17 @@ Request and answer `200` carry the same members:
 | `certificates` | array of string | no | the pins of the certificates the sender's address serves (section 3.2) |
 | `address` | string | no | the sender's address now (section 13) |
 | `nextCommitment` | string | no | the sender's next key commitment, for pairings that have none (section 12.5) |
+| `inbound` | boolean | no | `false`: the sender can't be called (section 7.5); absent or `true`: it can |
+
+A request and an answer may also carry members that go one way only:
+
+| Field | Type | In | Content |
+|-------|------|----|---------|
+| `knownKey` | string | requests from a server that can't be called | the key the sender checks the receiver's answers against now (section 12.4) |
+| `rotation` | string | requests from a server that can't be called | `pending` or `refused`: the sender hasn't moved to the receiver's new key (section 12.4) |
+| `rotation` | object | answers to a server that can't be called | the receiver's rotation statement, with the members of the `rotate` request: `newKey`, `nextCommitment` (optional), `date`, `oldSignature`, `newSignature` (sections 9.3, 12.4) |
+| `revocation` | object | answers to a server that can't be called | the receiver's revocation statement, with the members of the `revoke` request: `date`, `signature` (sections 9.4, 12.6) |
+| `callsFailed` | boolean | answers | `true`: the answering server's last calls to the caller couldn't connect (section 7.5) |
 
 A server that speaks version 1 sends `core` and `parts` in every `hello`,
 request and answer: their absence means version 0 (section 10.2). It
@@ -1209,23 +1365,39 @@ What the receiver does:
 - A body without `state`, with a `state` that isn't a string, or with a
   member of the wrong type, is refused like a body that isn't JSON
   (signed `404`), and the caller's stored versions, pins and address stay
-  as they were.
+  as they were. So is a body with `inbound: false` whose address (its
+  `address`, or the stored one when it has none) isn't of the form of
+  section 5.2 for a server that can't be called.
 
 Then, unless the request said `ended`, the receiver:
 
 - keeps the request's `core` and `parts` as the caller's versions
   (section 10.3);
 - keeps the request's `certificates` as the caller's pins (section 3.2);
+- keeps the request's `inbound` as the caller's (section 7.5);
 - if `address` differs from the caller's stored address, starts the
-  check of section 13.2;
+  check of section 13.2, or, for a caller that can't be called, stores
+  it at once (section 13.2);
 - if `nextCommitment` is present, applies section 12.5;
+- if the caller can't be called, reads `knownKey` and `rotation` before
+  it answers (section 12.4); from any other caller it ignores them;
 - notes the time it heard from the caller;
-- answers with its own view (section 7.3), versions, pins and address.
+- answers with its own view (section 7.3), versions, pins and address,
+  and, to a caller that can't be called, its pending `rotation` and
+  `revocation` (sections 12.4, 12.6).
 
 What the caller does with the answer:
 
-- `200`: it keeps the answer's versions, pins and address, as the
-  receiver does above.
+- `200`: it keeps the answer's versions, pins, address and `inbound`, as
+  the receiver does above. A server that can't be called applies the
+  answer's `revocation`, then its `rotation` (sections 12.6, 12.4). A
+  `callsFailed` that is `true` is shown on the panel, and nothing else
+  (section 7.5); any other value counts as absent. A `rotation` or
+  `revocation` that isn't an object counts as absent.
+
+The one-way members are ignored where the table doesn't put them:
+`knownKey` in an answer, `revocation` and `callsFailed` in a request. A
+request's `rotation` other than `pending` or `refused` is ignored too.
 - `200` with `paired`: as the receiver would do with `paired` above.
 - signed `404`: the peer doesn't know the caller, or has suspended its
   key. The caller marks it `gone`.
@@ -1430,7 +1602,8 @@ an `application/json` document:
   (section 10.3).
 - **Fetching it.** A server fetches a peer's document when it learns the
   peer's address: before calling `pair` on a code's address, after
-  storing a redeemer's address, and after an address change (section 13).
+  storing a redeemer's address, and after an address change (section 13);
+  never for a peer that can't be called (section 7.5).
   The fetch is a plain `GET` with no signature headers, any certificate
   accepted (section 3.2), no redirects followed, and a body of at most
   16 KiB. A `404`, or any answer that isn't a valid document, means the
@@ -1510,6 +1683,9 @@ replaces it.
 A rotation changes nothing else: address, name, state, offers, wants,
 limits, pins and catalogs stay.
 
+A server that can't be called receives a rotation in a `hello` answer
+instead of a `rotate` (section 12.4), and handles it by these same steps.
+
 ### 12.4 What each side does during the change
 
 **The rotating server** keeps O until every peer has rotated, or until
@@ -1517,7 +1693,8 @@ limits, pins and catalogs stay.
 
 - toward a peer that hasn't answered `rotated`, it signs requests and
   answers with O, and sends `rotate` again, with a newly dated statement,
-  at each contact and at least daily;
+  at each contact and at least daily (to a peer that can't be called, see
+  below);
 - toward a peer that answered `rotated`, it signs with N only;
 - when a request signed with O gets an unsigned `404` from a peer it sent
   `rotate` to (the answer to a `rotate` may have been lost, and O no
@@ -1534,6 +1711,36 @@ safe if O isn't compromised.
 **The receiving server**, after N became current, still hears requests
 signed with O for 10 minutes (requests already on the way), and checks
 answers from that peer against N only.
+
+**Toward a peer that can't be called** (section 7.5), the rotation is
+pulled. When Q rotates from O to N and P can't be called:
+
+1. Q's `hello` answers to P carry `rotation`, an object with the members
+   of the `rotate` request (section 9.3): `newKey`, `nextCommitment`
+   (optional), `date`, `oldSignature`, `newSignature`. Each answer carries
+   a newly dated statement, as repeated `rotate`s do. The answer itself
+   is signed with O.
+2. P handles it as section 12.3 handles a `rotate` signed with O: the key
+   the answer verified under is O. The outcome is what P would have
+   answered: rotated, pending, or refused. A `rotation` that `rotate`
+   would refuse with `400` (a bad member, a signature that doesn't
+   verify, a date more than 5 minutes from P's clock) changes nothing.
+3. P's `hello` requests carry `knownKey`: the key P checks Q's answers
+   against, now. After P makes N current, its next request to Q is a
+   `hello` with `knownKey` N, sent at once. If the rotation is pending or
+   refused, P's `hello`s carry `knownKey` O and `rotation` with the string
+   `pending` or `refused`.
+4. Q reads `knownKey` before it answers. N: Q treats P as having answered
+   `rotated`, and signs toward P with N only, that answer included. O:
+   nothing changes, and Q's panel shows `pending` or `refused` when P sent
+   it.
+5. P checks each answer against the key it knew Q by when it **sent** the
+   request. So answers to calls already on their way when it made N
+   current, still signed with O, verify.
+6. Q's 30-day limit is unchanged.
+
+`knownKey` and `rotation` are ignored from a peer whose `inbound` isn't
+`false`, and `knownKey` is ignored when it is neither of Q's keys.
 
 ### 12.5 The next key commitment
 
@@ -1578,13 +1785,29 @@ signed with K, to every peer it can reach. Anyone holding the key can
 send it, and gains nothing by it: a thief could already misuse the
 pairing, and revoking only stops it.
 
+**Toward a peer that can't be called** (section 7.5), the revocation is
+pulled. The revoking server's `hello` answers to such a peer carry, for
+30 days, `revocation`: `date` and `signature`, as in `revoke`, the
+statement newly dated in each answer. Only answers signed with K carry
+it: once the peer knows the server by another key (section 12.4), it no
+longer needs it. The peer checks it as below, with K the key the answer
+verified under, and suspends the server. The delay is at most one
+`hello` period (5 minutes, give or take a fifth), where a `revoke` takes
+one call.
+
 What the receiver does, after checking the statement's signature and its
 date (within 5 minutes):
 
 - It marks the peer suspended. It answers no call from that key except
   `rotate` and `revoke`: `hello` and every other call get the signed `404`
   of a forgotten key. Its own calls to that peer stop, and its people are
-  shown nothing that needs them.
+  shown nothing that needs them. A server that can't be called keeps
+  only its scheduled `hello` (section 7.5), so that a rotation can still
+  reach it: of those answers it reads only `rotation`, and accepts only
+  one that matches the stored commitment (section 12.3, case 2). When the
+  suspended server revoked and rotated in one action (section 12.7,
+  case 1), one answer carries both: it applies `revocation`, then
+  `rotation`.
 - It shows its operator a warning.
 - A `rotate` from the suspended key to a key matching the stored
   commitment lifts the suspension and rotates (section 12.3).
@@ -1620,7 +1843,8 @@ A server whose address changes from A1 to A2:
    30 days, or until every peer has moved (it knows a peer has moved when
    that peer's requests are signed for A2's host);
 2. sends `hello` with `address` A2 to every peer, at once and then at
-   each contact;
+   each contact; a peer that can't be called (section 7.5) learns it by
+   step 3, and confirms it by a `hello` at A2, which it can make;
 3. names A2 in its `hello` answers too, including those given on A1, so a
    peer that calls first also learns;
 4. after the 30 days, accepts A2's host only.
@@ -1654,6 +1878,17 @@ What a server does with a signed `hello`, request or answer, whose
 When the stored address changes, the pins learnt from the old address
 are dropped; the confirming `hello`'s answer gives the new ones. Playbacks
 in progress keep their old URLs until they end.
+
+**A peer that can't be called moves.** When the peer's `inbound` is
+`false` (section 7.5), the server stores the new address from the peer's
+signed `hello` at once, without the confirming call of step 2: that call
+proves the key holder answers at the address, which matters only for an
+address that is called. It drops nothing, since it holds no pins of the
+peer's. If the peer later sends `inbound: true`, the confirmation of
+section 7.5 happens then. A server that turns "can't be called" on moves
+this way to its address of section 5.2's form; one that becomes
+reachable announces its real address in a `hello` without
+`inbound: false`, and is confirmed by step 2.
 
 ## 14. Security considerations
 
@@ -1727,6 +1962,17 @@ in progress keep their old URLs until they end.
 - **Peers' addresses** point where the peer chooses. Section 3.3 keeps
   connections out of the server's own machine and its cloud's metadata
   service.
+- **A server that can't be called** (section 7.5). Its peers open no
+  connection to it, and its address can't resolve (section 5.2), so a
+  peer that ignores `inbound` connects nowhere, and never to a LAN
+  address on its own network. `inbound` is its operator's setting: a
+  peer's `callsFailed` only puts a message on a panel. A `knownKey` can
+  only pick between the peer's own two keys, and only the server that
+  can't be called can send it (the request is signed by it), so it gives
+  nothing to anyone else. A revocation reaches it within one `hello`
+  period instead of one call. Its scheduled `hello`s show each peer its
+  network address and that it is up, every 5 minutes, as any call it
+  makes does.
 - **Overload.** Section 8.3 limits a peer that calls too much.
 
 ### 14.1 Logging
@@ -1812,6 +2058,8 @@ message.
 - A version 1 server makes no pairing with an `http` address, in either
   core: it refuses a code whose address is `http`, and a pair request
   whose `address` is `http`.
+- A server that can't be called (section 7.5) redeems `msfp-pair-1.`
+  codes only (section 16.6).
 
 ### 16.4 Moving an existing pairing to core 1
 
@@ -1859,6 +2107,14 @@ Toward a peer whose chosen core is 0, a version 1 server follows
   0 server answers them with an unsigned `404`). The rotating server
   keeps its old key for that peer (section 12.4).
 - **No address change**, unless the peer lists core 1 (section 16.5).
+- **No `inbound`.** `inbound` in `pair` and `hello`, and the members that
+  go with it (`callsFailed`, `knownKey`, `rotation`, `revocation`), are
+  core 1 only. Unlike `address` (section 16.5), they are neither sent nor
+  read in core 0 messages: a version 0 peer never sees them. So a server
+  that can't be called pairs only with peers that speak core 1. A core 0
+  pairing it already has moves to core 1 first (section 16.4; its
+  address is `https`, so no pairing of its is an `http` one of section
+  16.5); until then the peer keeps calling it, and those calls fail.
 - **Parts at version 0.** Libraries, titles, playback and media follow
   v0 sections 9.3 to 12, with version 0's title keys (no `with`, no
   `ids`) and version 0's answer message (no media type). Version 0's
@@ -1894,11 +2150,12 @@ implementation speaks version 1 yet. The generator also checks them.
 |------|---------------|
 | `keys.json` | the keys "a" and "b" of version 0, server A's next keys "a2" and "a3", server B's "b2", with their fingerprints and commitments; two certificate keys with their pins |
 | `code.json` | the code of section 5.3, its secret hash, and the pairing proof of redeemer "b" at `https://192.0.2.10:8096` |
-| `exchanges.json` | `pair` (B calls A, with commitments), `hello` (A to B, with `core`, `parts`, `certificates` and `address`; B answers without `playback`), a refused `hello` (signed `404`), and a `play` refused with `not-supported` |
+| `exchanges.json` | `pair` (B calls A, with commitments), `hello` (A to B, with `core`, `parts`, `certificates` and `address`; B answers without `playback`), a refused `hello` (signed `404`), and a `play` refused with `not-supported`; then B can't be called (section 7.5): its `hello` with `inbound: false`, its new address and `knownKey`, A's answer carrying `rotation` and `revocation` objects (A revokes "a" and rotates to "a2" in one action, sections 12.4, 12.6 and 12.7), and B's next `hello` with `knownKey` "a2", answered under "a2" |
 | `rotation.json` | A rotates from "a" to "a2", committing to "a3": the statement, both signatures, and the `rotate` exchange |
 | `revocation.json` | A revokes "a": the statement, its signature, and the `revoke` exchange |
 | `strict.json` | addresses and codes with their verdicts under core 1 (`https` only) |
 | `strict.json`, `destinations` | IP addresses a server connects to for a peer by default, or refuses (section 3.3) |
+| `strict.json`, `uncallableAddresses` | addresses of a server that can't be called, `https://msfp-<26>.invalid`, with their verdicts (section 5.2) |
 | `media.json` | WebVTT parts and what rebuilding them gives, HLS playlists and PGS parts, with their verdicts ([media section 3](media.md#3-what-is-fetched), [video section 6](video.md#6-media)) |
 | `music.json` | music title keys and music titles, with their verdicts and what the caller keeps of each title ([music sections 2 and 3](music.md#2-title-keys)) |
 
@@ -2169,3 +2426,33 @@ made optional parts on 2026-11-17, [proposal 11](../../proposals/0011-music.md))
 28. The examples of sections 9.2, 11 and 17.1 list `video`; the example
     of section 10.2 lists `music` too. B's answer in section 17.1 is
     unchanged: it lists `catalog` only, so B shares no titles with A.
+
+**Choices this draft made, to confirm (proposal 9, 2026-11-17)** (when
+option 1 of [proposal 9](../../proposals/0009-private-servers.md) was
+written in)
+
+29. A server that can't be called sends its scheduled `hello` to
+    suspended peers too, and reads only `rotation` from their answers
+    (sections 7.5 and 12.6). The proposal says both "to every peer that
+    isn't suspended" (its 1.3) and "except P's scheduled `hello`, kept so
+    that a rotation can still reach it" (its 1.5); this draft follows 1.5.
+30. The 26 characters of the address of section 5.2 are an exact base32
+    encoding: the 2 unused bits of the last character are zero, so each
+    address has one text, as section 2 asks of every value.
+31. The address checked against `inbound: false` is the message's
+    `address`, or, in a `hello` without one, the stored address
+    (sections 5.2 and 9.2).
+32. A server that can't be called sends `knownKey` in every `hello`
+    request, not only during a peer's rotation (section 7.5).
+33. A pulled `revocation` of K is carried only in answers signed with K;
+    once the peer knows the server by its new key, it is no longer sent
+    (section 12.6).
+34. The pulled members' wrong values: a `rotation` that `rotate` would
+    refuse with `400` changes nothing; a `rotation` or `revocation` that
+    isn't an object, and a `callsFailed` that isn't `true`, count as
+    absent in an answer; a request's `rotation` other than `pending` or
+    `refused` is ignored; each one-way member is ignored in the other
+    direction (sections 9.2 and 12.4).
+35. When a peer's `inbound` turns `true` in a `hello` that also names a
+    new address, the confirming `hello` goes to the new address, and
+    confirms both (sections 7.5 and 13.2).
