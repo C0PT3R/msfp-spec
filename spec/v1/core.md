@@ -1515,12 +1515,13 @@ Versions travel in `hello`, request and answer, in `core` and `parts`
   which share films and series as version 0 says (section 16). So a
   version 0 peer is understood as speaking all of version 0.
 - **Part names** are lowercase ASCII letters and `-`, at most 32
-  characters. Unknown names are ignored.
+  characters. Unknown names are ignored, whatever their value, so that a
+  later version may announce a part in another shape.
 - **Lists.** At most 8 versions each, each a non-negative integer. A
   receiver ignores entries beyond 8 and entries that aren't such
   integers. An empty list means the sender doesn't speak that part.
-- **Duplicates** in a list count once. A `core` or a part's list that
-  isn't an array, or a `parts` that isn't an object, is a bad body
+- **Duplicates** in a list count once. A `core` or a known part's list
+  that isn't an array, or a `parts` that isn't an object, is a bad body
   (section 8.2): the whole `hello` is refused, nothing is stored. An
   empty `core` list leaves no common core.
 - A server lists every version it speaks, not only the highest. A server
