@@ -1423,9 +1423,11 @@ Then, unless the request said `ended`, the receiver:
 What the caller does with the answer:
 
 - `200`: it keeps the answer's versions, pins, address and `inbound`, as
-  the receiver does above, and ignores its `nextCommitment`. A server
-  that can't be called applies the answer's `revocation`, then its
-  `rotation` (sections 12.6, 12.4). A `callsFailed` that is `true` is shown on the panel, and nothing else
+  the receiver does above, and ignores its `nextCommitment`. Any
+  server applies a valid `revocation` found in an answer signed with the
+  key it revokes (sections 12.6, 12.7), and keeps nothing else of that
+  answer; a server that can't be called then applies the answer's
+  `rotation` (section 12.4). A `callsFailed` that is `true` is shown on the panel, and nothing else
   (section 7.5); any other value counts as absent. A `rotation` or
   `revocation` that isn't an object counts as absent.
 
@@ -1583,7 +1585,8 @@ Versions travel in `hello`, request and answer, in `core` and `parts`
   panel says so. Addresses are `https` only (section 3). To a peer with
   which it has no common core, a server answers every call but `hello`
   with a signed `404` `not-supported` (section 10.4), and makes no call
-  to it but `hello`.
+  to it but `hello`. A `pair` from a key it already knows gets its usual
+  `409` (section 9.1): `pair` is answered before versions are known.
 - **Memory.** Each side stores, per peer, what the peer's latest signed
   `hello` (request or answer, latest by arrival) listed, and recomputes
   the choices. Before any `hello`, it assumes no part is on, and the
@@ -1908,7 +1911,8 @@ date (within 5 minutes):
    peers and records their keys as forgotten (section 7.4, step 1); it
    sends no `ended`, which its peers would refuse from a suspended key.
    For 30 days, it keeps the revoked key K for one use: a `hello` from a
-   former peer, signed for its address, gets a `200` answer signed with
+   peer whose pairing ended in this replacement (not one its operator
+   ended before), signed for its address, gets a `200` answer signed with
    K that carries only the revocation,
    `{"revocation":{"date":…,"signature":…}}`, newly dated in each
    answer, instead of the signed `404` of a forgotten
@@ -1931,7 +1935,10 @@ A server whose address changes from A1 to A2:
    30 days, or until every peer has moved (it knows a peer has moved when
    that peer's requests are signed for A2's host). Every peer counts but
    those that are `gone`;
-2. announces A2 only once A2 answers: until then it names A1. Then it
+2. announces A2 only once A2 answers: it checks that by a request of its
+   own to A2 whose answer it can recognise as its own (A2 must reach
+   this server, not another one), retrying until it does; until then it
+   names A1. Then it
    sends `hello` with `address` A2 to every peer, at once and then at
    each contact; a peer that can't be called (section 7.5) learns it by
    step 3, and confirms it by a `hello` at A2, which it can make;
