@@ -38,6 +38,7 @@ the **host**, plugs in through a few interfaces.
 | [host.md](host.md) | the interfaces the host implements |
 | [engine.md](engine.md) | what the host calls: opening, settings, handlers, actions, queries, viewers, events, background work, errors |
 | [overfin.md](overfin.md) | how Overfin hosts the engine |
+| [platforms.md](platforms.md) | whether MSFP fits Plex and Emby besides Jellyfin, and what the spec should change |
 
 ## The shape
 
