@@ -1,6 +1,6 @@
 # Proposal 9: Private servers
 
-Status: Option 1 adopted (2026-11-16); option 2 (the reverse connection) set aside for now. Open points: 1, 2, 3 and 8 decided, 4 to 7 and 9 set aside with option 2 (2026-11-17). None left for option 1.
+Status: Option 1 adopted (2026-11-16); option 2 (the reverse connection) set aside for now. Open points: 1, 2, 3 and 8 decided, 4 to 7 and 9 set aside with option 2 (2026-11-17). None left for option 1. Option 1 written into [spec/v1](../spec/v1/core.md) on 2026-11-17: core sections 3, 5.1, 5.2 (the address), 7.1, 7.2, 7.4 and 7.5 (a peer that can't be called), 8.3, 9.1, 9.2, 11, 12.3, 12.4, 12.6, 13.1, 13.2, 14, 16.3, 16.6 and 17, with the choices made in writing it in core section 18, items 29 to 35; one line each in catalog, playback and media.
 Touches: sections 3, 5.2, 7.1, 7.4, 9.1, 9.2, 11, 12.4, 12.6 and 13.2 of
 [spec/v1/core.md](../spec/v1/core.md), and sections 1, 2 and 4 of
 [spec/v1/media.md](../spec/v1/media.md); option 2 adds a part.
