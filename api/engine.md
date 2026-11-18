@@ -173,7 +173,7 @@ They read storage and never call a peer.
 | `Former`, `MovedAt`, `Waiting`, `PeersMoved`, `PeersToMove` | a move under way: from where, when, whether the new address doesn't answer yet (peers not told), how many of the peers not `gone` moved |
 | `Uncallable`, `Discovery` | the settings |
 | `NextKey`, `NextOnServer` | the committed next key's fingerprint, and whether its seed is here |
-| `RotationSince`, `NotMoved` | a change of key under way: since when, and how many peers still know the old key |
+| `RotationSince`, `NotRotated` | a change of key under way: since when, and how many peers still know the old key |
 | `RevokedAt` | a key revoked without next key (30 days of revocation answers); zero: none |
 | `Core`, `Parts` | the versions spoken |
 
@@ -193,8 +193,9 @@ They read storage and never call a peer.
 | `Limits`, `TheirLimits` | ours to it; its to us (nil until said) |
 | `Offers`, `Wants`, `WantsGone` | counts |
 
-The two `NotMoved` differ: in `ServerView`, peers still on our **old
-key**; in `PeerView`, a peer still on our **former address**.
+Not to be confused: `ServerView.NotRotated` counts peers still on our
+**old key**; `PeerView.NotMoved` is a peer still on our **former
+address**.
 
 **`PlaybackView`**: `ID`, `Peer`, `PeerName`, `Title`, `Method`,
 `Handle` (the host's), `Since`, `State` (`started`, or `active` once
@@ -214,7 +215,8 @@ Spec: [playback 2](../spec/v1/playback.md#2-play),
 
 ```
 Play(peer, req: PlayRequest) -> RemotePlayback
-    errors: NotFound, NotPaired, Uncallable, Suspended, NotSupported,
+    errors: NotFound, NotPaired, Uncallable, Suspended, KeyLost,
+            NotSupported, RefusedDestination, CertificateRefused,
             StreamLimitReached, ServerBusy, BackingOff, NotPlayable
 Progress(id, positionMs, paused)          sync
 Stop(id, positionMs)                      errors: NotFound
@@ -232,9 +234,12 @@ Stop(id, positionMs)                      errors: NotFound
 
 - The engine refuses before calling when the part is off, the peer
   can't be used, or its last limits say no stream.
-- **Busy now**: `StreamLimitReached`, `ServerBusy` (also no answer, or
-  an unsigned one), `BackingOff`. **Not playable**: `NotPlayable` and
-  the rest ([playback 2.5](../spec/v1/playback.md#25-refusals)).
+- **Busy now**: `StreamLimitReached`, `ServerBusy` (a `503`, or no
+  answer, or an unsigned one), `BackingOff` (a `429`, or calls
+  unanswered lately). **Not playable**: `NotPlayable` and the rest
+  ([playback 2.5](../spec/v1/playback.md#25-refusals)). What lasts
+  (`KeyLost`, `Suspended`, `Uncallable`, `NotSupported`, a destination
+  or certificate refused) comes as itself, never as `ServerBusy`.
 - An answer that breaks a "must": the engine sends `stop`, then fails
   with `NotPlayable`.
 - **`RemotePlayback`**: `ID` (the engine's, not the peer's), `Peer`,
@@ -294,12 +299,13 @@ them ([host.md section 1.1](host.md#11-tx)). The host reads them there.
 Before offering a peer's title:
 
 ```
-Playable(peer, kind) -> Bool          sync
+Playable(peer, kind) -> Bool          errors: NotFound, the store's
 ```
 
 `true` when the peer is paired, not suspended, can be called, and
 `playback`, `media` and the kind's part (`video`, or `music` for
-`artist`, `album`, `track`) are on with it. It reads storage.
+`artist`, `album`, `track`) are on with it. It reads storage: a store
+that fails gives its error, never a plain `false`.
 
 ## 7. Events
 
@@ -330,7 +336,7 @@ queries too, so a host that missed one loses nothing.
 | `PeerMoveFailing` | `Address`, `Since` | a peer's new address has failed for a day; once per move | core 13.2 |
 | `InboundChanged` | `Inbound` | a peer can't be called (`no`), can again (`confirming`: its address checked first), or its address answered (`yes`) | [core 7.5](../spec/v1/core.md#75-a-peer-that-cant-be-called) |
 | `CallsFailed` | | a peer's hello answer said our calls fail: suggest "this server can't be called" | core 7.5 |
-| `CatalogReadEnded` | `Titles`, `Changes`, `Err` | a reading ended: titles kept (new or changed, for changes), or why it failed (what was kept stays) | [catalog 3.2](../spec/v1/catalog.md#32-whole-list-or-changes) |
+| `CatalogReadEnded` | `Titles`, `Changes`, `Err` | a reading ended: titles kept (new or changed, for changes), or why it failed (what was kept stays: a whole reading is kept only once read to its end) | [catalog 3.2](../spec/v1/catalog.md#32-whole-list-or-changes) |
 | `WantsGone` | `Libraries` | wanted libraries no longer offered; their titles go at the next reading | [catalog 2.2](../spec/v1/catalog.md#22-what-the-caller-keeps) |
 | `PlaybackStarted` | `Playback`, `Title`, `Method` | a peer's playback here started | [playback 6.1](../spec/v1/playback.md#61-a-playbacks-states) |
 | `PlaybackEnded` | `Playback`, `Title`, `Reason` | it ended, and why | [playback 6.3](../spec/v1/playback.md#63-how-a-playback-ends) |
@@ -351,6 +357,8 @@ RunOnce()    everything due now, the hourly work included, waited for
 | peers' playbacks here expired: no `progress` and no fetch for 2 minutes (looked at every 30 seconds), or over `LongestPlayback` | leftovers stopped (once; never a playback started since) |
 | `progress` due to peers for our viewers | the engine's own change log refreshed |
 
+- The hour is `Config.Clock`'s (a clock set back runs the hourly work
+  again); the ticks of a second are real time.
 - `RunOnce` is for tests with a fake clock, and for hosts that schedule
   work themselves (every second for a server that can't be called,
   every few minutes otherwise). Call one or the other, never both.
@@ -380,7 +388,7 @@ a secret, never sent). Match with `errors.Is`.
 | `RateLimited` | `429` | calls held until `retryAfter` |
 | `ServerBusy` | `503` | busy now |
 | `PeerFailed` | `500` | |
-| `Unreachable` | no answer, unsigned or badly signed, a refused certificate | |
+| `Unreachable` | no answer, unsigned or badly signed, a refused certificate; an unsigned `404` only once tried again a second later ([core 6.5](../spec/v1/core.md#65-nonces-replay-and-restarts)) | |
 
 **The engine's own:**
 

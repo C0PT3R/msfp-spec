@@ -146,5 +146,3 @@ All decided by the owner on 2026-11-18.
   for routers other than Go's `net/http`.
 - `SetPins`: pins are only set at `Open` (`Config.Pins`).
 - An event for this server's own pins changing, or failing to be read.
-- [Core 6.5](../spec/v1/core.md#65-nonces-replay-and-restarts)'s retry:
-  a call refused with an unsigned `404` is not retried a second later.

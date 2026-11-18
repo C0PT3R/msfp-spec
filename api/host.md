@@ -58,7 +58,7 @@ Every method returns an error besides what is listed.
 | `LibraryIDs() -> map[hostID]publicID`, `PutLibraryID(hostID, publicID)` | gone libraries included: a public ID is never reused |
 | `Sent(peer, keys) -> []string`, `MarkSent(peer, keys)` | which title keys a peer was ever sent: a changes answer names in `gone` only those |
 | `Leftovers()`, `PutLeftover`, `DeleteLeftover` | playbacks this server started on peers, to stop after a restart |
-| `PutPeerTitles(peer, reading, titles)` | a peer's titles, added or replaced, marked with the reading |
+| `PutPeerTitles(peer, reading, titles)` | a peer's titles, added or replaced, marked with the reading; a whole reading's all at its end, in one `Update` |
 | `EndReading(peer, reading)` | after a whole reading: drops titles not marked with it |
 | `DropPeerTitles(peer, keys)` | a changes reading's `gone` |
 | `PeerTitles(peer, after, limit) -> []Title`, `PeerTitle(peer, key) -> Title` | in key order |
@@ -92,7 +92,7 @@ The engine fills every field. Go spells them in capitals
 | `current` | the current key's seed, sealed (`msfp current key`) |
 | `next`, `nextCommitment` | the next key's seed, sealed (absent once exported and deleted); SHA-256 of its public key |
 | `old`, `oldSince`, `oldRevoked` | the key before, while peers move from it, sealed (`msfp old key`); since when; whether it was revoked first |
-| `revoked`, `revokedAt` | a key revoked with no next key, sealed (`msfp old key`), kept 30 days for former peers' hellos ([core 12.7](../spec/v1/core.md#127-what-to-do-on-compromise)) |
+| `revoked`, `revokedAt` | a key revoked with no next key, sealed (`msfp revoked key`), kept 30 days for former peers' hellos ([core 12.7](../spec/v1/core.md#127-what-to-do-on-compromise)) |
 | `idsSecret` | the secret of opaque IDs, sealed (`msfp ids secret`); never changes |
 | `address`, `former`, `movedAt`, `reached` | where this server is now; the address before and when it changed, while a move lasts; whether it reached itself at the new one (until then its hellos name the former) |
 | `uncallable`, `uncallableAddress` | the operator's setting; the `https://msfp-<26>.invalid` address made for it, kept |
@@ -259,7 +259,9 @@ the versions, tracks and previews, and answers the peer.
 
 **Endings** (`EndReason`, [playback 6.3](../spec/v1/playback.md#63-how-a-playback-ends)):
 `stopped`, `expired`, `tooLong`, `pairingEnded`, `notOffered`,
-`operator`. The engine cuts open media responses itself. Background
+`operator`. A playback whose pairing ends while `Start` runs is stopped
+at once as `pairingEnded`; one whose library is no longer offered then,
+as `notOffered`. The engine cuts open media responses itself. Background
 `Progress` and `Stop` calls are bounded to 30 seconds each.
 
 ## 4. Media
@@ -299,9 +301,11 @@ Seal(plain, context) -> sealed       sync, may fail
 Open(sealed, context) -> plain       sync; errors: Sealed
 ```
 
-- Contexts: `msfp current key`, `msfp next key`, `msfp old key` (also
-  the revoked key), `msfp ids secret`, `msfp code secret`. A box never
-  opens under another context.
+- Contexts: `msfp current key`, `msfp next key`, `msfp old key`,
+  `msfp revoked key`, `msfp ids secret`, `msfp code secret`. A box never
+  opens under another context. A revoked key sealed under `msfp old
+  key`, as engines before 2026-11-18 did, is sealed again at `Open`
+  (for one release).
 - Default: the Store's own (`SealerProvider`). `Open` of the engine
   fails when there is neither.
 - Shipped: `KeySealer(key)` (AES-256-GCM, 32-byte key, the context as
