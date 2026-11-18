@@ -5,8 +5,8 @@ Values for an implementation's tests to check against. They are under
 
 | File | Version | Where it comes from |
 |------|---------|---------------------|
-| [v0.json](v0.json) | 0 | Overfin's own code. Keys, a pairing code, the pairing proof, and three signed exchanges ([v0 section 15](../spec/v0.md#15-test-vectors)). Implementations keep copies of it and check them, so it never changes. |
-| [v0-strict.json](v0-strict.json) | 0 | The generator below. Valid and invalid cases for the canonical forms of [v0 section 2.1](../spec/v0.md#21-canonical-forms) and the code and address rules of v0 section 5: keys (the identity, a point of order 8, a key with a small-order part, a non-canonical encoding), signatures (an identity-key forgery, a torsion R, S + L), base64url, dates, integers, JSON bodies, addresses and codes, each with its verdict. They hold for core 1 too, except that core 1 refuses `http`. |
+| [v0.json](v0.json) | 0 | History: version 0 was a test draft, not to be implemented. From Overfin's own code. Keys, a pairing code, the pairing proof, and three signed exchanges ([v0 section 15](../spec/v0.md#15-test-vectors)). It never changes. |
+| [v0-strict.json](v0-strict.json) | 0 | History, as v0.json. The generator below. Valid and invalid cases for the canonical forms of [v0 section 2.1](../spec/v0.md#21-canonical-forms) and the code and address rules of v0 section 5: keys (the identity, a point of order 8, a key with a small-order part, a non-canonical encoding), signatures (an identity-key forgery, a torsion R, S + L), base64url, dates, integers, JSON bodies, addresses and codes, each with its verdict. They hold for core 1 too, except that core 1 refuses `http`. |
 | [v1/](v1/) | core 1 | The generator below. Keys and commitments, a `msfp-pair-1.` code with an `https` address, signed requests and answers under the MSFP labels and headers (with the answer's media type), a rotation statement, a revocation statement, a `hello` carrying `core`, `parts`, `certificates` and `address`, the `hello`s of a server that can't be called (`inbound: false`, `knownKey`, and an answer carrying `rotation` and `revocation`), address and code verdicts under core 1, the addresses of servers that can't be called (`msfp-<26>.invalid`), the destinations a server refuses to connect to, WebVTT, HLS and PGS cases, and music title keys and titles with what a caller keeps of each ([core section 17](../spec/v1/core.md#17-test-vectors)). |
 
 **No implementation produced the files of version 1, nor v0-strict.json.**
@@ -14,9 +14,7 @@ The media and destination cases were checked against Overfin's own
 sanitizer and checks on 2026-11-16: they agree, except for the HLS cases
 that [media section 3.1](../spec/v1/media.md#31-hls-playlists) lists in
 its Overfin note.
-Overfin's code doesn't implement version 1 yet. Since 2026-11-16 it
-follows the stricter rules of version 0's corrections, and runs every case
-of v0-strict.json through its own checks. Those files still come from the
+These files come from the
 generator alone: an independent program written from the specification. When an
 implementation disagrees with them, check the specification first; either
 may be wrong, and a report is welcome.

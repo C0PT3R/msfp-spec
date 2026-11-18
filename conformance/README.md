@@ -3,6 +3,10 @@
 A program that plays a peer against a server you run, and checks that
 server against [spec/v0.md](../spec/v0.md) as corrected on 2026-11-16 and
 2026-11-17.
+Version 0 was a test draft, superseded by
+[version 1](../spec/v1/README.md) and not to be implemented, so this suite
+tests a draft no server should speak. A version 1 suite is coming.
+
 It pairs with the server from a pairing code, then checks the pairing,
 `hello` in its states, signatures both ways, the strict forms of section
 2.1, replay and nonces, `libraries` and `titles` (whole, changes, paging,

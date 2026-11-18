@@ -1,9 +1,13 @@
 # Change proposals for MSFP
 
-Proposals to change [MSFP version 0](../spec/v0.md) while it is still a
-draft. Each one stands alone and is decided on its own. Each has the same
-sections: Problem (with evidence), Proposal, Alternatives considered,
-Cost (specification, Overfin, the plugin), Compatibility, Open points.
+Proposals to change [MSFP version 0](../spec/v0.md), the test draft,
+written while it was the only version. Those adopted made
+[version 1](../spec/v1/README.md). Each one stands alone and is decided
+on its own. Each has the same sections: Problem (with evidence),
+Proposal, Alternatives considered, Cost (specification, Overfin, the
+plugin), Compatibility, Open points. Since 2026-11-17, version 1 doesn't
+work with version 0: what the Compatibility sections say about moving
+version 0 pairings, or `http` ones, no longer applies.
 
 The evidence comes from the specification, from the second, independent
 implementation (the Jellyfin plugin's SPEC-GAPS.md and DESIGN-NOTES.md),
