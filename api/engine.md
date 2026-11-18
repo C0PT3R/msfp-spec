@@ -166,7 +166,7 @@ signed `retryAfter` ([core 8.3](../spec/v1/core.md#83-limits-and-overload)).
 
 | Method | Result | Errors |
 |--------|--------|--------|
-| `StopPlayback(id: String)` | the operator stops a peer's playback ([playback 6.3](../spec/v1/playback.md#63-how-a-playback-ends)) | `NotFound` |
+| `StopPlayback(id: String, reason: EndReason)` | the host ends a peer's playback from its side, and says why ([playback 6.3](../spec/v1/playback.md#63-how-a-playback-ends)): `operator` when its operator stops it, `expired` or `tooLong` when its own idle or time rules end it, `notOffered` when the copy is no longer shared; none is `operator` | `NotFound`, `InvalidReason` |
 
 ### 2.2 Queries
 
@@ -239,8 +239,12 @@ Stop(id: String, positionMs: Int)
 ```
 
 - `Progress` notes where the viewer is. The engine sends `progress` at
-  most every 45 seconds, and at once on a pause or a resume
-  ([playback 3](../spec/v1/playback.md#3-progress)). It returns at once.
+  the first report after the start, at once on a pause or a resume, and
+  otherwise every 45 seconds, never more often, while the host reports
+  ([playback 3](../spec/v1/playback.md#3-progress)): `Run` sends the
+  latest position when 45 seconds have passed since the last one and the
+  host reported since. Once the host stops reporting, nothing more is
+  sent. It returns at once.
 - A `410` from the peer, or the pairing ending, ends the playback: the
   event `RemotePlaybackEnded`, and further fetches fail `NotFound`.
 - `Stop` sends `stop`, retried a few times when there's no answer, and
@@ -342,7 +346,8 @@ says):
 | `hello` to peers in `theirs`, at most every 20 seconds | each time the host calls `PanelOpen()`; on its own schedule for a server that can't be called (above) | [core 7.1](../spec/v1/core.md#71-the-steps) step 7 |
 | reading peers' catalogs | a minute after start, then every `syncEvery`; at once when wants change | [catalog 3.2](../spec/v1/catalog.md#32-whole-list-or-changes) |
 | playback expiry | every 30 seconds | [playback 6.3](../spec/v1/playback.md#63-how-a-playback-ends) |
-| stopping leftovers | once, at start | playback 6.3 |
+| `progress` of the viewer's side, 45 seconds after the last one, when the host reported since | each second | [playback 3](../spec/v1/playback.md#3-progress) |
+| stopping leftovers | once, at start; never one of a playback started since | playback 6.3 |
 | keys: `rotate` again daily, the 30-day end of a rotation, 30 days suspended, previous keys no longer heard | every hour | [core 12](../spec/v1/core.md#12-key-rotation-and-revocation) |
 | addresses: confirming a peer's move (at most hourly), telling peers ours, ending our move | every hour, and at each contact | [core 13](../spec/v1/core.md#13-changing-a-servers-address) |
 | own certificate pins | as core 3.2 says | [core 3.2](../spec/v1/core.md#32-https-certificates) |
@@ -396,6 +401,7 @@ signed refusal gave one.
 | `NoNextKey`, `NotNextKey`, `NoPending`, `KeyTaken`, `RotationUnderWay` | keys |
 | `InvalidAddress`, `PlainHTTP`, `RefusedDestination`, `CertificateRefused`, `MoveFailed` | addresses and connections |
 | `InvalidLimits` | streams 0 to 50, transcodes 0 to streams, bitrate 0 to 1,000,000 |
+| `InvalidReason` | `StopPlayback` with an ending that isn't the host's (`stopped`, `pairingEnded`) |
 | `RangeNotSatisfiable` | the viewer's `Range` is malformed or out of the file |
 | `Sealed` | a sealed value didn't open |
 | `Internal` | anything else; logged with detail, never shown to a peer |
