@@ -796,9 +796,11 @@ trust it.
 - **The memory.** The receiver keeps every accepted (key, nonce) pair for
   at least 10 minutes (twice the 5-minute window), from the moment the
   request was accepted. Older requests fail step 3 anyway. A receiver
-  should keep two memories: one for known peers (for example at most
-  100,000 entries) and one for strangers heard during pairing (for
-  example at most 1,000). A nonce in either one is refused. When a memory
+  should keep a memory per known peer (for example at most 20,000
+  entries each, above the 12,200 calls the suggested limits of section
+  8.3 let one peer make in 10 minutes), so that one peer can't fill
+  another's, and one for strangers heard during pairing (for example at
+  most 1,000). A nonce in either one is refused. When a memory
   is full, after old entries are cleared, requests that would go in it are
   refused until room comes back.
 - **Restarts.** A receiver that keeps nonces in memory only can't know
