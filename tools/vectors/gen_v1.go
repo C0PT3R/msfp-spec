@@ -141,7 +141,7 @@ func v1PairBody() string {
 }
 
 func v1HelloBody() string {
-	return fmt.Sprintf(`{"state":"paired","core":[0,1],"parts":{"catalog":[1],"playback":[1],"media":[1],"video":[1]},"certificates":[%q],"address":%q}`,
+	return fmt.Sprintf(`{"state":"paired","core":[1],"parts":{"catalog":[1],"playback":[1],"media":[1],"video":[1]},"certificates":[%q],"address":%q}`,
 		pin(certA), addrA)
 }
 

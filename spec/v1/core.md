@@ -1426,7 +1426,7 @@ call for a `hello` (section 10.4).
 Example, from [vectors/v1/exchanges.json](../../vectors/v1/exchanges.json):
 
 ```json
-{"state":"paired","core":[0,1],"parts":{"catalog":[1],"playback":[1],"media":[1],"video":[1]},"certificates":["JN-hf1COiASAAUsiYeHXMNVvNnxYR2dKYnBT2Zx_6Fo"],"address":"https://a.example.org"}
+{"state":"paired","core":[1],"parts":{"catalog":[1],"playback":[1],"media":[1],"video":[1]},"certificates":["JN-hf1COiASAAUsiYeHXMNVvNnxYR2dKYnBT2Zx_6Fo"],"address":"https://a.example.org"}
 ```
 
 ### 9.3 rotate
@@ -2207,13 +2207,13 @@ Content-Type: application/json
 MSFP-Key: A6EHv_POEL4dcN0Y50vAmWfk1jCbpQ1fHdyGZBJVMbg
 MSFP-Date: 1800000060
 MSFP-Nonce: cHFyc3R1dnd4eXp7fH1-fw
-MSFP-Signature: cDZNDBT3Prl8nRADnFRvmJECD80POFoROrx6bCs9bx2fhbPmrcoMSJxyyx2776hgaspFgbeKQ7Z4wobnyF0ZBQ
+MSFP-Signature: 7L_kGyNoMvsmRc3ysOpYEHI4nmqblOIgxjfais5B78FiYXkAcSzhkSFtXiRt9Eg9Zl32mGAqlqPWj9sjioeoDg
 ```
 
 Body (exact bytes, no trailing line feed):
 
 ```
-{"state":"paired","core":[0,1],"parts":{"catalog":[1],"playback":[1],"media":[1],"video":[1]},"certificates":["JN-hf1COiASAAUsiYeHXMNVvNnxYR2dKYnBT2Zx_6Fo"],"address":"https://a.example.org"}
+{"state":"paired","core":[1],"parts":{"catalog":[1],"playback":[1],"media":[1],"video":[1]},"certificates":["JN-hf1COiASAAUsiYeHXMNVvNnxYR2dKYnBT2Zx_6Fo"],"address":"https://a.example.org"}
 ```
 
 Signed message:
@@ -2225,7 +2225,7 @@ POST
 /api/v1/federation/hello
 1800000060
 cHFyc3R1dnd4eXp7fH1-fw
-f399f7c9da2c66871dce32fa1a06350e36d6526e14763f788b747728f39bf09a
+335db782ff11842ca0b4873401edfe2063791c8a9c4bb20a1a6b3325a965c714
 ```
 
 B answers `200`, `Content-Type: application/json`, with the body:
