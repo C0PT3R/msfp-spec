@@ -58,6 +58,10 @@ A video title in `titles` carries the members of
 
 Series and seasons carry no `audio` or `subtitles`.
 
+A change of any of these members (a new `ids` value, say) is a change of
+the title: a changes reading sends it again
+([catalog section 3.2](catalog.md#32-whole-list-or-changes)).
+
 ### 3.1 What the caller keeps
 
 Besides the rules of [catalog section 3.3](catalog.md#33-what-the-caller-keeps-of-each-title):
@@ -157,8 +161,7 @@ Example: `"ids":{"imdb":"tt0133093"}`.
   are equal ([catalog section 4.1](catalog.md#41-same-title-same-key)).
   `ids` only helps a receiver find a title it holds under another
   identifier.
-- An `imdb` value names the film or series; an episode's `ids` carry its
-  own IMDb or TVDB ID when known.
+- A film's or series' `imdb` names it; an episode's names the episode.
 
 ## 5. Playing a film or an episode
 
@@ -174,7 +177,7 @@ Members added to the request of
 | Field | Type | Required | Content |
 |-------|------|----------|---------|
 | `subtitleLanguage` | string | no | the viewer's subtitle language, a tag; at most 12 characters of `A–Z a–z 0–9 -` |
-| `subtitleTrack` | string | no | a subtitle track ID, `s` and 1 to 3 digits, or `off` |
+| `subtitleTrack` | string | no | a subtitle track ID, `s` and a number from 0 to 999 without leading zeros (`s01` is invalid), or `off` |
 
 Capabilities added to the capabilities object (all optional; unknown
 values are ignored):
@@ -208,6 +211,12 @@ the episode's beginning when it knows where that is, else at the copy's
 beginning. A non-zero `startPositionMs` is a position in the copy, as for
 any other title. The answer's `positionMs` says where it started, in the
 copy, and the viewer's server must start there.
+
+Progress is per episode key. The playback is of the episode whose key
+`play` named; its `progress` and `stop` give `positionMs` as a position
+in the copy, not in that episode, and the viewer's server keeps the
+viewer's progress under that episode's key, with that position in the
+copy.
 
 ### 5.3 The answer
 
@@ -326,7 +335,9 @@ matches the same pattern as `<name>`.
   section 6.3.
 - **PGS subtitles.** Fetch `<track url>/<part>` the same way. The answer
   is the stretch's PGS data, `application/octet-stream`, at most 64 MiB,
-  checked as section 6.4 says.
+  checked as section 6.4 says. A stretch with no subtitles is a `200`
+  with an empty body (no segments), and the viewer's server relays it as
+  such: a `200` with an empty body.
 - **Preview sheets.** Fetch `trickplay.sheets[n]` (section 5.5), the same
   plain `GET` with the playback's ticket, no `Range`. The owning server
   answers `404` for a sheet number at or past the sheet count, one with
@@ -440,9 +451,11 @@ A PGS part is checked whole, then served unchanged: a player decodes and
 draws it. Checking means reading every segment, and decoding every
 object's run-length data to count it, not to draw it.
 
-**The track.** A part is at least one segment and at most 64 MiB
-(67,108,864 bytes), made of segments one after another, up to its exact
-end. A segment is a 13-byte header and a payload:
+**The track.** A part is at most 64 MiB (67,108,864 bytes), made of
+segments one after another, up to its exact end. An empty part, of no
+bytes and no segments, is valid: it is the answer for a stretch with no
+subtitles, the smallest there is (no display set). A segment is a
+13-byte header and a payload:
 
 | Bytes | Content |
 |-------|---------|
@@ -500,7 +513,9 @@ objects' data, which the part's 64 MiB bounds. A player that draws a
 picture needs at most 4,096 × 4,096 pixels for it, and the screen as big.
 
 **Overfin.** These are Overfin's rules, as both owning and viewer's
-server. It accepts only PGS as picture subtitles; other picture formats
+server, but one: Overfin refuses an empty part, where this section now
+requires it to be served and relayed as a valid `200` with an empty
+body. It accepts only PGS as picture subtitles; other picture formats
 (DVD, DVB) are left out of the track list.
 
 ## 7. Security considerations

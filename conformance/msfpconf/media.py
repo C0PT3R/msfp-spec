@@ -210,8 +210,8 @@ def rebuild_vtt(raw):
 
 def check_pgs(raw):
     """Checks a PGS part whole; raises Refused."""
-    if not raw or len(raw) > 64 * 1024 * 1024:
-        raise Refused("empty, or over 64 MiB")
+    if len(raw) > 64 * 1024 * 1024:
+        raise Refused("over 64 MiB")
 
     def side(v):
         return 1 <= v <= 4096

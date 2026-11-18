@@ -201,6 +201,10 @@ sent.
 - After a whole-list reading, the caller drops every title of that peer
   it didn't see in the reading's pages. After a changes reading, it keeps
   `titles` (new or changed) and drops `gone`.
+- A title has changed when anything sent for it changes: its `kind` or
+  `library`, or any member its content part adds (video's `audio`,
+  `subtitles`, `with` and `ids`, music's descriptions). A changes reading
+  sends it again, whole.
 - A receiver that sends no `seq` gets asked for the whole list every
   time.
 - `seq` is an opaque positive counter. Only the receiver gives it a

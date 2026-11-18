@@ -257,8 +257,8 @@ const (
 
 // checkPGS checks a PGS part whole.
 func checkPGS(raw []byte) error {
-	if len(raw) == 0 || len(raw) > maxPGS {
-		return errors.New("empty, or over 64 MiB")
+	if len(raw) > maxPGS { // an empty part is valid: a stretch with no subtitles
+		return errors.New("over 64 MiB")
 	}
 	side := func(v uint16) bool { return v >= 1 && v <= maxPGSSide }
 	type object struct {

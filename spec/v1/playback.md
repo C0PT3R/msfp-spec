@@ -59,7 +59,7 @@ server to start a playback of a title for one viewer.
 | `startPositionMs` | integer | no | where to start, in milliseconds; 0 to 8,640,000,000 (100 days) |
 | `maxBitrateKbps` | integer | no | the viewer's bitrate cap, kbit/s; 0 to 10,000,000; 0 means none |
 | `audioLanguage` | string | no | the viewer's audio language, a tag; at most 12 characters of `A–Z a–z 0–9 -` |
-| `audioTrack` | string | no | an audio track ID from a former answer, `a` and 1 to 3 digits |
+| `audioTrack` | string | no | an audio track ID from a former answer, `a` and a number from 0 to 999 without leading zeros (`a01` is invalid) |
 | `versionId` | string | no | a version ID from a former answer of the same title (section 2.3) |
 
 The content parts may add members ([video section 5.1](video.md#51-the-request)).
@@ -115,6 +115,8 @@ Its own apps' API, which is not MSFP, still lowercases.
    copy whose audio has `audioLanguage` (same tag first, then same base
    language); else the first. Then it refuses (`400`) a malformed
    `audioTrack` or `subtitleTrack` ([video section 5.1](video.md#51-the-request)).
+   A track ID's number has no leading zeros, like other numbers of MSFP:
+   `a01` and `s007` are malformed.
 5. It refuses (`409` `stream-limit-reached`) when the pairing's streams
    are all in use.
 6. The bitrate cap is the lowest non-zero of: `maxBitrateKbps`,
@@ -155,7 +157,7 @@ Track:
 
 | Field | Type | Content |
 |-------|------|---------|
-| `id` | string | `a<n>` for audio, `s<n>` for subtitles ([video section 5.3](video.md#53-the-answer)) |
+| `id` | string | `a<n>` for audio, `s<n>` for subtitles ([video section 5.3](video.md#53-the-answer)); *n* has no leading zeros |
 | `label` | string | the language's name in itself |
 | `language` | string, optional | a language tag |
 | `channels` | integer, optional | audio channels |
@@ -214,8 +216,10 @@ The owning server must send `not-playable` with `409` only for a title it
 can't play, and `stream-limit-reached` for its limits. A viewer's server
 must read the `type` of a signed `409`: `not-playable` means not
 playable; any other `type`, or a body without one, means busy now. A body
-that isn't JSON counts as a body without a `type`. Any other refusal
-(`400`, `404`, `500`, an unsigned one) means not playable.
+that isn't JSON counts as a body without a `type`. A signed `429` or
+`503`, an unsigned refusal, and no answer at all mean busy now, as
+[core section 8.3](core.md#83-limits-and-overload) says. Any other signed
+refusal (`400`, `404`, `500`) means not playable.
 
 ### 2.6 Choosing the copy and the tracks
 

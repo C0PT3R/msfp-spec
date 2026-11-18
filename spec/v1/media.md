@@ -39,7 +39,9 @@ where `<address>` is its address exactly as its peer stores it, and
 `<prefix>` is the part of its base path before `/api/v1/federation/`
 ([core section 11](core.md#11-the-discovery-document)); without a
 discovery document, `<prefix>` is empty. Example:
-`https://a.example.org/api/v1/stream/`.
+`https://a.example.org/api/v1/stream/`. While the owning server is
+moving, it uses the address whose host the `play` request was signed
+for ([core section 13.1](core.md#131-the-server-that-moves)).
 
 The stream URL in a `play` answer is absolute, under the owning server's
 stream root:
@@ -202,7 +204,8 @@ The viewer's server sets the `Content-Type` of what it relays itself:
 `application/vnd.apple.mpegurl` for playlists, and for what a content
 part adds the type that part gives. For the file and segments, it keeps
 a `video/*` or `audio/*` type made only of letters, digits and `.+-`,
-and sends `application/octet-stream` instead of any other.
+which it sends lowercased, and sends `application/octet-stream` instead
+of any other.
 
 Test cases for section 3.1 are in
 [vectors/v1/media.json](../../vectors/v1/media.json), beside video's
