@@ -1,5 +1,6 @@
-"""Results: each check has an ID, the spec section it tests, a level
-(MUST or SHOULD, as the section says), and a result."""
+"""Results: each check has an ID, the spec file and section it tests
+("core 6.4", "media 2.1"), a level (MUST or SHOULD, as the section says),
+whether it needs the server's operator, a result, and why."""
 
 import json
 import sys
@@ -8,18 +9,19 @@ PASS, FAIL, SKIP = "pass", "fail", "skip"
 
 
 class Result:
-    def __init__(self, cid, section, title, level, status, detail=""):
+    def __init__(self, cid, section, title, level, status, detail="", operator=False):
         self.id, self.section, self.title, self.level = cid, section, title, level
-        self.status, self.detail = status, detail
+        self.status, self.detail, self.operator = status, detail, operator
 
     def as_dict(self):
         return {"id": self.id, "section": self.section, "title": self.title, "level": self.level,
-                "result": self.status, "detail": self.detail}
+                "operator": self.operator, "result": self.status, "detail": self.detail}
 
 
 class Report:
     def __init__(self, out=sys.stdout, verbose=False):
         self.results = []
+        self.notes = []
         self.out = out
         self.verbose = verbose
         self._tty = hasattr(out, "isatty") and out.isatty()
@@ -29,14 +31,20 @@ class Report:
         mark = {PASS: "PASS", FAIL: "FAIL", SKIP: "SKIP"}[r.status]
         if self._tty:
             mark = {PASS: "\033[32mPASS\033[0m", FAIL: "\033[31mFAIL\033[0m", SKIP: "\033[33mSKIP\033[0m"}[r.status]
-        line = "%s  %-6s %-9s %s" % (mark, r.id, "§" + r.section, r.title)
+        line = "%s  %-5s %-22s %s" % (mark, r.id, r.section, r.title)
         if r.level == "SHOULD":
             line += " (should)"
-        if r.detail and (r.status != PASS or self.verbose):
-            line += "\n" + "\n".join("        " + x for x in r.detail.splitlines())
+        if r.operator:
+            line += " [operator]"
+        if r.detail:
+            lines = r.detail.splitlines()
+            if r.status == PASS and not self.verbose:
+                lines = lines[:1]
+            line += "\n" + "\n".join("        " + x for x in lines)
         print(line, file=self.out, flush=True)
 
     def note(self, text):
+        self.notes.append(text)
         print("-- " + text, file=self.out, flush=True)
 
     def summary(self):
@@ -48,4 +56,4 @@ class Report:
 
     def write_json(self, path, meta):
         with open(path, "w") as f:
-            json.dump({"meta": meta, "results": [r.as_dict() for r in self.results]}, f, indent=1)
+            json.dump({"meta": meta, "results": [r.as_dict() for r in self.results], "notes": self.notes}, f, indent=1)

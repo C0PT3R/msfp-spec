@@ -1,15 +1,34 @@
-"""The checks. Each one names the section of spec/v0.md (as corrected on
-2026-11-16) it tests, and whether that section says must or should."""
+"""The checks of core 1 (spec/v1/core.md): the code, discovery, strangers,
+pairing, waiting, hello and versions, JSON, signatures, nonces, answers.
+The parts' checks are in parts.py; keys, addresses, servers that can't
+be called and the reader checks in keys.py. Each check names the file
+and section it tests, and whether that section says must or should."""
 
-import concurrent.futures
+import hashlib
 import os
-import re
+import select
+import sys
 import time
 
-from . import ed25519
+from .keys import KeyChecks
+from .parts import PartChecks
+from .peer import PeerServer
 from .report import FAIL, PASS, SKIP, Result
-from .wire import (FED, CertificateRefused, Client, Key, PeerServer, answer_message, b64u, check_address,
-                   dumps, fingerprint, host_of, is_int, parse_code, proof, request_message, unb64u)
+from .tls import Certificate, FileCertificate
+from .wire import (H_DATE, H_KEY, H_NONCE, H_SIG, CertificateRefused, Client, Key, b64u, check_address,
+                   check_base, dumps, fingerprint, has_null, host_of, is_int, parse_code, parse_ijson, proof,
+                   read_pins, request_message, split_hostport, unb64u, NotIJSON)
+
+PARTS = ("catalog", "playback", "media", "video", "music")
+NEEDS = {"catalog": (), "media": (), "playback": ("catalog", "media"),
+         "video": ("catalog", "playback", "media"), "music": ("catalog", "playback", "media")}
+
+# Core 2.1's forged signature: the identity as key, R the identity, S 0.
+IDENTITY_KEY = "AQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+IDENTITY_SIG = "AQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+SMALL_ORDER_KEY = "JuiVj8KyJ7BFw_SJ8u-Y8NXfrAXTxjM5sTgCiG1T_AU"
+MIXED_ORDER_KEY = "sVS9YhiK4oPdGH_v6MMfXidu3wg7TP8RydXP-FbHREA"
+NON_CANONICAL_KEY = "7v_______________________________________38"
 
 
 class Skip(Exception):
@@ -20,73 +39,55 @@ class Fail(Exception):
     pass
 
 
-NOT_FOUND = b'{"type":"not-found","title":"Not found","status":404}\n'
-
-# Section 2.1's forged signature: the identity as key, R the identity, S 0.
-# A library that skips the point checks accepts it for every message.
-IDENTITY_KEY = "AQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
-IDENTITY_SIG = "AQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
-SMALL_ORDER_KEY = "JuiVj8KyJ7BFw_SJ8u-Y8NXfrAXTxjM5sTgCiG1T_AU"
-MIXED_ORDER_KEY = "sVS9YhiK4oPdGH_v6MMfXidu3wg7TP8RydXP-FbHREA"
-NON_CANONICAL_KEY = "7v_______________________________________38"
-
-KINDS = {"movies", "tvshows", "music", "musicvideos", "homevideos", "boxsets", "books", "photos", "mixed", ""}
-TITLE_KEY = re.compile(r"(movie)/tmdb/([1-9][0-9]{0,9})|(series)/tmdb/([1-9][0-9]{0,9})"
-                       r"(?:/s(0|[1-9][0-9]{0,3})(?:/e(0|[1-9][0-9]{0,4}))?|/e([1-9][0-9]{0,9}))?")
-TAG = re.compile(r"[A-Za-z0-9-]{2,12}")
+def derive_address(address, delta):
+    """The same host, another port: for the address the suite moves to."""
+    scheme, hp = address.split("://", 1)
+    h, port = split_hostport(hp, 443 if scheme == "https" else 80)
+    new = port + delta if port not in (443, 80) else 8000 + delta
+    host = "[%s]" % h if ":" in h else h
+    return "%s://%s:%d" % (scheme, host, new)
 
 
-def key_kind(k):
-    """The kind a title key names, or None when it isn't canonical (section 11)."""
-    m = TITLE_KEY.fullmatch(k) if isinstance(k, str) else None
-    if not m:
-        return None
-    if m.group(1):
-        return "movie" if int(m.group(2)) <= 9999999999 else None
-    if int(m.group(4)) > 9999999999:
-        return None
-    if m.group(7):
-        return "episode"
-    if m.group(6) is not None:
-        return "episode"
-    if m.group(5) is not None:
-        return "season"
-    return "series"
-
-
-def conventional_case(tag):
-    """BCP 47's case conventions (section 2.1): language lowercase, script
-    title case, region uppercase."""
-    parts = tag.split("-")
-    if parts[0] != parts[0].lower():
-        return False
-    for x in parts[1:]:
-        if len(x) == 4 and x.isalpha() and x != x.title():
-            return False
-        if len(x) == 2 and x.isalpha() and x != x.upper():
-            return False
-    return True
-
-
-class Suite:
-    def __init__(self, args, report):
+class Suite(PartChecks, KeyChecks):
+    def __init__(self, args, report, operator_hook=None):
         self.a = args
         self.r = report
+        self.allow_http = args.plain_http
+        self.operator_hook = operator_hook      # the self-test plays the operator through this
         self.code = None
-        self.target_pub = None
         self.target = args.target
         self.key = Key.load_or_make(args.key) if args.key else Key()
+        self.next_keys = [Key() for _ in range(5)]   # the suite's next keys, in order (core 12.5)
+        self.old_keys = []
+        self.server_keys = []                   # the server's current key, first (shared with the client)
+        self.server_versions = ({}, {})         # core, parts of the server's latest signed hello
+        self.server_name = None
+        self.inbound = True
+        self.address = args.address
+        self.uncallable_address = None
         self.client = None
-        self.server = None
+        self.peer = None
+        self.cert = None
         self.paired = False
         self.libraries = []
-        self.seq = None
+        self.limits = None
         self.whole = None
-        self.answers = []          # every Answer that had to be signed
+        self.seq = None
+        self.answers = []                       # every answer that had to be signed
+        self.unclear = []
 
-    # ---- running a check ---------------------------------------------------
+    # ---- running a check ---------------------------------------------------------
 
-    def check(self, cid, section, title, fn, level="MUST"):
+    def skipped(self, cid):
+        for x in (y.strip() for y in getattr(self.a, "skip", "").split(",")):
+            if x and (cid == x or (cid.startswith(x) and not cid[len(x):len(x) + 1].isalpha())):
+                return True
+        return False
+
+    def check(self, cid, section, title, fn, level="MUST", operator=False):
+        if self.skipped(cid):
+            self.r.add(Result(cid, section, title, level, SKIP, "skipped by --skip", operator))
+            return False
         try:
             out = fn()
             status, detail = (PASS, out) if isinstance(out, str) or out is None else out
@@ -95,175 +96,385 @@ class Suite:
         except Fail as e:
             status, detail = FAIL, str(e)
         except CertificateRefused as e:
-            status, detail = FAIL, "certificate: %s" % e
+            status, detail = FAIL, "certificate (core 3.2): %s" % e
         except (OSError, ValueError) as e:
             status, detail = FAIL, "%s: %s" % (type(e).__name__, e)
-        self.r.add(Result(cid, section, title, level, status, detail or ""))
+        self.r.add(Result(cid, section, title, level, status, detail or "", operator))
         return status == PASS
+
+    def skip(self, cid, section, title, why, level="MUST", operator=False):
+        self.r.add(Result(cid, section, title, level, SKIP, why, operator))
+
+    def can_ask_operator(self):
+        """Whether the checks that need the server's operator run."""
+        if self.a.no_operator:
+            return False, "--no-operator"
+        if self.operator_hook:
+            return True, ""
+        if self.a.operator or sys.stdin.isatty():
+            return True, ""
+        return False, "not run interactively (stdin isn't a terminal); pass --operator to run the operator steps anyway"
+
+    def ask_operator(self, action, text, done, timeout=None, cid=None):
+        """Prints what the operator must do on the server, then waits until
+        done() is true (polled every 2 s), the time is up, or Enter is
+        pressed. Returns whether done() became true."""
+        cid = cid or {"want": "Q1", "accept2": "UP2", "confirm": "K11", "rotate": "O1", "rotate2": "O3", "revoke": "O4",
+                      "change": "T9"}.get(action)
+        if cid and self.skipped(cid):
+            return False
+        timeout = timeout or self.a.operator_timeout
+        if self.operator_hook:
+            self.operator_hook(action)
+        else:
+            self.r.note("OPERATOR, on the server under test: %s (waiting up to %d s; press Enter to skip)" % (text, timeout))
+        end = time.time() + timeout
+        while time.time() < end:
+            if done():
+                return True
+            if not self.operator_hook and sys.stdin.isatty():
+                r, _, _ = select.select([sys.stdin], [], [], 2)
+                if r:
+                    sys.stdin.readline()
+                    return done()
+            else:
+                time.sleep(0.5 if self.operator_hook else 2)
+        return done()
 
     @staticmethod
     def unsigned_404(a, also=()):
         if a.signed:
-            raise Fail("signed answer %s; expected the unsigned 404 of a failed check" % a.short())
+            raise Fail("a signed answer %s; expected the unsigned 404 of a failed check (core 6.4)" % a.short())
         if a.status != 404 and a.status not in also:
-            raise Fail("got %s; expected the unsigned 404" % a.short())
+            raise Fail("got %s; expected the unsigned 404 (core 6.4)" % a.short())
         return "unsigned %d" % a.status
 
-    def signed(self, a, status, what="answer"):
+    def signed(self, a, status, typ=None):
+        """The answer is signed by the server's key, with this status (and
+        problem type), and well formed (core 6.6, 2.3, 8.2)."""
         self.answers.append(a)
         if a.status != status:
-            raise Fail("got %s; expected a signed %d" % (a.short(), status))
+            raise Fail("got %s; expected a signed %d%s" % (a.short(), status, " " + typ if typ else ""))
         if not a.signed:
-            raise Fail("the %d isn't signed by the target's key (section 6.6): %s" % (status, a.short()))
-        if a.sig_header_count != 1:
-            raise Fail("Overfin-Signature sent %d times (section 2.1)" % a.sig_header_count)
-        if status == 200:
+            raise Fail("the %d isn't signed by the server's key (core 6.6): %s; %s" % (status, a.why_unsigned, a.short()))
+        if status in (200, 202):
             if a.json_error:
-                raise Fail("the 200 isn't I-JSON (section 2.1): %s" % a.json_error)
+                raise Fail("the %d isn't I-JSON (core 2.3): %s" % (status, a.json_error))
             if not isinstance(a.json, dict):
-                raise Fail("the 200 isn't a JSON object")
-            if _has_null(a.json):
-                raise Fail("the answer sends null (section 2, since 2026-11-16 a sender must not)")
+                raise Fail("the %d isn't a JSON object" % status)
+            if has_null(a.json):
+                raise Fail("the answer sends null (core 2.3: no MSFP member is null)")
+        elif typ is not None and a.problem_type() != typ:
+            raise Fail("a signed %d of type %r; expected %r (core 8.2)" % (status, a.problem_type(), typ))
         return a
 
-    # ---- the run -------------------------------------------------------------
+    def note_unclear(self, section, text):
+        if (section, text) not in self.unclear:
+            self.unclear.append((section, text))
+
+    # ---- the suite's side --------------------------------------------------------
+
+    def set_key(self, k):
+        self.old_keys.append(self.key)
+        self.key = k
+        if self.client:
+            self.client.key = k
+
+    def suite_parts(self):
+        return {p: [1] for p in PARTS}
+
+    def hello_body(self, state="paired", answer=False, parts=None, **over):
+        """The suite's hello (core 9.2): its versions, its pins, its address."""
+        b = {"state": state, "core": [1], "parts": self.suite_parts() if parts is None else parts}
+        if self.cert and self.inbound:
+            b["certificates"] = [self.cert.pin]
+        b["address"] = self.address or self.uncallable_address
+        if not self.inbound:
+            b["inbound"] = False
+            if not answer and self.server_keys:
+                b["knownKey"] = b64u(self.server_keys[0])
+        b.update(over)
+        return {k: v for k, v in b.items() if v is not None}
+
+    def learn(self, j):
+        """What the suite keeps of the server's latest signed hello,
+        request or answer (core 3.2, 10.3)."""
+        if not isinstance(j, dict):
+            return
+        self.server_versions = (j.get("core"), j.get("parts"))
+        if self.client:
+            self.client.pins = read_pins(j.get("certificates"))
+
+    def learn_hello(self, j, rec):
+        """A hello request from the server; returns why it is refused, or None."""
+        for f, t in (("core", list), ("parts", dict), ("certificates", list), ("address", str), ("inbound", bool),
+                     ("nextCommitment", str)):
+            if f in j and not isinstance(j[f], t):
+                rec["faults"].append("its hello's %s isn't a%s %s (core 9.2)" % (f, "n" if t is list else "", t.__name__))
+        self.learn(j)
+        return None
+
+    def on_server_rotated(self, old, new):
+        self.r.note("the server rotated its key toward this suite: %s -> %s" % (b64u(old), b64u(new)))
+
+    def parts_on(self):
+        """The parts on between the suite and the server (core 10.3)."""
+        core, parts = self.server_versions
+        if not isinstance(core, list) or 1 not in [x for x in core[:8] if is_int(x)]:
+            return set()
+        theirs = parts if isinstance(parts, dict) else {}
+        on = set()
+        for p in ("catalog", "media", "playback", "video", "music"):
+            v = theirs.get(p)
+            if isinstance(v, list) and 1 in [x for x in v[:8] if is_int(x)] and all(n in on for n in NEEDS[p]):
+                on.add(p)
+        return on
+
+    def hello(self, state="paired", key=None, keys=None, **over):
+        a = self.client.call("hello", self.hello_body(state, **over), key=key, keys=keys)
+        if a.signed and a.status == 200:
+            self.learn(a.json)
+        return a
+
+    # ---- the run -----------------------------------------------------------------------
 
     def run(self):
         a = self.a
         if a.code:
-            self.check("C1", "5.1", "the pairing code reads as section 5.1 says", self.c_code)
+            if not self.check("C1", "core 5.1", "the pairing code reads as core 5.1 says", self.c_code):
+                return
         if not self.target:
             self.r.note("no target: give --target, or a --code that names one")
             return
-        self.r.note("target %s, this peer's key %s (fingerprint %s)" % (self.target, self.key.text, fingerprint(self.key.pub)))
-        self.client = Client(self.key, self.target, peer_pub=self.target_pub, connect=a.connect)
+        if self.target.startswith("http://") and not self.allow_http:
+            self.r.note("the target's address is http://: core 1 is https only; pass --plain-http for an implementation's test switch")
+            return
+        if self.allow_http:
+            self.r.note("--plain-http: plain http, a test switch OUTSIDE the protocol (core 3.1); the HTTPS checks are skipped")
+        self.r.note("target %s; this suite's key %s, fingerprint %s" % (self.target, self.key.text, fingerprint(self.key.pub)))
+        self.client = Client(self.key, self.target, server_keys=self.server_keys, connect=a.connect)
+        self.server_keys.extend([self.code[0]] if self.code else [])
         try:
-            Client(Key(), self.target, connect=a.connect, timeout=10).call("hello", {"state": "waiting"})
+            self.discovery_checks()
+            Client(Key(), self.target, connect=a.connect, timeout=10, base=self.client.base,
+                   any_certificate=True).call("hello", {"state": "waiting"})
         except (OSError, CertificateRefused) as e:
-            self.r.add(Result("S0", "3", "the target answers at its address", "MUST", FAIL, "%s: %s" % (type(e).__name__, e)))
+            self.r.add(Result("S0", "core 3", "the server answers at its address", "MUST", FAIL, "%s: %s" % (type(e).__name__, e)))
             return
         self.stranger()
         if not a.code:
             self.r.note("no --code: the pairing and paired checks are skipped")
             return
-        if not a.address:
-            self.r.note("no --address: the suite can't pair (the target must reach it)")
+        if not self.address:
+            self.r.note("no --address: the suite can't pair (the server must reach it); see --help")
             return
-        self.server = PeerServer(self.key, a.address, a.listen, self.target_pub)
-        # What this peer offers the target, from the start (section 9.3):
-        # one library, three titles on two pages.
-        self.server.offer = [{"id": "lib_conformance", "name": "Conformance films", "kind": "movies"}]
-        self.server.pages = {
-            "": {"titles": [{"key": "movie/tmdb/550", "kind": "movie", "library": "lib_conformance", "audio": ["en"]},
-                            {"key": "movie/tmdb/603", "kind": "movie", "library": "lib_conformance", "audio": ["en"]}],
-                 "next": "movie/tmdb/603", "seq": 1},
-            "movie/tmdb/603": {"titles": [{"key": "movie/tmdb/949", "kind": "movie", "library": "lib_conformance", "audio": ["en"]}],
-                               "seq": 1},
-        }
+        why = check_address(self.address, self.allow_http)
+        if why:
+            self.r.note("--address %s breaks core 5.2 (%s): the server should refuse it" % (self.address, why))
+        self.start_peer()
         try:
+            self.client.on_cert_refused = lambda: self.hello()
             if not self.pairing():
                 return
             self.waiting()
             if not self.wait_for_accept():
                 return
+            self.paired = True
             self.paired_checks()
         finally:
-            self.server.close()
+            self.peer.close()
 
-    # ---- the code ----------------------------------------------------------
+    def start_peer(self):
+        a = self.a
+        if not self.allow_http:
+            if a.tls_cert:
+                self.cert = FileCertificate(a.tls_cert, a.tls_key)
+            else:
+                hosts = [split_hostport(host_of(x), 443)[0] for x in (self.address, self.new_address())]
+                self.cert = Certificate(sorted(set(hosts)))
+            self.r.note("this suite serves HTTPS with a self-signed certificate, pin %s (named in its hellos, core 3.2)" % self.cert.pin)
+        self.peer = PeerServer(self)
+        ctx = self.cert.context() if self.cert else None
+        self.peer.listen("main", self.address, a.listen, ctx)
+        self.peer.hosts.add(host_of(self.address))
+        self.peer.offer = [{"id": "lib_conformance", "name": "Conformance films", "kind": "movies"}]
+        self.peer.pages = {
+            "": {"titles": [{"key": "movie/tmdb/550", "kind": "movie", "library": "lib_conformance", "audio": ["en"]},
+                            {"key": "movie/tmdb/603", "kind": "movie", "library": "lib_conformance", "audio": ["en"]}],
+                 "next": "movie/tmdb/603", "seq": 1},
+            "movie/tmdb/603": {"titles": [{"key": "movie/tmdb/949", "kind": "movie", "library": "lib_conformance",
+                                           "audio": ["en"]}], "seq": 1},
+        }
+
+    def new_address(self):
+        return self.a.new_address or derive_address(self.address, 1)
+
+    def paired_checks(self):
+        self.hello_checks()
+        self.version_checks()
+        self.json_checks()
+        self.signing_checks()
+        self.nonce_checks()
+        self.catalog_checks()
+        self.playback_checks()
+        self.reader_checks()
+        self.load_checks()
+        self.uncallable_pairing()
+        self.key_checks()
+        self.address_checks()
+        self.server_key_checks()
+        self.uncallable_checks()
+        self.end_checks()
+        self.answer_checks()
+
+    # ---- the code (core 5) ---------------------------------------------------------------
 
     def c_code(self):
-        key, secret, expiry, address = parse_code(self.a.code)
+        key, secret, expiry, address = parse_code(self.a.code, self.allow_http)
         self.code = (key, secret, expiry, address)
-        self.target_pub = key
         if self.target and self.target != address:
             self.r.note("--target %s differs from the code's address %s: the code's is used" % (self.target, address))
         self.target = address
-        if expiry <= time.time():
-            raise Fail("the code expired at %d" % expiry)
         left = expiry - time.time()
+        if left <= 0:
+            raise Fail("the code expired at %d" % expiry)
         if left > 24 * 3600 + 60:
-            raise Fail("expires in %.0f hours; section 5.1 says 24" % (left / 3600))
-        return "key %s, address %s, expires in %.1f hours" % (b64u(key), address, left / 3600)
+            raise Fail("expires in %.1f hours; core 5.1 says 24 hours after it was made" % (left / 3600))
+        return "key %s (fingerprint %s), address %s, expires in %.1f hours" % (b64u(key), fingerprint(key), address, left / 3600)
 
-    # ---- strangers (no pairing) -----------------------------------------------
+    # ---- discovery (core 11) -----------------------------------------------------------------
+
+    def discovery_checks(self):
+        c = self.client
+
+        def doc():
+            status, hdrs, body = c.discovery()
+            if status == 404:
+                cc = Client(Key(), self.target, connect=self.a.connect, any_certificate=True)
+                conn = cc._conn(False)[0]
+                conn.request("GET", "/.well-known/msfp-conformance-no-such-document")
+                r = conn.getresponse()
+                other = (r.status, r.read())
+                conn.close()
+                if other[0] != 404:
+                    return (PASS, "no document (404); a missing path answers %d, so the two can be told apart (core 11 "
+                                  "should: like any path that doesn't exist)" % other[0])
+                return "no document: 404, like a path that doesn't exist (off by default)"
+            if status != 200:
+                raise Fail("GET /.well-known/msfp answered %d: a document (200) or a 404" % status)
+            try:
+                j = parse_ijson(body)
+            except NotIJSON as e:
+                raise Fail("the document isn't I-JSON: %s" % e)
+            if len(body) > 16 * 1024:
+                raise Fail("the document is over 16 KiB (a fetcher reads 16 KiB)")
+            if not isinstance(j, dict):
+                raise Fail("the document isn't a JSON object")
+            if "core" in j and not isinstance(j["core"], list):
+                raise Fail("core isn't an array")
+            if "parts" in j and not isinstance(j["parts"], dict):
+                raise Fail("parts isn't an object")
+            if "base" in j:
+                why = check_base(j["base"])
+                if why:
+                    raise Fail("base %r: %s (a document whose base breaks core 11 counts as none)" % (j["base"], why))
+                c.base = j["base"]
+            return "a document: core %s, base %s (used for every call)" % (j.get("core"), c.base)
+        self.check("D1", "core 11", "GET /.well-known/msfp: a valid document, or the 404 of a missing path", doc)
+
+    # ---- strangers (core 6.4) -------------------------------------------------------------------
 
     def stranger(self):
         st = Key()
-        # A stranger knows no pins: it takes any certificate, as only
-        # refusals are checked here.
-        c = Client(st, self.target, connect=self.a.connect, any_certificate=True)
+        c = Client(st, self.target, connect=self.a.connect, any_certificate=True, base=self.client.base)
 
         def unknown_key():
-            return self.unsigned_404(c.call("hello", {"state": "waiting"}))
-        self.check("S1", "6.4", "a stranger's hello gets the unsigned 404", unknown_key)
+            return self.unsigned_404(c.call("hello", self.hello_body("waiting")))
+        self.check("S1", "core 6.4", "a stranger's hello gets the unsigned 404", unknown_key)
 
         def other_calls():
-            for name in ("libraries", "titles"):
-                self.unsigned_404(c.call(name, {} if name == "libraries" else {"libraries": []}))
-            return "libraries and titles: unsigned 404"
-        self.check("S2", "6.4", "a stranger's libraries and titles get the unsigned 404", other_calls)
+            bodies = {"rotate": {"newKey": Key().text, "date": int(time.time()), "oldSignature": "x", "newSignature": "x"},
+                      "revoke": {"date": int(time.time()), "signature": "x"}, "libraries": {}, "titles": {"libraries": []},
+                      "play": {"title": "movie/tmdb/949"}, "progress": {"id": "play_" + "a" * 26}, "stop": {"id": "play_" + "a" * 26}}
+            for name, b in bodies.items():
+                try:
+                    self.unsigned_404(c.call(name, b))
+                except Fail as e:
+                    raise Fail("%s: %s" % (name, e))
+            return "rotate, revoke, libraries, titles, play, progress, stop: unsigned 404"
+        self.check("S2", "core 6.4, 6.5", "a stranger's other calls get the unsigned 404", other_calls)
 
         def same_as_missing():
-            a = c.call("hello", {"state": "waiting"})
-            path = FED + "conformance-no-such-call"
-            body = dumps({"state": "waiting"})
+            a = c.call("hello", self.hello_body("waiting"))
+            path = c.base + "conformance-no-such-call"
+            body = dumps(self.hello_body("waiting"))
             b = c.raw(path, body, c.headers(path, body))
             if a.status != b.status or a.body != b.body:
-                raise Fail("failed check: %d %r; missing path: %d %r" % (a.status, a.body[:60], b.status, b.body[:60]))
+                raise Fail("a failed check: %d %r; a missing path: %d %r" % (a.status, a.body[:60], b.status, b.body[:60]))
             ct = lambda x: [v for k, v in x.headers if k.lower() == "content-type"]
             if ct(a) != ct(b):
-                raise Fail("Content-Type differs: %s vs %s" % (ct(a), ct(b)))
+                raise Fail("Content-Type differs: %s and %s" % (ct(a), ct(b)))
             return "same status, body and type"
-        self.check("S3", "3, 14", "the unsigned 404 can't be told from a path that doesn't exist", same_as_missing, "SHOULD")
+        self.check("S3", "core 3, 14", "the unsigned 404 can't be told from a path that doesn't exist", same_as_missing, "SHOULD")
 
         def wrong_method():
-            path = FED + "hello"
-            c2 = c._conn(False)[0]
-            c2.request("GET", path)
-            r = c2.getresponse(); r.read(); c2.close()
-            path2 = FED + "conformance-no-such-call"
-            c3 = c._conn(False)[0]
-            c3.request("GET", path2)
-            r2 = c3.getresponse(); r2.read(); c3.close()
-            if r.status != r2.status:
-                raise Fail("GET on hello: %d; GET on a missing path: %d" % (r.status, r2.status))
-            return "both %d" % r.status
-        self.check("S4", "3, 14", "a wrong method on a federation path answers like a missing path", wrong_method, "SHOULD")
+            out = []
+            for path in (c.base + "hello", c.base + "conformance-no-such-call"):
+                conn = c._conn(False)[0]
+                conn.request("GET", path)
+                r = conn.getresponse()
+                r.read()
+                conn.close()
+                out.append(r.status)
+            if out[0] != out[1]:
+                raise Fail("GET on hello: %d; GET on a missing path: %d" % tuple(out))
+            return "both %d" % out[0]
+        self.check("S4", "core 3, 14", "a GET on a federation path answers like a missing path", wrong_method, "SHOULD")
 
-    # ---- pairing ------------------------------------------------------------------
+    # ---- pairing (core 9.1, 7.1) ----------------------------------------------------------------
 
-    def pair_body(self, key, address=None, secret=None, name="MSFP conformance suite"):
-        _, code_secret, _, _ = self.code
-        address = address or self.a.address
-        s = secret or code_secret
-        return dumps({"address": address, "name": name,
-                      "secretHash": b64u(__import__("hashlib").sha256(code_secret).digest()),
-                      "proof": b64u(proof(s, key.pub, address))})
+    def pair_body(self, key, address=None, secret=None, code=None, **over):
+        _, code_secret, _, _ = code or self.code
+        address = address or self.address
+        b = {"address": address, "name": "MSFP conformance suite",
+             "secretHash": b64u(hashlib.sha256(code_secret).digest()),
+             "proof": b64u(proof(secret or code_secret, key.pub, address)),
+             "nextCommitment": self.next_keys[0].commitment}
+        if not self.inbound:
+            b["inbound"] = False
+        b.update(over)
+        return dumps({k: v for k, v in b.items() if v is not ...})
+
+    def pair_raw(self, body, key, c=None, **kw):
+        c = c or self.client
+        path = c.base + "pair"
+        return c.raw(path, body, c.headers(path, body, key=key, **kw))
 
     def pairing(self):
         c = self.client
-        why = check_address(self.a.address)
-        if why:
-            self.r.note("--address %s breaks section 5.2 (%s); the target should refuse it" % (self.a.address, why))
+        used = {}
+
+        def refused(a, name):
+            if a.status == 200:
+                used["by"] = name
+                raise Fail("ACCEPTED %s; the code is now used, so the pairing can't go on" % name)
+            return self.unsigned_404(a)
 
         def wrong_proof():
-            body = self.pair_body(self.key, secret=os.urandom(32))
-            return self.unsigned_404(c.raw(FED + "pair", body, c.headers(FED + "pair", body)))
-        self.check("P1", "9.1, 6.6", "pair with a wrong proof: the unsigned 404, and the code stays live", wrong_proof)
+            return refused(self.pair_raw(self.pair_body(self.key, secret=os.urandom(32)), self.key), "a wrong proof")
+        self.check("P1", "core 9.1, 6.6", "pair with a wrong proof: the unsigned 404, and the code stays live", wrong_proof)
 
         def forged_identity():
             fake = Key()
             fake.text = IDENTITY_KEY
             body = self.pair_body(fake)
-            h = c.headers(FED + "pair", body)
-            h = [(k, IDENTITY_KEY if k == "Overfin-Key" else IDENTITY_SIG if k == "Overfin-Signature" else v) for k, v in h]
-            a = c.raw(FED + "pair", body, h)
+            hs = [(k, IDENTITY_KEY if k == H_KEY else IDENTITY_SIG if k == H_SIG else v) for k, v in c.headers(c.base + "pair", body)]
+            a = c.raw(c.base + "pair", body, hs)
             if a.status == 200:
-                raise Fail("ACCEPTED a pair signed by the identity key with R = identity, S = 0: "
-                           "the target skips section 2.1's point checks, and anyone can forge its peers' requests")
+                raise Fail("ACCEPTED a pair signed by the identity key with R = identity, S = 0: the server skips core 2.1's "
+                           "point checks, and anyone can forge its peers' requests")
             return self.unsigned_404(a)
-        self.check("P2", "2.1, 4.1", "pair under the identity key with a forged signature is refused", forged_identity)
+        self.check("P2", "core 2.1, 4.1", "pair under the identity key with the forged signature is refused", forged_identity)
 
         def bad_keys():
             out = []
@@ -271,254 +482,472 @@ class Suite:
                                ("a non-canonical encoding", NON_CANONICAL_KEY)):
                 k = Key()
                 body = self.pair_body(k)
-                h = [(x, text if x == "Overfin-Key" else v) for x, v in c.headers(FED + "pair", body, key=k)]
-                a = c.raw(FED + "pair", body, h)
-                if a.status == 200:
-                    raise Fail("accepted %s as Overfin-Key" % name)
-                self.unsigned_404(a)
+                hs = [(x, text if x == H_KEY else v) for x, v in c.headers(c.base + "pair", body, key=k)]
+                refused(c.raw(c.base + "pair", body, hs), name)
                 out.append(name)
             return "refused: " + ", ".join(out)
-        self.check("P3", "2.1, 4.1", "pair under keys section 2.1 refuses (small order, not canonical) is refused", bad_keys)
+        self.check("P3", "core 2.1, 4.1", "pair under keys core 2.1 refuses (small order, not canonical) is refused", bad_keys)
 
         def stale():
-            body = self.pair_body(self.key)
-            return self.unsigned_404(c.raw(FED + "pair", body, c.headers(FED + "pair", body, date=str(int(time.time()) - 400))))
-        self.check("P4", "6.4", "pair dated 400 seconds ago is refused", stale)
+            return refused(self.pair_raw(self.pair_body(self.key), self.key, date=str(int(time.time()) - 400)), "a pair dated 400 s ago")
+        self.check("P4", "core 6.4", "pair dated 400 seconds ago is refused", stale)
 
         def bad_addresses():
-            bad = ["HTTPS://a.example.org", "http://10.0.0.1:80", "http://10.0.0.1/", "http://10.0.0.010:8000",
-                   "http://Upper.example.org", "http://10.0.0.1:08000"]
+            bad = ["HTTPS://a.example.org", "https://a.example.org/", "https://a.example.org:443", "https://192.0.2.010:8000",
+                   "https://Upper.example.org", "https://a.example.org:08000", "https://a.example.org?x", "https://a_b.example.org"]
+            if not self.allow_http:
+                bad.append("http://192.0.2.10:8000")
             for addr in bad:
                 k = Key()
-                body = self.pair_body(k, address=addr)
-                a = c.raw(FED + "pair", body, c.headers(FED + "pair", body, key=k))
-                if a.status == 200:
-                    raise Fail("accepted the address %r (the code is now used: pairing can't go on)" % addr)
-                self.unsigned_404(a)
-            return "refused %d addresses that break section 5.2" % len(bad)
-        if not self.check("P5", "5.2, 9.1", "pair naming an invalid address is refused, the code stays live", bad_addresses):
-            if self.r.results[-1].status == FAIL and "code is now used" in self.r.results[-1].detail:
-                return False
+                refused(self.pair_raw(self.pair_body(k, address=addr), k), "the address %r" % addr)
+            return "refused %d addresses that break core 5.2" % len(bad)
+        self.check("P5", "core 5.2, 9.1", "pair naming an address that breaks core 5.2 is refused, the code stays live", bad_addresses)
+        if used:
+            return False
+
+        def bad_bodies():
+            cases = [("inbound false with an address that isn't https://msfp-<26>.invalid", {"inbound": False}),
+                     ("inbound not a boolean", {"inbound": "false"}),
+                     ("nextCommitment not 32 bytes of base64url", {"nextCommitment": "abc"}),
+                     ("secretHash not 32 bytes", {"secretHash": b64u(os.urandom(31))}),
+                     ("name null (core 2.3)", {"name": None}),
+                     ("name not a string (core 2.3)", {"name": 7})]
+            for name, over in cases:
+                k = Key()
+                body = self.pair_body(k, **over)
+                if "name" in over:
+                    j = parse_ijson(body)
+                    j["name"] = over["name"]
+                    body = dumps(j)
+                refused(self.pair_raw(body, k), name)
+            k = Key()
+            refused(self.pair_raw(b"[]", k), "a body that is an array")
+            return "refused %d bodies" % (len(cases) + 1)
+        self.check("P6", "core 9.1, 7.5, 2.3", "pair bodies with a bad member are refused with the unsigned 404, the code stays live",
+                   bad_bodies)
+        if used:
+            return False
 
         state = {}
 
         def pair():
             body = self.pair_body(self.key)
-            h = c.headers(FED + "pair", body)
-            state["req"] = (body, h)
-            a = c.raw(FED + "pair", body, h)
+            hs = c.headers(c.base + "pair", body)
+            state["req"] = (body, hs)
+            a = c.raw(c.base + "pair", body, hs)
             if a.status != 200:
-                raise Fail("got %s: check that the code is live and that the target reaches %s" % (a.short(), self.a.address))
+                raise Fail("got %s: check that the code is live and that the server reaches %s" % (a.short(), self.address))
             self.signed(a, 200)
             name = a.json.get("name")
             if not isinstance(name, str):
                 raise Fail("no name string in %r" % a.body[:100])
-            self.target_name = name
-            return "paired from this side; the target calls itself %r" % name
-        if not self.check("P6", "9.1, 7.1", "pair with the code: 200, signed by the code's key", pair):
+            self.server_name = name
+            nc = a.json.get("nextCommitment")
+            if nc is not None:
+                if not isinstance(nc, str) or unb64u(nc, 32) is None:
+                    raise Fail("nextCommitment %r isn't base64url of 32 bytes (core 12.5)" % nc)
+                self.peer.server_commitment = nc
+            return "paired from this side; the server calls itself %r" % name
+        if not self.check("P7", "core 9.1, 7.1", "pair with the code: 200, signed by the code's key, with a name", pair):
             return False
 
+        def commits():
+            if self.peer.server_commitment is None:
+                raise Fail("the pair answer carries no nextCommitment: the server keeps no next key, and a rotation "
+                           "will need both operators (core 12.5, 12.3 case 4)")
+            return "nextCommitment %s" % self.peer.server_commitment
+        self.check("P8", "core 12.5", "the pair answer carries the server's next key commitment", commits, "SHOULD")
+
         def replay():
-            body, h = state["req"]
-            return self.unsigned_404(c.raw(FED + "pair", body, h))
-        self.check("P7", "6.5", "the same pair request again (its nonce replayed) gets the unsigned 404", replay)
+            body, hs = state["req"]
+            return self.unsigned_404(c.raw(c.base + "pair", body, hs))
+        self.check("P9", "core 6.5", "the same pair request again (its nonce replayed): the unsigned 404", replay)
 
         def code_used():
-            body = self.pair_body(self.key)
-            a = c.raw(FED + "pair", body, c.headers(FED + "pair", body))
+            a = self.pair_raw(self.pair_body(self.key), self.key)
             if a.status == 200:
                 raise Fail("the code worked twice")
-            if a.status == 409 and a.signed:
-                return "signed 409 (the code is gone, so a 404 was expected; 7.1 step 4 deletes it)"
-            return self.signed(a, 404) and "signed 404"
-        self.check("P8", "9.1, 7.1", "the used code again, from the now known key: a signed 404", code_used)
-        self.paired = True
+            self.signed(a, 404)
+            return "signed 404"
+        self.check("P10", "core 9.1, 7.1", "the used code again, from the now known key: a signed 404", code_used)
+
+        def second_code():
+            if not self.a.code2:
+                raise Skip("give --code2 (a second code of the same server) to check the signed 409 and the uncallable pairing")
+            self.code2 = parse_code(self.a.code2, self.allow_http)
+            if self.code2[0] != self.code[0]:
+                raise Fail("--code2 holds another key than --code")
+            a = self.pair_raw(self.pair_body(self.key, code=self.code2), self.key)
+            self.answers.append(a)
+            if a.status != 409:
+                raise Fail("got %s; expected a signed 409 with an empty body" % a.short())
+            if not a.signed:
+                raise Fail("the 409 isn't signed (core 9.1: it is, since the key is known): %s" % a.why_unsigned)
+            if a.body or a.media_type != "-":
+                raise Fail("the 409 has a body %r or a Content-Type (%s): core 3 says an empty body and none" % (a.body[:60], a.media_type))
+            return "a signed 409, no body, no Content-Type (signed with '-' as its media type)"
+        self.check("P11", "core 9.1, 3, 6.3", "a second live code from a known key: the signed 409 with no body", second_code)
         return True
 
-    # ---- waiting for the target's operator -------------------------------------
+    # ---- waiting for the server's operator (core 7.1, 7.3) -----------------------------------------
 
     def waiting(self):
         c = self.client
 
         def hello_waiting():
-            a = self.signed(c.call("hello", {"state": "waiting"}), 200)
+            a = self.signed(self.hello("waiting"), 200)
             if a.json.get("state") not in ("waiting", "paired"):
                 raise Fail("state %r" % a.json.get("state"))
-            self.read_pins(a)
             return "state %s" % a.json["state"]
-        self.check("W1", "9.2, 7.3", "hello waiting: 200 signed, state waiting", hello_waiting)
+        self.check("W1", "core 9.2, 7.3", "hello waiting: 200 signed, state waiting", hello_waiting)
 
         def cant_force():
-            a = self.signed(c.call("hello", {"state": "paired"}), 200)
+            a = self.signed(self.hello("paired"), 200)
             if a.json.get("state") == "paired":
-                raise Skip("the target was already accepted, so this can't be told")
-            again = self.signed(c.call("hello", {"state": "waiting"}), 200)
+                raise Skip("the server's operator had already accepted, so this can't be told")
+            again = self.signed(self.hello("waiting"), 200)
             if again.json.get("state") != "waiting":
-                raise Fail("a hello paired from a peer waiting for the target's operator changed its state")
+                raise Fail("a hello paired from a peer in state ours moved it on")
             return "still waiting"
-        self.check("W2", "7.1, 9.2", "hello paired from a waiting peer changes nothing", cant_force)
+        self.check("W2", "core 7.1, 9.2", "hello paired from a peer waiting for the server's operator changes nothing", cant_force)
 
         def libs_waiting():
             a = c.call("libraries", {})
             if a.status == 200 and a.signed:
-                if self.signed(c.call("hello", {"state": "waiting"}), 200).json.get("state") == "paired":
+                if self.signed(self.hello("waiting"), 200).json.get("state") == "paired":
                     raise Skip("already accepted")
-                raise Fail("libraries answered 200 before the target's operator accepted")
-            return self.signed(a, 404) and "signed 404"
-        self.check("W3", "7.3", "libraries before the target's operator accepts: a signed 404", libs_waiting)
+                raise Fail("libraries answered 200 before the server's operator accepted")
+            self.signed(a, 404, "not-found")
+            return "signed 404 not-found"
+        self.check("W3", "core 7.3, catalog 2", "libraries before the server's operator accepts: a signed 404", libs_waiting)
 
     def wait_for_accept(self):
-        c = self.client
-        self.r.note("now accept the pairing on the target's side: peer %r, fingerprint %s (waiting up to %d s)"
-                    % ("MSFP conformance suite", fingerprint(self.key.pub), self.a.accept_timeout))
-        end = time.time() + self.a.accept_timeout
-        while time.time() < end:
-            if self.server.state == "paired":
-                break
-            a = c.call("hello", {"state": "waiting"})
+        timeout = self.a.accept_timeout if self.a.accept_timeout is not None else (60 if self.a.no_operator else 600)
+        t0 = time.time()
+
+        def accepted():
+            if self.peer.state == "paired":
+                return True
+            a = self.hello("waiting")
             if a.signed and a.status == 200 and a.json and a.json.get("state") == "paired":
-                self.server.state = "paired"
-                self.r.note("the target answered paired before telling this peer")
-                break
-            time.sleep(min(10, max(0, end - time.time())))
-        if self.server.state != "paired":
-            self.r.add(Result("W4", "7.1", "the target's operator accepted", "MUST", SKIP,
-                              "not accepted within %d s: the paired checks are skipped" % self.a.accept_timeout))
+                self.r.note("the server answered paired before this suite heard its hello")
+                self.peer.state = "paired"
+            return self.peer.state == "paired"
+
+        text = "accept the pairing of peer 'MSFP conformance suite', fingerprint %s" % fingerprint(self.key.pub)
+        if self.a.no_operator and not self.operator_hook:
+            self.r.note("--no-operator: waiting %d s for the pairing to be accepted without a prompt (a test switch)" % timeout)
+            end = time.time() + timeout
+            while time.time() < end and not accepted():
+                time.sleep(5)
+        else:
+            self.ask_operator("accept", text, lambda: self.peer.state == "paired" or (time.time() - t0 > 10 and accepted()), timeout)
+        if self.peer.state != "paired":
+            self.skip("W4", "core 7.1", "the server's operator accepted; the server tells this suite",
+                      "not accepted within %d s: the paired checks are skipped" % timeout, operator=True)
             return False
 
         def told_us():
-            hellos = [x for x in self.server.requests if x["call"] == "hello"]
+            hellos = [x for x in self.peer.requests if x["call"] == "hello"]
             if not hellos:
-                raise Fail("the target never sent this peer a hello (7.1 step 6), or it couldn't reach %s" % self.a.address)
+                raise Fail("the server never sent this suite a hello (core 7.1 step 6), or it couldn't reach %s" % self.address)
             bad = [x for x in hellos if x["faults"]]
             if bad:
                 raise Fail("; ".join(bad[0]["faults"]))
-            return "%d hello(s), all well signed" % len(hellos)
-        self.check("W4", "7.1, 6.4", "on accepting, the target sends this peer a signed hello paired", told_us)
+            j = hellos[0]["json"]
+            probs = []
+            if j.get("state") != "paired":
+                probs.append("state %r" % j.get("state"))
+            core = j.get("core")
+            if not isinstance(core, list) or 1 not in core:
+                probs.append("core %r doesn't list 1 (core 10.2: sent in every hello)" % core)
+            if not isinstance(j.get("parts"), dict):
+                probs.append("no parts object (core 10.2)")
+            if j.get("inbound") is False:
+                probs.append("inbound false: the server says it can't be called, yet it called")
+            if probs:
+                raise Fail("; ".join(probs))
+            notes = []
+            if "address" not in j:
+                notes.append("no address (core 9.2: should be in every hello)")
+            if self.cert and not j.get("certificates"):
+                notes.append("no certificates (core 3.2: should name its pins)")
+            tls = [e for e in self.peer.tls_errors if e[0] >= t0]
+            return "%d hello(s), well signed, core %s, parts %s%s%s" % (
+                len(hellos), core, sorted(j["parts"]), "; " + "; ".join(notes) if notes else "",
+                "; TLS failures seen before: %s" % tls[0][2] if tls else "")
+        self.check("W4", "core 7.1, 6.4, 9.2", "on accepting, the server sends this suite a signed hello paired", told_us,
+                   operator=True)
         return True
 
-    def read_pins(self, a):
-        if isinstance(a.json, dict) and isinstance(a.json.get("certificates"), list):
-            pins = []
-            for p in a.json["certificates"]:
-                if isinstance(p, str) and len(p) == 43 and unb64u(p, 32) is not None and p not in pins and len(pins) < 8:
-                    pins.append(p)
-            self.client.pins = pins
-        elif isinstance(a.json, dict):
-            self.client.pins = []
+    # ---- hello (core 9.2, 3.2) -----------------------------------------------------------------------
 
-    # ---- paired ------------------------------------------------------------------------
-
-    def paired_checks(self):
-        c = self.client
-
+    def hello_checks(self):
         def hello_paired():
-            a = self.signed(c.call("hello", {"state": "paired"}), 200)
-            if a.json.get("state") != "paired":
-                raise Fail("state %r" % a.json.get("state"))
-            certs = a.json.get("certificates")
-            if certs is not None and not isinstance(certs, list):
-                raise Fail("certificates isn't an array")
-            self.read_pins(a)
-            return "paired; pins named: %s" % (self.client.pins or "none")
-        self.check("H1", "9.2", "hello paired: 200 signed, state paired", hello_paired)
+            a = self.signed(self.hello("paired"), 200)
+            j = a.json
+            if j.get("state") != "paired":
+                raise Fail("state %r" % j.get("state"))
+            probs = []
+            core, parts = j.get("core"), j.get("parts")
+            if not isinstance(core, list) or len(core) > 8 or any(not is_int(x) or x < 0 for x in core):
+                probs.append("core %r isn't an array of at most 8 non-negative integers (core 10.2)" % core)
+            elif 1 not in core:
+                probs.append("core %r doesn't list 1 (a core 1 server lists every version it speaks)" % core)
+            if not isinstance(parts, dict):
+                probs.append("parts isn't an object (core 10.2: sent in every hello)")
+            else:
+                import re
+                for n, v in parts.items():
+                    if not re.fullmatch(r"[a-z-]{1,32}", n):
+                        probs.append("part name %r isn't lowercase letters and -, at most 32" % n)
+                    if not isinstance(v, list) or len(v) > 8 or any(not is_int(x) or x < 0 for x in v):
+                        probs.append("parts.%s %r isn't an array of at most 8 non-negative integers" % (n, v))
+            if "certificates" in j and not isinstance(j["certificates"], list):
+                probs.append("certificates isn't an array")
+            elif any(not (isinstance(p, str) and len(p) == 43 and unb64u(p, 32)) for p in j.get("certificates", [])):
+                probs.append("a certificates entry isn't 43 characters of base64url (core 3.2)")
+            if "address" in j and check_address(j["address"], self.allow_http):
+                probs.append("address %r breaks core 5.2" % j["address"])
+            if j.get("inbound") is False:
+                probs.append("inbound false from the server this suite calls")
+            if "inbound" in j and not isinstance(j["inbound"], bool):
+                probs.append("inbound isn't a boolean")
+            if probs:
+                raise Fail("; ".join(probs))
+            on = self.parts_on()
+            self.r.note("the server lists core %s, parts %s; on between it and this suite: %s"
+                        % (core, {k: v for k, v in parts.items()}, ", ".join(p for p in PARTS if p in on) or "none"))
+            return "paired; core %s; pins %s" % (core, self.client.pins or "none")
+        self.check("H1", "core 9.2, 10.2", "hello paired: 200 signed, paired, its versions and pins well formed", hello_paired)
+
+        def lists_parts():
+            on = self.parts_on()
+            miss = [p for p in ("catalog", "playback", "media", "video") if p not in on]
+            if miss:
+                raise Fail("not on between the server and this suite: %s; their checks are skipped (every part is "
+                           "optional, but a media server without them shares nothing)" % ", ".join(miss))
+            return "catalog, playback, media and video 1 on%s" % (", and music" if "music" in on else "; music not listed (optional)")
+        self.check("H2", "core 10.1, 10.3", "the server lists catalog, playback, media and video at version 1", lists_parts, "SHOULD")
+
+        def address():
+            a = self.signed(self.hello("paired"), 200)
+            if "address" not in a.json:
+                raise Fail("the hello answer carries no address")
+            if a.json["address"] != self.target:
+                raise Fail("the server names %r; this suite knows it at %s (core 13.2 would start a move)" % (a.json["address"], self.target))
+            return "names %s" % a.json["address"]
+        self.check("H3", "core 9.2, 13.1", "the server names its own address in its hello answers", address, "SHOULD")
 
         def pins_match():
-            if not self.target.startswith("https://"):
-                raise Skip("an http target names no pins")
-            a = c.call("hello", {"state": "paired"})
+            if not self.client.https:
+                raise Skip("--plain-http: no certificates")
+            a = self.hello("paired")
             if a.trusted:
-                return "the certificate is publicly trusted (pins optional)"
+                return "the certificate is publicly trusted (pins optional, core 3.2 says to name them all the same)"
             if a.leaf_pin not in self.client.pins:
-                raise Fail("the leaf served (%s) isn't among the pins named (%s)" % (a.leaf_pin, self.client.pins))
+                raise Fail("the leaf served (%s) isn't among the pins named (%s)" % (a.leaf_pin, self.client.pins or "none"))
             return "the served leaf %s is named" % a.leaf_pin
-        self.check("H2", "3.1", "over https, the target names the pin of the certificate it serves", pins_match, "SHOULD")
+        self.check("H4", "core 3.2", "over https, the server names the pin of the leaf certificate it serves", pins_match, "SHOULD")
 
-        def checked_call_tls():
-            if not self.target.startswith("https://"):
-                raise Skip("http target")
-            a = c.call("libraries", {})
-            return "libraries passed the trusted-or-named check: %s" % a.status
-        self.check("H3", "3.1", "over https, checked calls pass with the certificate trusted or named", checked_call_tls)
+        def checked_call():
+            if not self.client.https:
+                raise Skip("--plain-http")
+            a = self.client.call("libraries", {})
+            return "libraries passed the trusted-or-named check (%s)" % a.status
+        self.check("H5", "core 3.2", "over https, the calls that need trusted or named pass", checked_call)
 
-        self.hello_bodies()
-        self.signing_rules()
-        self.replay_rules()
-        self.libraries_checks()
-        self.titles_checks()
-        self.reader_checks()
-        if self.a.load:
-            self.load_checks()
-        else:
-            self.r.add(Result("R1", "8.3", "past a peer's limit: a signed 429 with retryAfter", "MUST", SKIP,
-                              "sends several hundred calls at once: run with --load"))
-        if self.a.end:
-            self.end_checks()
-        else:
-            self.r.add(Result("E1", "7.4", "ending: hello ended, then the target forgets this peer", "MUST", SKIP,
-                              "ends the pairing: run with --end"))
+        def no_pins():
+            if not self.client.https:
+                raise Skip("--plain-http")
+            a = self.client.call("hello", self.hello_body("paired", certificates=None))
+            self.signed(a, 200)
+            b = self.client.call("hello", self.hello_body("paired"))
+            self.signed(b, 200)
+            self.learn(b.json)
+            return "a hello without certificates (removing this suite's pins) and one with them again: both 200"
+        self.check("H6", "core 3.2", "a hello without certificates is valid; the next one names the pins again", no_pins)
 
-        bad = [a for a in self.answers if not a.signed]
-        self.check("A1", "6.6", "every answer the suite checked was signed by the target's key",
-                   lambda: "%d answers" % len(self.answers) if not bad else (FAIL, "%d unsigned" % len(bad)))
+    # ---- versions and parts (core 10) -----------------------------------------------------------------
 
-    def hello_bodies(self):
+    def version_checks(self):
         c = self.client
-        refused = [
-            ("no state", b'{}'),
-            ("state not a string", b'{"state":7}'),
-            ("state null", b'{"state":null}'),
-            ("State in another case", b'{"State":"paired"}'),
-            ("certificates not an array", b'{"state":"paired","certificates":"x"}'),
-            ("an array, not an object", b'[]'),
-            ("not JSON", b'state=paired'),
-            ("state twice", b'{"state":"paired","state":"ended"}'),
-            ("state twice, once escaped", b'{"state":"paired","\\u0073tate":"ended"}'),
-            ("a member twice, nested", b'{"state":"paired","x":{"a":1,"a":2}}'),
-            ("a lone high surrogate, escaped", b'{"state":"paired","x":"\\ud800"}'),
-            ("a lone low surrogate, escaped", b'{"state":"paired","x":"\\udc00x"}'),
-            ("a noncharacter", b'{"state":"paired","x":"\xef\xbf\xbf"}'),
-            ("invalid UTF-8", b'{"state":"paired","x":"\xff"}'),
-            ("a byte order mark", b'\xef\xbb\xbf{"state":"paired"}'),
-        ]
-        accepted = [
-            ("white space between tokens", b'{ "state" : "paired" }'),
-            ("a surrogate pair, escaped", b'{"state":"paired","x":"\\ud83c\\udfac"}'),
-            ("an unknown member", b'{"state":"paired","x":[1,{"y":null}]}'),
-            ("certificates null", b'{"state":"paired","certificates":null}'),
-            ("an unknown state string", b'{"state":"conformance"}'),
-        ]
+        base = self.hello_body("paired")
 
-        def run_refused():
+        def with_(**over):
+            b = dict(base)
+            b.update(over)
+            return {k: v for k, v in b.items() if v is not ...}
+
+        def refused():
+            cases = [("core not an array", with_(core=1)), ("core an object", with_(core={"1": 1})),
+                     ("core null", with_(core=None)), ("parts an array", with_(parts=[])),
+                     ("parts a string", with_(parts="catalog")), ("a known part's list not an array",
+                                                                   with_(parts=dict(base["parts"], catalog=1))),
+                     ("a known part's list null", with_(parts=dict(base["parts"], catalog=None)))]
             bad = []
-            for name, body in refused:
-                a = c.raw(FED + "hello", body, c.headers(FED + "hello", body))
+            for name, b in cases:
+                a = c.call("hello", dumps(b))
                 if not (a.status == 404 and a.signed):
                     bad.append("%s: %s" % (name, a.short()))
                 self.answers.append(a)
             if bad:
+                raise Fail("expected a signed 404 (a bad body: nothing stored) for:\n" + "\n".join(bad))
+            return "%d refused with a signed 404" % len(cases)
+        self.check("V1", "core 10.2, 9.2", "hello with core or parts of the wrong type is a bad body: a signed 404", refused)
+
+        def tolerated():
+            cases = [("an unknown part with any value", with_(parts=dict(base["parts"], **{"zz-conformance": 5}))),
+                     ("a part name in capitals (an unknown name)", with_(parts=dict(base["parts"], Catalog="x"))),
+                     ("a version twice", with_(core=[1, 1])),
+                     ("entries that aren't non-negative integers", with_(core=[1, "2", -1, 2.5, True])),
+                     ("more than 8 entries", with_(core=[0, 1, 2, 3, 4, 5, 6, 7, 8, 9]))]
+            bad = []
+            for name, b in cases:
+                a = c.call("hello", dumps(b))
+                if not (a.status == 200 and a.signed):
+                    bad.append("%s: %s" % (name, a.short()))
+                self.answers.append(a)
+            self.signed(self.hello("paired"), 200)
+            if bad:
+                raise Fail("expected 200 (core 10.2: ignored) for:\n" + "\n".join(bad))
+            return "%d accepted" % len(cases)
+        self.check("V2", "core 10.2", "unknown parts and odd version entries are ignored, not refused", tolerated)
+
+        def part_off(dropped, calls, also=None):
+            def run():
+                on = self.parts_on()
+                need = {"playback": "playback", "catalog": "catalog", "media": "playback", "video": "video"}[dropped]
+                if need not in on:
+                    raise Skip("%s isn't on between the server and this suite" % need)
+                parts = {k: v for k, v in self.suite_parts().items() if k != dropped}
+                self.signed(self.hello("paired", parts=parts), 200)
+                try:
+                    out = []
+                    for name, body in calls:
+                        a = c.call(name, body)
+                        self.signed(a, 404, "not-supported")
+                        out.append(name)
+                    extra = also() if also else ""
+                finally:
+                    self.signed(self.hello("paired"), 200)
+                a = self.signed(c.call("libraries", {}), 200)
+                return "without %s: %s answered 404 not-supported%s; with it again, libraries %d" % (
+                    dropped, ", ".join(out) or "nothing", extra, a.status)
+            return run
+
+        play = ("play", {"title": "movie/tmdb/949"})
+
+        def no_limits():
+            a = self.signed(c.call("libraries", {}), 200)
+            if "limits" in a.json:
+                raise Fail("libraries carries limits while playback is off (catalog 2, playback 5: only when it is on)")
+            return "; libraries carries no limits"
+
+        def no_video_titles():
+            a = self.signed(c.call("libraries", {}), 200)
+            libs = [x["id"] for x in a.json.get("libraries", []) if isinstance(x, dict) and isinstance(x.get("id"), str)]
+            if not libs:
+                return "; nothing offered, titles not checked"
+            t = self.signed(c.call("titles", {"libraries": libs}), 200)
+            from .content import video_key
+            vids = [x.get("key") for x in t.json.get("titles", []) if isinstance(x, dict) and video_key(x.get("key"))]
+            if vids:
+                raise Fail("titles holds video titles while video is off: %s (catalog 5)" % vids[:3])
+            return "; titles holds no video title"
+
+        self.check("V3", "core 10.4, playback", "playback off: play gets the signed 404 not-supported, libraries no limits",
+                   part_off("playback", [play, ("progress", {"id": "play_" + "a" * 26}), ("stop", {"id": "play_" + "a" * 26})], no_limits))
+        self.check("V4", "core 10.4, catalog", "catalog off: libraries and titles get the signed 404 not-supported",
+                   part_off("catalog", [("libraries", {}), ("titles", {"libraries": []})]))
+        self.check("V5", "core 10.3, 10.4", "media off turns playback off (a dependency): play gets not-supported",
+                   part_off("media", [play]))
+        self.check("V6", "catalog 5, core 10.3", "video off: titles holds no video title", part_off("video", [], no_video_titles))
+        self.note_unclear("core 10.2, 10.3", "a hello without core (or with no common core) leaves no common core, but what the "
+                          "receiver then answers to that peer's calls isn't said; the suite doesn't test it")
+
+    # ---- JSON (core 2.3) --------------------------------------------------------------------------------
+
+    def json_checks(self):
+        c = self.client
+        base = dumps(self.hello_body("paired"))
+        inner = base[1:-1]
+
+        def body(prefix=b"", suffix=b""):
+            return b"{" + prefix + inner + suffix + b"}"
+
+        def mod(drop=(), **over):
+            d = self.hello_body("paired")
+            for k in drop:
+                d.pop(k, None)
+            d.update(over)
+            return dumps(d)
+
+        st = self.hello_body("paired")
+        refused = [
+            ("no state", mod(drop=("state",))),
+            ("state not a string", mod(state=7)),
+            ("state null", mod(state=None)),
+            ("State in another case only", mod(drop=("state",), State="paired")),
+            ("certificates not an array", mod(certificates="x")),
+            ("certificates null", mod(certificates=None)),
+            ("address null", mod(address=None)),
+            ("address not a string", mod(address=7)),
+            ("inbound not a boolean", mod(inbound="true")),
+            ("inbound null", mod(inbound=None)),
+            ("nextCommitment not a string", mod(nextCommitment=5)),
+            ("an array, not an object", b"[" + base + b"]"),
+            ("not JSON", b"state=paired"),
+            ("state twice", body(suffix=b',"state":"ended"')),
+            ("state twice, once escaped", body(suffix=b',"\\u0073tate":"ended"')),
+            ("a member twice, nested", body(suffix=b',"x":{"a":1,"a":2}')),
+            ("a lone high surrogate, escaped", body(suffix=b',"x":"\\ud800"')),
+            ("a lone low surrogate, escaped", body(suffix=b',"x":"\\udc00x"')),
+            ("a noncharacter", body(suffix=b',"x":"\xef\xbf\xbf"')),
+            ("invalid UTF-8", body(suffix=b',"x":"\xff"')),
+            ("a byte order mark", b"\xef\xbb\xbf" + base),
+        ]
+        del st
+        accepted = [
+            ("white space between tokens", b'{ ' + inner.replace(b'":', b'" : ', 1) + b' }'),
+            ("a surrogate pair, escaped", body(suffix=b',"x":"\\ud83c\\udfac"')),
+            ("unknown members", body(suffix=b',"x":[1,{"y":true}],"Address":7')),
+            ("an unknown state string", mod(state="conformance")),
+        ]
+
+        def run_refused():
+            bad = []
+            for name, b in refused:
+                a = c.raw(c.base + "hello", b, c.headers(c.base + "hello", b))
+                self.answers.append(a)
+                if not (a.status == 404 and a.signed):
+                    bad.append("%s: %s" % (name, a.short()))
+            self.hello("paired")
+            if bad:
                 raise Fail("expected a signed 404 for:\n" + "\n".join(bad))
             return "%d bodies refused with a signed 404" % len(refused)
-        self.check("J1", "2.1, 9.2", "hello bodies that aren't valid (I-JSON, state) get a signed 404", run_refused)
+        self.check("J1", "core 2.3, 9.2", "hello bodies that aren't valid (I-JSON, types, null) get a signed 404", run_refused)
 
         def run_accepted():
             bad = []
-            for name, body in accepted:
-                a = c.raw(FED + "hello", body, c.headers(FED + "hello", body))
+            for name, b in accepted:
+                a = c.raw(c.base + "hello", b, c.headers(c.base + "hello", b))
                 try:
                     self.signed(a, 200)
                 except Fail as e:
                     bad.append("%s: %s" % (name, e))
+            self.hello("paired")
             if bad:
                 raise Fail("\n".join(bad))
             return "%d accepted" % len(accepted)
-        self.check("J2", "2.1, 9.2", "valid hello bodies (white space, surrogate pairs, unknown members, null) pass", run_accepted)
+        self.check("J2", "core 2.3, 9.2", "valid hello bodies (white space, surrogate pairs, unknown members and states) pass", run_accepted)
 
-    def signing_rules(self):
+    # ---- signatures (core 2.2, 2.4, 3, 6) ---------------------------------------------------------------
+
+    def signing_checks(self):
         c = self.client
-        body = dumps({"state": "paired"})
-        p = FED + "hello"
-        now = int(time.time())
+        body = dumps(self.hello_body("paired"))
+        p = c.base + "hello"
 
         def h(**kw):
             return c.headers(p, body, **kw)
@@ -526,57 +955,46 @@ class Suite:
         def mutate(hs, name, value):
             return [(k, value if k == name else v) for k, v in hs]
 
-        cases = [
-            ("dated 330 seconds ago", h(date=str(int(time.time()) - 330))),
-            ("dated 330 seconds ahead", h(date=str(int(time.time()) + 330))),
-            ("a date with a plus sign", None, "+"),
-            ("a date with a leading zero", None, "0"),
-            ("a date with a fraction", None, ".0"),
-            ("a date of 0", h(date="0")),
-            ("a date of 2^53", h(date=str(2**53))),
-            ("a nonce of 15 bytes", h(nonce=b64u(os.urandom(15)))),
-            ("a padded nonce", h(nonce=b64u(os.urandom(16)) + "==")),
-            ("a nonce with nonzero unused bits", h(nonce=b64u(b"\0" * 16)[:-1] + "B")),
-            ("a nonce in the standard alphabet", h(nonce="+" + b64u(os.urandom(16))[1:])),
-            ("signed for another host", h(sign_host="conformance.example.org")),
-            ("signed for another path", h(sign_path=FED + "libraries")),
-        ]
+        def resigned(date):
+            nonce = b64u(os.urandom(16))
+            msg = request_message("POST", c.host, p, date, nonce, body)
+            return [("Content-Type", "application/json"), (H_KEY, self.key.text), (H_DATE, date), (H_NONCE, nonce),
+                    (H_SIG, b64u(self.key.sign(msg)))]
 
         def run():
+            now = int(time.time())
+            k = self.key.text
+            alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_"
+            alt = k[:-1] + alphabet[(alphabet.index(k[-1]) + 1) % 64]
+            cases = [("dated 330 seconds ago", h(date=str(now - 330))), ("dated 330 seconds ahead", h(date=str(now + 330))),
+                     ("a date with a plus sign", resigned("+%d" % now)), ("a date with a leading zero", resigned("0%d" % now)),
+                     ("a date with a fraction", resigned("%d.0" % now)), ("a date of 0", h(date="0")),
+                     ("a date of 2^53", h(date=str(2**53))), ("a nonce of 15 bytes", h(nonce=b64u(os.urandom(15)))),
+                     ("a padded nonce", h(nonce=b64u(os.urandom(16)) + "==")),
+                     ("a nonce with nonzero unused bits", h(nonce=b64u(b"\0" * 16)[:-1] + "B")),
+                     ("a nonce in the standard alphabet", h(nonce="+" + b64u(os.urandom(16))[1:])),
+                     ("signed for another host", h(sign_host="conformance.example.org")),
+                     ("signed for another path", h(sign_path=c.base + "libraries")),
+                     ("signed with another key", mutate(h(key=Key()), H_KEY, k)),
+                     ("a key text with nonzero unused bits", mutate(h(), H_KEY, alt)),
+                     ("a signature of 63 bytes", mutate(h(), H_SIG, b64u(os.urandom(63))))]
             bad = []
-            for case in cases:
-                name, hs = case[0], case[1]
-                if hs is None:
-                    base = h()
-                    d = dict(base)["Overfin-Date"]
-                    nd = "+" + d if case[2] == "+" else ("0" + d if case[2] == "0" else d + ".0")
-                    msg = request_message("POST", c.host, p, nd, dict(base)["Overfin-Nonce"], body)
-                    hs = mutate(mutate(base, "Overfin-Date", nd), "Overfin-Signature", b64u(self.key.sign(msg)))
+            for name, hs in cases:
                 a = c.raw(p, body, hs)
                 if a.status == 200 or a.signed:
                     bad.append("%s: %s" % (name, a.short()))
-            # The key with a nonzero unused bit (another text of the same bytes).
-            k = self.key.text
-            alt = k[:-1] + "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_"[
-                ("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_".index(k[-1]) + 1) % 64]
-            hs = mutate(h(), "Overfin-Key", alt)
-            a = c.raw(p, body, hs)
-            if a.status == 200:
-                bad.append("a key text with nonzero unused bits: %s" % a.short())
             if bad:
                 raise Fail("expected the unsigned 404 for:\n" + "\n".join(bad))
-            return "%d forms refused" % (len(cases) + 1)
-        self.check("G1", "2.1, 6.4", "dates, nonces, keys and signatures outside their one form, or signed for another host or path, are refused", run)
+            return "%d forms refused with the unsigned 404" % len(cases)
+        self.check("G1", "core 2.2, 6.2, 6.4", "dates, nonces, keys and signatures outside their one form, or signed for "
+                   "another host, path or key, are refused", run)
 
         def headers():
             base = h()
             sig = base[-1]
-            forms = [
-                ("the signature header twice", base + [sig]),
-                ("the nonce header twice", base + [base[3]]),
-                ("a comma in the signature", base[:-1] + [(sig[0], sig[1] + "," + sig[1])]),
-                ("a tab inside the date", mutate(base, "Overfin-Date", base[2][1][:3] + "\t" + base[2][1][3:])),
-            ]
+            forms = [("the signature header twice", base + [sig]), ("the nonce header twice", base + [base[3]]),
+                     ("a comma in the signature", base[:-1] + [(sig[0], sig[1] + "," + sig[1])]),
+                     ("a tab inside the date", mutate(base, H_DATE, base[2][1][:3] + "\t" + base[2][1][3:]))]
             bad = []
             for name, hs in forms:
                 a = c.raw(p, body, hs)
@@ -585,12 +1003,14 @@ class Suite:
             if bad:
                 raise Fail("expected the unsigned 404 for:\n" + "\n".join(bad))
             return "%d forms refused" % len(forms)
-        self.check("G2", "2.1, 6.4", "each signature header exactly once, no comma, no inner white space", headers)
+        self.check("G2", "core 2.4, 6.4", "each signature header exactly once, no comma, no white space inside", headers)
 
-        def lenient_forms():
+        def lenient():
             forms = [("lowercase header names", lambda hs: [(k.lower(), v) for k, v in hs]),
-                     ("spaces around a value", lambda hs: mutate(hs, "Overfin-Date", "  " + dict(hs)["Overfin-Date"] + " ")),
-                     ("Content-Type with a charset", lambda hs: mutate(hs, "Content-Type", "application/json; charset=utf-8"))]
+                     ("spaces around a value", lambda hs: mutate(hs, H_DATE, "  " + dict(hs)[H_DATE] + " ")),
+                     ("Content-Type with a charset", lambda hs: mutate(hs, "Content-Type", "application/json; charset=utf-8")),
+                     ("Sec-Fetch-Site: none", lambda hs: hs + [("Sec-Fetch-Site", "none")]),
+                     ("Sec-Fetch-Site: same-origin", lambda hs: hs + [("Sec-Fetch-Site", "same-origin")])]
             bad = []
             for name, f in forms:
                 a = c.raw(p, body, f(h()))
@@ -598,8 +1018,9 @@ class Suite:
                     bad.append("%s: %s" % (name, a.short()))
             if bad:
                 raise Fail("\n".join(bad))
-            return "accepted"
-        self.check("G3", "2.1", "header names in any case, optional white space and media type parameters are accepted", lenient_forms)
+            return "%d forms accepted" % len(forms)
+        self.check("G3", "core 2.4, 2.5, 3", "header names in any case, white space around values, media type parameters, "
+                   "Sec-Fetch-Site none or same-origin: accepted", lenient)
 
         def query():
             path = p + "?conformance=1"
@@ -607,493 +1028,124 @@ class Suite:
             if a.status == 200:
                 raise Fail("a hello signed over %s was answered 200" % path)
             return self.unsigned_404(a)
-        self.check("G4", "6.2, 6.4", "a federation call with a query is refused, even when signed so", query)
+        self.check("G4", "core 6.2, 6.4", "a federation call with a query is refused, even when signed so", query)
 
         def percent():
-            path = FED + "%68ello"
-            a = c.raw(path, body, c.headers(path, body, sign_path=FED + "hello"))
+            path = c.base + "%68ello"
+            a = c.raw(path, body, c.headers(path, body, sign_path=c.base + "hello"))
             if a.status == 200:
-                raise Fail("a request to %s signed over the decoded path passed: the target rebuilds <target> from a decoded path" % path)
+                raise Fail("%s signed over the decoded path passed: the server rebuilds <target> from a decoded path" % path)
             return self.unsigned_404(a, also=(400,))
-        self.check("G5", "6.2", "the target is taken as received: a percent-encoded path signed decoded fails", percent)
+        self.check("G5", "core 6.2", "the target is taken as received: a percent-encoded path signed decoded fails", percent)
 
         def media_type():
             out = []
-            for ct, name in ((None, "no Content-Type"), ("text/plain", "text/plain")):
+            for ct, name in ((None, "no Content-Type"), ("text/plain", "text/plain"), ("application/json-seq", "application/json-seq")):
                 hs = [x for x in h() if x[0] != "Content-Type"] + ([("Content-Type", ct)] if ct else [])
                 a = c.raw(p, body, hs)
                 if a.status == 200 or a.signed:
                     raise Fail("%s: %s" % (name, a.short()))
-                out.append("%s: unsigned %d" % (name, a.status))
-            return "; ".join(out) + " (section 3 says the unsigned 404; Overfin's 415 is a version 0 note)"
-        self.check("G6", "3", "a request that isn't application/json is refused, unsigned", media_type)
+                self.unsigned_404(a)
+                out.append(name)
+            return "unsigned 404 for " + ", ".join(out)
+        self.check("G6", "core 3", "a request that isn't application/json gets the unsigned 404", media_type)
 
         def cross_site():
             a = c.raw(p, body, h() + [("Sec-Fetch-Site", "cross-site")])
             if a.status == 200 or a.signed:
                 raise Fail(a.short())
-            return "unsigned %d" % a.status
-        self.check("G7", "3", "a cross-site Sec-Fetch-Site is refused, unsigned", cross_site)
+            return self.unsigned_404(a)
+        self.check("G7", "core 3", "a cross-site Sec-Fetch-Site gets the unsigned 404", cross_site)
 
-        def no_content_coding():
+        def no_coding():
             a = c.raw(p, body, h() + [("Accept-Encoding", "gzip, deflate, br")])
             if a.coding:
-                raise Fail("asked with Accept-Encoding: gzip, the answer came with Content-Encoding: %s; "
-                           "a federation answer is sent uncoded, whatever Accept-Encoding says" % a.coding)
-            if not (a.status == 200 and a.signed):
-                raise Fail(a.short())
+                raise Fail("asked with Accept-Encoding: gzip, the answer came with Content-Encoding %s: federation answers "
+                           "are sent uncoded, whatever Accept-Encoding says" % a.coding)
+            self.signed(a, 200)
             return "200 signed, no Content-Encoding"
-        self.check("G8", "3, 6.3", "an answer carries no content coding, even to a request with Accept-Encoding: gzip", no_content_coding)
+        self.check("G8", "core 3, 6.3", "an answer carries no content coding, even to Accept-Encoding: gzip", no_coding)
 
-    def replay_rules(self):
+        def coded_request():
+            a = c.raw(p, body, h() + [("Content-Encoding", "gzip")])
+            if a.status == 200:
+                raise Fail("a request marked Content-Encoding: gzip (its body not gzip at all) was answered 200: the "
+                           "receiver must never decode a coded request, and this one isn't even coded")
+            return "refused: %s" % a.short()
+        self.check("G9", "core 3", "a request with a Content-Encoding is refused", coded_request)
+        self.note_unclear("core 3", "a request carrying Content-Encoding may get the unsigned 404 at once, or fail later \"as a "
+                          "bad signature or a bad body\" (a signed 404): the suite accepts any refusal")
+
+        def too_long():
+            big = dumps(self.hello_body("paired", x="a" * 70000))
+            a = c.raw(p, big, c.headers(p, big))
+            if a.status == 200:
+                raise Fail("a 70,000-byte body was answered 200 (core 3: at most 64 KiB)")
+            return self.unsigned_404(a)
+        self.check("G10", "core 3", "a request body over 64 KiB gets the unsigned 404", too_long)
+
+    # ---- nonces (core 6.5, 6.3) ----------------------------------------------------------------------------
+
+    def nonce_checks(self):
         c = self.client
-        p = FED + "hello"
+        p = c.base + "hello"
+        body = dumps(self.hello_body("paired"))
 
         def same_twice():
-            body = dumps({"state": "paired"})
             hs = c.headers(p, body)
             self.signed(c.raw(p, body, hs), 200)
             return self.unsigned_404(c.raw(p, body, hs))
-        self.check("N1", "6.5", "a request replayed with its nonce gets the unsigned 404", same_twice)
+        self.check("N1", "core 6.5", "a request replayed with its nonce gets the unsigned 404", same_twice)
 
         def nonce_reused():
             n = b64u(os.urandom(16))
-            body = dumps({"state": "paired"})
             self.signed(c.raw(p, body, c.headers(p, body, nonce=n)), 200)
-            body2 = dumps({"state": "waiting"})
-            return self.unsigned_404(c.raw(p, body2, c.headers(p, body2, nonce=n)))
-        self.check("N2", "6.5", "a nonce used again in a new, validly signed request gets the unsigned 404", nonce_reused)
+            other = dumps(self.hello_body("paired", x=1))
+            return self.unsigned_404(c.raw(p, other, c.headers(p, other, nonce=n)))
+        self.check("N2", "core 6.5", "a nonce used again in a new, validly signed request gets the unsigned 404", nonce_reused)
 
-        def answer_bound():
-            a = c.call("hello", {"state": "paired"})
-            sig = unb64u([v for k, v in a.headers if k.lower() == "overfin-signature"][0].strip(), 64)
-            other = b64u(os.urandom(16))
-            if ed25519.verify_strict(self.target_pub, answer_message(other, a.status, a.body), sig):
+        def bound():
+            from . import ed25519
+            from .wire import answer_message
+            a = self.signed(self.hello("paired"), 200)
+            sig = unb64u(a.header(H_SIG).strip(), 64)
+            if ed25519.verify_strict(a.signer, answer_message(b64u(os.urandom(16)), a.status, a.media_type, a.body), sig):
                 raise Fail("the answer's signature verifies for another nonce")
-            return "the answer's signature covers the request's nonce"
-        self.check("N3", "6.3", "the answer's signature is bound to the request's nonce", answer_bound)
+            if ed25519.verify_strict(a.signer, answer_message(a.nonce, a.status, "application/problem+json", a.body), sig):
+                raise Fail("the answer's signature verifies for another media type")
+            return "the signature covers the request's nonce and the answer's media type (core 6.3's five lines)"
+        self.check("N3", "core 6.3", "the answer's signature is bound to the request's nonce and the media type", bound)
 
-    # ---- libraries and titles ----------------------------------------------------------
+    # ---- every answer (core 6.6, 8.2) ------------------------------------------------------------------------
 
-    def libraries_checks(self):
-        c = self.client
+    def answer_checks(self):
+        def all_signed():
+            bad = [a for a in self.answers if not a.signed]
+            if bad:
+                raise Fail("%d answer(s) the suite needed signed weren't: %s" % (len(bad), "; ".join(
+                    "%s: %s" % (a.path, a.why_unsigned) for a in bad[:5])))
+            return "%d answers" % len(self.answers)
+        self.check("A1", "core 6.6", "every answer the suite needed signed was signed by the server's key", all_signed)
 
-        def libs():
-            a = self.signed(c.call("libraries", {}), 200)
-            j = a.json
-            if "name" in j and not isinstance(j["name"], str):
-                raise Fail("name isn't a string")
-            libs = j.get("libraries")
-            if not isinstance(libs, list):
-                raise Fail("libraries isn't an array")
-            notes, ids = [], []
-            for lib in libs:
-                if not isinstance(lib, dict):
-                    raise Fail("a library that isn't an object: %r" % lib)
-                i = lib.get("id")
-                if not isinstance(i, str) or not re.fullmatch(r"[A-Za-z0-9_-]{1,64}", i):
-                    raise Fail("an ID outside 1 to 64 characters of A-Z a-z 0-9 _ -: %r" % i)
-                if i in ids:
-                    raise Fail("the ID %r twice" % i)
-                ids.append(i)
-                if not isinstance(lib.get("name"), str):
-                    raise Fail("library %s: name isn't a string" % i)
-                if lib.get("kind") not in KINDS:
-                    raise Fail("library %s: kind %r isn't one of section 9.3's" % (i, lib.get("kind")))
-            lim = j.get("limits")
-            if lim is not None:
-                if not isinstance(lim, dict):
-                    raise Fail("limits isn't an object")
-                s, t, b = lim.get("streams"), lim.get("transcodes"), lim.get("bitrateKbps")
-                if not (is_int(s) and 0 <= s <= 50 and is_int(t) and 0 <= t <= s and is_int(b) and 0 <= b <= 1000000):
-                    raise Fail("limits out of range: %r" % lim)
-            self.libraries = libs
-            return "%d librar%s offered: %s" % (len(libs), "y" if len(libs) == 1 else "ies", ", ".join("%s (%s)" % (x["id"], x["kind"]) for x in libs) or "none")
-        self.check("L1", "9.3", "libraries: 200 signed, IDs and kinds in their forms, no ID twice, limits in range", libs)
-
-        def opaque():
-            if not self.libraries:
-                raise Skip("nothing offered to this peer")
-            looks = [x["id"] for x in self.libraries if re.fullmatch(r"[0-9a-f]{32}|[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}", x["id"])]
-            if looks:
-                raise Fail("IDs shaped like a media server's item IDs (32 hex digits or a GUID): %s; section 9.3 "
-                           "says they must not be one (a heuristic: a random value may look so)" % looks)
-            return "none looks like a media server ID"
-        self.check("L2", "9.3, 12", "library IDs don't look like the media server's own IDs", opaque, "SHOULD")
-
-        def bad_body():
-            out = []
-            for name, body in (("an array", b"[]"), ("not JSON", b"libraries"), ("a member twice", b'{"a":1,"a":2}')):
-                a = c.raw(FED + "libraries", body, c.headers(FED + "libraries", body))
-                self.signed(a, 404)
-                out.append(name)
-            return "signed 404 for " + ", ".join(out)
-        self.check("L3", "9.3, 2.1", "a libraries body that isn't an I-JSON object gets a signed 404", bad_body)
-
-    def read_titles(self, libs, since=None, after="", limit_pages=200):
-        """One reading; returns (pages, problems)."""
-        pages, problems = [], []
-        c = self.client
-        while len(pages) < limit_pages:
-            req = {"libraries": libs, "after": after}
-            if since is not None:
-                req["since"] = since
-            a = self.signed(c.call("titles", req), 200)
-            pages.append(a.json)
-            nxt = a.json.get("next")
-            if not isinstance(nxt, str) or nxt == "" or nxt <= after:
-                break
-            after = nxt
-        return pages
-
-    def validate_page(self, j, libs, after, whole):
-        bad = []
-        titles = j.get("titles")
-        if titles is not None and not isinstance(titles, list):
-            return ["titles isn't an array"]
-        titles = titles or []
-        keys = []
-        for t in titles:
-            if not isinstance(t, dict):
-                bad.append("a title that isn't an object")
-                continue
-            k, kind, lib = t.get("key"), t.get("kind"), t.get("library")
-            kk = key_kind(k)
-            if kk is None:
-                bad.append("%r isn't a canonical TMDB title key (section 11)" % k)
-            elif kk != kind:
-                bad.append("%s: kind %r, the key names %s" % (k, kind, kk))
-            if lib not in libs:
-                bad.append("%s: library %r wasn't asked for" % (k, lib))
-            if isinstance(k, str):
-                keys.append(k)
-            for f in ("audio", "subtitles"):
-                v = t.get(f)
-                if v is None:
-                    continue
-                if kind in ("series", "season") and v:
-                    bad.append("%s (%s) carries %s (section 9.4: films and episodes only)" % (k, kind, f))
-                if not isinstance(v, list) or len(v) > 12:
-                    bad.append("%s: %s isn't an array of at most 12 tags" % (k, f))
-                    continue
-                seen = set()
-                for tag in v:
-                    if not isinstance(tag, str) or not TAG.fullmatch(tag):
-                        bad.append("%s: %s tag %r isn't 2 to 12 characters of A-Z a-z 0-9 -" % (k, f, tag))
-                    elif tag.lower() in seen:
-                        bad.append("%s: %s tag %r twice (compared without case)" % (k, f, tag))
-                    elif tag.split("-")[0].lower() in ("und", "mul", "zxx", "mis"):
-                        bad.append("%s: %s tag %r is one section 9.4 says isn't sent" % (k, f, tag))
-                    elif not conventional_case(tag):
-                        bad.append("%s: %s tag %r not in BCP 47's case conventions (section 2.1)" % (k, f, tag))
-                    elif len(tag.split("-")[0]) == 3 and tag.split("-")[0].lower() in ISO639_2_WITH_1:
-                        bad.append("%s: %s tag %r has a two-letter code (section 9.4: the shortest)" % (k, f, tag))
-                    if isinstance(tag, str):
-                        seen.add(tag.lower())
-        if keys != sorted(keys) or len(set(keys)) != len(keys):
-            bad.append("keys not in strictly ascending byte order")
-        if any(k <= after for k in keys):
-            bad.append("keys not greater than after %r" % after)
-        gone = j.get("gone") or []
-        if len(titles) + (len(gone) if isinstance(gone, list) else 0) > 5000:
-            bad.append("more than 5,000 keys in a page")
-        if whole and "next" in j and isinstance(j["next"], str) and j["next"] and len(titles) < 5000:
-            bad.append("a whole-list page with next but fewer than 5,000 titles (section 9.4: next only when full)")
-        if whole and j.get("next") and keys and j["next"] != keys[-1]:
-            bad.append("next isn't the page's last key")
-        seq = j.get("seq")
-        if seq is not None and not (is_int(seq) and seq > 0):
-            bad.append("seq %r isn't a positive integer" % seq)
-        if "changes" in j and not isinstance(j["changes"], bool):
-            bad.append("changes isn't a boolean")
-        return bad
-
-    def titles_checks(self):
-        c = self.client
-        libs = sorted(x["id"] for x in self.libraries)
-
-        def need():
-            if not libs:
-                raise Skip("the target offers this peer no library: offer one on the target, then run again")
-
-        def whole():
-            need()
-            pages = self.read_titles(libs)
+        def problems():
             bad = []
-            after = ""
-            for j in pages:
-                if j.get("changes") is True:
-                    bad.append("a reading without since answered with changes")
-                bad += self.validate_page(j, libs, after, True)
-                ks = [t["key"] for t in (j.get("titles") or []) if isinstance(t, dict) and isinstance(t.get("key"), str)]
-                if ks:
-                    after = ks[-1]
-            if bad:
-                raise Fail("\n".join(bad[:20]))
-            self.whole = [t for j in pages for t in (j.get("titles") or [])]
-            self.seq = pages[0].get("seq")
-            return "%d titles in %d page(s), seq %s" % (len(self.whole), len(pages), self.seq)
-        self.check("T1", "9.4, 11", "titles, the whole list: keys, kinds, libraries, language tags, order, paging", whole)
-
-        def paging():
-            need()
-            if not self.whole or len(self.whole) < 2:
-                raise Skip("fewer than 2 titles offered")
-            after = self.whole[0]["key"]
-            pages = self.read_titles(libs, after=after)
-            got = [t["key"] for j in pages for t in (j.get("titles") or [])]
-            want = [t["key"] for t in self.whole[1:]]
-            if got != want:
-                raise Fail("after %r gave %d titles; the whole list has %d after it" % (after, len(got), len(want)))
-            return "after %r gives the rest of the list" % after
-        self.check("T2", "9.4", "a page starts strictly after `after`", paging)
-
-        def changes():
-            need()
-            if not self.seq:
-                raise Skip("the target sends no seq: it is asked for the whole list every time (allowed)")
-            j = self.read_titles(libs, since=self.seq)[0]
-            if j.get("changes") is not True:
-                return (PASS, "answered with the whole list (allowed: the target may not keep a change log)")
-            bad = self.validate_page(j, libs, "", False)
-            if bad:
-                raise Fail("\n".join(bad))
-            return "changes: %d new or changed, %d gone, seq %s" % (len(j.get("titles") or []), len(j.get("gone") or []), j.get("seq"))
-        self.check("T3", "9.4", "titles since the current seq: a changes answer (or the whole list)", changes)
-
-        def above():
-            need()
-            if not self.seq:
-                raise Skip("no seq")
-            j = self.read_titles(libs, since=self.seq + 1000000)[0]
-            if j.get("changes") is True:
-                raise Fail("since above the current seq was answered with changes; section 9.4: the whole list")
-            return "the whole list"
-        self.check("T4", "9.4", "since above the current seq: the whole list", above)
-
-        def negative():
-            need()
-            j = self.read_titles(libs, since=-1)[0]
-            if j.get("changes") is True:
-                raise Fail("a negative since was answered with changes")
-            return "the whole list"
-        self.check("T5", "9.4", "a negative since is answered like 0", negative)
-
-        def bad_requests():
-            need()
-            forms = [
-                ("since as a string", {"libraries": libs, "since": "5"}),
-                ("since 1.0", None, b'{"libraries":%s,"since":1.0}'),
-                ("since 1e1", None, b'{"libraries":%s,"since":1e1}'),
-                ("since 2^53", None, b'{"libraries":%s,"since":9007199254740992}'),
-                ("since -0", None, b'{"libraries":%s,"since":-0}'),
-                ("after over 512 bytes", {"libraries": libs, "after": "a" * 513}),
-                ("a library ID that isn't a string", {"libraries": libs + [7]}),
-                ("libraries missing", {}),
-                ("libraries null", {"libraries": None}),
-            ]
-            bad = []
-            for f in forms:
-                name = f[0]
-                body = dumps(f[1]) if f[1] is not None else (f[2] % dumps(libs))
-                a = c.raw(FED + "titles", body, c.headers(FED + "titles", body))
-                self.answers.append(a)
-                if not (a.status == 404 and a.signed):
-                    bad.append("%s: %s" % (name, a.short()))
-            if bad:
-                raise Fail("expected a signed 404 for:\n" + "\n".join(bad))
-            return "%d bad requests refused" % len(forms)
-        self.check("T6", "9.4, 2.1, 9", "bad titles requests (since not an integer, after too long, libraries missing) get a signed 404", bad_requests)
-
-        def unknown_library():
-            need()
-            j = self.read_titles(["lib_conformance_not_offered"])[0]
-            if j.get("titles"):
-                raise Fail("titles for a library that isn't offered: %r" % j["titles"][:2])
-            return "ignored"
-        self.check("T7", "9.4, 12", "a library ID that isn't offered is ignored", unknown_library)
-
-        def watch():
-            need()
-            if not self.a.watch_changes:
-                raise Skip("run with --watch-changes SECONDS, then add one title to an offered library and remove one, on the target")
-            if not self.seq:
-                raise Skip("the target sends no seq")
-            self.r.note("now add one title to an offered library and remove one on the target; waiting %d s" % self.a.watch_changes)
-            end = time.time() + self.a.watch_changes
-            old = {t["key"] for t in self.whole}
-            while time.time() < end:
-                time.sleep(15)
-                j = self.read_titles(libs, since=self.seq)
-                first = j[0]
-                if first.get("changes") is True and ((first.get("titles") or []) or (first.get("gone") or [])):
-                    new = [t["key"] for p in j for t in (p.get("titles") or [])]
-                    gone = [k for p in j for k in (p.get("gone") or [])]
-                    bad = sum((self.validate_page(p, libs, "", False) for p in j), [])
-                    if any(g not in old for g in gone):
-                        bad.append("gone holds keys that weren't in the list: %s" % [g for g in gone if g not in old])
-                    if bad:
-                        raise Fail("\n".join(bad))
-                    whole_now = {t["key"] for p in self.read_titles(libs) for t in (p.get("titles") or [])}
-                    expect = (old - set(gone)) | set(new)
-                    if whole_now != expect:
-                        raise Fail("the changes don't add up to the new whole list: %s vs %s" % (sorted(expect ^ whole_now), ""))
-                    return "changes: %s new or changed, %s gone, and they add up to the whole list" % (new, gone)
-            raise Skip("no change seen in %d s" % self.a.watch_changes)
-        self.check("T8", "9.4", "after a change on the target: changes and gone add up to the new whole list", watch)
-
-    # ---- the target as a reader of this peer ------------------------------------------------
-
-    def reader_checks(self):
-        s = self.server
-        if not self.a.reader_timeout:
-            self.r.add(Result("Q1", "9.3, 9.4, 6.4", "the target reads this peer's libraries and titles, well signed, following next",
-                              "MUST", SKIP, "run with --reader-timeout SECONDS and, on the target, want this peer's library %r" % "Conformance films"))
-            return
-        self.r.note("this peer now offers one library, 'Conformance films' (3 titles on 2 pages): on the target, "
-                    "want it; waiting up to %d s for the target to read it" % self.a.reader_timeout)
-        end = time.time() + self.a.reader_timeout
-        while time.time() < end:
-            calls = [x for x in s.requests if x["call"] == "titles"]
-            if any(b'"after":"movie/tmdb/603"' in x["body"] for x in calls):
-                break
-            time.sleep(5)
-        time.sleep(2)
-
-        def reads():
-            lib = [x for x in s.requests if x["call"] == "libraries"]
-            ts = [x for x in s.requests if x["call"] == "titles"]
-            if not lib and not ts:
-                raise Skip("the target didn't call this peer within %d s" % self.a.reader_timeout)
-            bad = [f for x in lib + ts for f in x["faults"]]
-            if bad:
-                raise Fail("\n".join(sorted(set(bad))))
-            if not ts:
-                raise Fail("the target read libraries but asked for no titles")
-            return "%d libraries and %d titles calls, all well signed" % (len(lib), len(ts))
-        self.check("Q1", "6.4, 9.3, 9.4", "the target's calls to this peer are well signed and well formed", reads)
-
-        def bodies():
-            bad = []
-            for x in s.requests:
-                if x["call"] != "titles":
+            for a in self.client.log:
+                if not a.signed or a.status in (200, 202):
                     continue
-                try:
-                    from .wire import parse_ijson
-                    j = parse_ijson(x["body"])
-                except Exception as e:
-                    bad.append(str(e))
+                if a.status == 409 and a.path.endswith("/pair"):
                     continue
-                if not isinstance(j.get("libraries"), list) or any(not isinstance(i, str) for i in j["libraries"]):
-                    bad.append("libraries isn't an array of strings: %r" % x["body"][:100])
-                elif set(j["libraries"]) - {"lib_conformance"}:
-                    bad.append("asks for libraries this peer doesn't offer: %r" % j["libraries"])
-                if "after" in j and not isinstance(j["after"], str):
-                    bad.append("after isn't a string")
-                if "since" in j and not is_int(j["since"]):
-                    bad.append("since isn't an integer: %r" % j["since"])
-            if not any(x["call"] == "titles" for x in s.requests):
-                raise Skip("no titles call")
+                j = a.json
+                if a.media_type != "application/problem+json":
+                    bad.append("%s %d: Content-Type %s, not application/problem+json" % (a.path, a.status, a.media_type))
+                elif not isinstance(j, dict) or not isinstance(j.get("type"), str) or not isinstance(j.get("title"), str) \
+                        or j.get("status") != a.status:
+                    bad.append("%s %d: not a problem document with type, title and status %d: %r" % (a.path, a.status, a.status, a.body[:80]))
+                elif "retryAfter" in j and not (is_int(j["retryAfter"]) and 1 <= j["retryAfter"] <= 3600):
+                    bad.append("%s %d: retryAfter %r" % (a.path, a.status, j["retryAfter"]))
+                elif has_null(j):
+                    bad.append("%s %d: null in the problem document" % (a.path, a.status))
             if bad:
-                raise Fail("\n".join(bad))
-            return "well formed"
-        self.check("Q2", "9.4", "the target's titles requests: libraries offered, after a string, since an integer", bodies)
-
-        def follows():
-            ts = [x for x in s.requests if x["call"] == "titles"]
-            if not ts:
-                raise Skip("no titles call")
-            if not any(b'"after":"movie/tmdb/603"' in x["body"] for x in ts):
-                raise Fail("the target didn't ask for the page after next = movie/tmdb/603")
-            return "followed next (this peer sends next on a short page on purpose, to see it followed)"
-        self.check("Q3", "9.4", "the target follows next to the following page", follows)
-
-    # ---- destructive or heavy ------------------------------------------------------------
-
-    def load_checks(self):
-        c = self.client
-        p = FED + "hello"
-        body = dumps({"state": "paired"})
-        n = self.a.load_count
-        self.r.note("signing %d requests for the load check (pure Python: this takes a while)" % n)
-        reqs = [c.headers(p, body) for _ in range(n)]
-
-        def flood():
-            t0 = time.time()
-            res = c.burst(p, body, reqs)
-            took = max(time.time() - t0, 0.001)
-            ok = [a for a in res if not isinstance(a, Exception) and a.status == 200]
-            limited = [a for a in res if not isinstance(a, Exception) and a.status in (429, 503) and a.signed]
-            errors = [a for a in res if isinstance(a, Exception)]
-            other = [a for a in res if not isinstance(a, Exception) and a not in ok and a not in limited]
-            summary = "%d calls in %.1f s (%.0f a second): %d passed, %d signed 429/503, %d other (%s), %d connection errors" % (
-                len(res), took, len(res) / took, len(ok), len(limited), len(other), sorted({a.status for a in other}), len(errors))
-            for a in limited:
-                ra = a.json.get("retryAfter") if isinstance(a.json, dict) else None
-                if ra is not None and not (is_int(ra) and 1 <= ra <= 3600):
-                    raise Fail("retryAfter %r isn't an integer from 1 to 3,600; %s" % (ra, summary))
-                t = a.json.get("type") if isinstance(a.json, dict) else None
-                if (a.status, t) not in ((429, "rate-limited"), (503, "server-busy")):
-                    raise Fail("a %d of type %r (section 8.2: 429 rate-limited, 503 server-busy); %s" % (a.status, t, summary))
-            if not limited and not other:
-                # The numbers are each implementation's (section 8.3): a
-                # limit not reached proves nothing unless the burst was big.
-                if len(ok) >= 1000 and len(res) / took >= 300:
-                    raise Fail("no limit at all: " + summary)
-                raise Skip("no limit reached, which this burst can't tell from no limit: %s. "
-                           "Raise --load-count, or run the suite nearer the target" % summary)
-            if errors and not limited and not other:
-                raise Fail("connections dropped instead of answers (section 8.3: answer, never hang): " + summary)
-            if not limited:
-                return (PASS, summary + " (only refusals before the signature: allowed, but a signed 429 tells the peer when to come back)")
-            self.retry_after = max((a.json.get("retryAfter") or 0) for a in limited)
-            return summary
-        self.check("R1", "8.3", "past a peer's limit: a signed 429 rate-limited (or 503) with retryAfter", flood)
-
-        def recovers():
-            if not hasattr(self, "retry_after"):
-                raise Skip("no signed 429 or 503 in the burst")
-            wait = self.retry_after or 5
-            time.sleep(min(wait, 60) + 1)
-            return self.signed(c.call("hello", {"state": "paired"}), 200) and "answered again after %d s" % wait
-        self.check("R2", "8.3", "after retryAfter, calls pass again", recovers)
-
-    def end_checks(self):
-        c = self.client
-
-        def end():
-            a = self.signed(c.call("hello", {"state": "ended"}), 200)
-            if a.json.get("state") != "ended":
-                raise Fail("state %r; expected ended" % a.json.get("state"))
-            if "certificates" in a.json:
-                return (PASS, "ended (it also sent certificates, which Overfin leaves out)")
-            return "ended"
-        if not self.check("E1", "7.4, 9.2", "hello ended: 200 signed, state ended", end):
-            return
-
-        def forgotten():
-            a = c.call("hello", {"state": "waiting"})
-            if a.status == 200:
-                raise Fail("the target still answers this peer: %s" % a.short())
-            return self.unsigned_404(a)
-        self.check("E2", "7.4, 6.4", "after ended, the target has deleted this peer: an unsigned 404 (it doesn't record the ender as forgotten)", forgotten)
-
-
-def _has_null(v):
-    if v is None:
-        return True
-    if isinstance(v, dict):
-        return any(_has_null(x) for x in v.values())
-    if isinstance(v, list):
-        return any(_has_null(x) for x in v)
-    return False
-
-
-# ISO 639-2 codes whose language has an ISO 639-1 code (a common subset):
-# a tag written with them isn't the shortest form section 9.4 asks for.
-ISO639_2_WITH_1 = {
-    "eng", "fre", "fra", "ger", "deu", "spa", "ita", "por", "rus", "jpn", "chi", "zho", "kor", "ara", "hin", "dut",
-    "nld", "swe", "nor", "nob", "nno", "dan", "fin", "pol", "cze", "ces", "slo", "slk", "hun", "rum", "ron", "gre",
-    "ell", "tur", "heb", "tha", "vie", "ind", "msa", "may", "ukr", "bul", "hrv", "srp", "slv", "est", "lav", "lit",
-    "per", "fas", "cat", "baq", "eus", "glg", "ice", "isl", "gle", "wel", "cym", "tam", "tel", "ben", "urd",
-}
+                raise Fail("\n".join(sorted(set(bad))[:10]))
+            n = sum(1 for a in self.client.log if a.signed and a.status not in (200, 202))
+            return "%d signed refusals, all problem documents" % n
+        self.check("A2", "core 3, 8.2", "every signed refusal is a problem document with type, title and its status", problems)

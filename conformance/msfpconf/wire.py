@@ -1,32 +1,40 @@
-"""MSFP v0 on the wire: encodings, I-JSON, signed requests and answers,
-an HTTP(S) client with section 3.1's certificate checks, and a small
-server that plays the suite's side of a pairing."""
+"""MSFP core 1 on the wire (spec/v1/core.md): encodings, I-JSON,
+addresses, the pairing code, signed requests and answers, statements,
+and an HTTPS client with section 3.2's certificate checks."""
 
 import base64
 import hashlib
 import hmac
 import http.client
-import http.server
+import ipaddress
 import json
 import os
 import re
 import socket
 import ssl
 import struct
-import threading
 import time
+import unicodedata
+import urllib.parse
 
 from . import ed25519
 
-REQUEST_LABEL = "overfin-federation-1 request"
-ANSWER_LABEL = "overfin-federation-1 response"
-PAIRING_LABEL = b"overfin-federation-1 pairing\n"
-CODE_PREFIX = "overfin-pair-1."
-MAX_INT = 2**53 - 1
+REQUEST_LABEL = "msfp-1 request"
+ANSWER_LABEL = "msfp-1 response"
+PAIRING_LABEL = b"msfp-1 pairing\n"
+CODE_PREFIX = "msfp-pair-1."
+ROTATION_LABEL = "msfp-key-rotation-1"
+REVOCATION_LABEL = "msfp-key-revocation-1"
 FED = "/api/v1/federation/"
+STREAM = "/api/v1/stream/"
+MAX_INT = 2**53 - 1
+H_KEY, H_DATE, H_NONCE, H_SIG = "MSFP-Key", "MSFP-Date", "MSFP-Nonce", "MSFP-Signature"
+
+# Unicode's White_Space property (core 5.1, 9.1).
+WHITE_SPACE = set("\t\n\x0b\x0c\r \x85\xa0\u1680\u2028\u2029\u202f\u205f\u3000") | {chr(c) for c in range(0x2000, 0x200B)}
 
 
-# ---- Encodings (section 2.1) ---------------------------------------------
+# ---- Encodings (core 2) ---------------------------------------------------------
 
 _B64U = re.compile(r"[A-Za-z0-9_-]*")
 
@@ -36,8 +44,8 @@ def b64u(b):
 
 
 def unb64u(text, size=None):
-    """Strict base64url: the URL-safe alphabet only, no padding, unused
-    bits zero (re-encoding gives the same text). None when invalid."""
+    """Strict base64url (core 2.2): the URL-safe alphabet only, no padding,
+    unused bits zero. None when invalid, or not `size` bytes."""
     if not isinstance(text, str) or not _B64U.fullmatch(text) or len(text) % 4 == 1:
         return None
     try:
@@ -53,6 +61,18 @@ def sha256hex(b):
     return hashlib.sha256(b).hexdigest()
 
 
+def commitment(pub):
+    """The next key commitment to a key (core 12.5)."""
+    return b64u(hashlib.sha256(pub).digest())
+
+
+def decimal(text):
+    """A decimal integer of core 2.2, or None."""
+    if not isinstance(text, str) or not re.fullmatch(r"0|[1-9][0-9]*", text) or int(text) > MAX_INT:
+        return None
+    return int(text)
+
+
 class NotIJSON(ValueError):
     pass
 
@@ -62,25 +82,22 @@ class NonInteger(float):
 
 
 class NegativeZero(int):
-    """The number -0, which section 2.1 doesn't allow as an integer."""
+    """-0, which core 2.3 doesn't allow as an integer."""
 
 
 def _clean_text(s):
-    for i, ch in enumerate(s):
+    for ch in s:
         o = ord(ch)
-        if 0xD800 <= o <= 0xDFFF:
-            return False
-        if 0xFDD0 <= o <= 0xFDEF or (o & 0xFFFE) == 0xFFFE:
+        if 0xD800 <= o <= 0xDFFF or 0xFDD0 <= o <= 0xFDEF or (o & 0xFFFE) == 0xFFFE:
             return False
     return True
 
 
 def parse_ijson(raw):
-    """A body as section 2.1 reads it (I-JSON, RFC 7493): UTF-8 without a
-    byte order mark, no member twice, no surrogates or noncharacters.
-    Numbers with a fraction or an exponent come back as NonInteger, -0 as
-    NegativeZero; is_int() says whether a value is an integer in section
-    2.1's form. Raises NotIJSON."""
+    """A body as core 2.3 reads it (I-JSON, RFC 7493). Numbers with a
+    fraction or an exponent come back as NonInteger, -0 as NegativeZero;
+    is_int() says whether a value is an integer of core 2.3. Raises
+    NotIJSON."""
     if raw.startswith(b"\xef\xbb\xbf"):
         raise NotIJSON("a byte order mark")
     try:
@@ -99,8 +116,6 @@ def parse_ijson(raw):
         return dict(ps)
 
     def integer(t):
-        # Section 2.1's integer rules (not -0, within 2^53 - 1) are about
-        # members whose type is integer: is_int() checks them there.
         return NegativeZero(0) if t == "-0" else int(t)
 
     def constant(t):
@@ -111,7 +126,7 @@ def parse_ijson(raw):
                            parse_float=NonInteger, parse_constant=constant)
     except NotIJSON:
         raise
-    except ValueError as e:
+    except (ValueError, RecursionError) as e:
         raise NotIJSON("not JSON: %s" % e)
 
     def walk(v):
@@ -130,72 +145,198 @@ def parse_ijson(raw):
 
 
 def is_int(v):
-    """An integer in section 2.1's form: no fraction or exponent, not -0,
-    within 2^53 - 1."""
+    """An integer of core 2.3: no fraction or exponent, not -0, within 2^53 - 1."""
     return isinstance(v, int) and not isinstance(v, (bool, NegativeZero)) and abs(v) <= MAX_INT
+
+
+def has_null(v):
+    if v is None:
+        return True
+    if isinstance(v, dict):
+        return any(has_null(x) for x in v.values())
+    if isinstance(v, list):
+        return any(has_null(x) for x in v)
+    return False
 
 
 def dumps(obj):
     return json.dumps(obj, separators=(",", ":"), ensure_ascii=True).encode("ascii")
 
 
-# ---- Addresses (section 5.2) ---------------------------------------------
+def clean_name(s, limit=80):
+    """Core 9.1's cleaning of a name."""
+    out, space = [], False
+    for ch in s:
+        if ch in WHITE_SPACE:
+            if not space:
+                out.append(" ")
+            space = True
+            continue
+        space = False
+        out.append(ch)
+    t = "".join(ch for ch in "".join(out) if unicodedata.category(ch) not in ("Cc", "Cf")).strip(" ")
+    return t[:limit].strip(" ")
 
-def check_address(a):
-    """None when valid, else why not."""
+
+# ---- Addresses (core 5.2, 3.3, 11) ------------------------------------------------
+
+def check_host(host):
+    """None when a host of core 5.2 (name, IPv4, [IPv6]), else why not."""
+    if host.startswith("["):
+        if not host.endswith("]") or "%" in host:
+            return "not an IPv6 address in brackets"
+        try:
+            ip = ipaddress.IPv6Address(host[1:-1])
+        except ValueError:
+            return "not an IPv6 address"
+        if ip.compressed != host[1:-1]:
+            return "IPv6 not in RFC 5952 form"
+        return None
+    if not host or len(host) > 253:
+        return "an empty host, or a name over 253 characters"
+    labels = host.split(".")
+    if labels[-1] and labels[-1].isdigit():
+        if len(labels) != 4 or any(decimal(x) is None or int(x) > 255 for x in labels):
+            return "a numeric host that isn't an IPv4 address in its one form"
+        return None
+    for x in labels:
+        if not re.fullmatch(r"[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?", x):
+            return "a label outside a-z 0-9 -, empty, over 63 characters, or starting or ending with -"
+    return None
+
+
+def check_address(a, allow_http=False):
+    """None when an address of core 5.2, else why not. allow_http: the
+    test switch of core 3.1, outside the protocol."""
     if not isinstance(a, str) or len(a) > 512 or not a.isascii():
-        return "not 512 bytes of ASCII"
+        return "not at most 512 bytes of ASCII"
     m = re.fullmatch(r"(https?)://([^/?#@\\]+)", a)
     if not m:
-        return "not scheme://host[:port] with nothing after"
+        return "not https://host[:port] with nothing after"
     scheme, auth = m.groups()
+    if scheme == "http" and not allow_http:
+        return "http (core 1 is https only)"
     host, port = auth, None
     if auth.startswith("["):
         close = auth.find("]")
         if close < 0:
             return "an unclosed ["
-        host, rest = auth[: close + 1], auth[close + 1:]
+        host, rest = auth[:close + 1], auth[close + 1:]
         if rest:
             if not rest.startswith(":"):
                 return "junk after ]"
             port = rest[1:]
-        try:
-            import ipaddress
-            ip = ipaddress.IPv6Address(host[1:-1])
-            if str(ip) != host[1:-1] or "%" in host:
-                return "IPv6 not in RFC 5952 form"
-        except ValueError:
-            return "not an IPv6 address"
-    else:
-        if ":" in auth:
-            host, port = auth.rsplit(":", 1)
-        labels = host.split(".")
-        if labels[-1].isdigit():
-            if len(labels) != 4 or any(not x.isdigit() or (len(x) > 1 and x[0] == "0") or int(x) > 255 for x in labels):
-                return "not an IPv4 address in its one form"
-        else:
-            if len(host) > 253 or any(not re.fullmatch(r"[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?", x) for x in labels):
-                return "not a name in lowercase"
+    elif ":" in auth:
+        host, port = auth.rsplit(":", 1)
+    why = check_host(host)
+    if why:
+        return why
     if port is not None:
-        if not re.fullmatch(r"[1-9][0-9]{0,4}", port) or int(port) > 65535:
+        if decimal(port) is None or not 1 <= int(port) <= 65535:
             return "a port not 1 to 65535 without leading zeros"
         if port == ("443" if scheme == "https" else "80"):
             return "the scheme's default port"
     return None
 
 
+def make_uncallable_address(raw=None):
+    """https://msfp-<26>.invalid (core 5.2): 16 bytes in lowercase base32."""
+    raw = raw if raw is not None else os.urandom(16)
+    return "https://msfp-" + base64.b32encode(raw).decode().rstrip("=").lower() + ".invalid"
+
+
+def check_uncallable_address(a):
+    why = check_address(a)
+    if why:
+        return why
+    m = re.fullmatch(r"https://msfp-([a-z2-7]*)\.invalid", a)
+    if not m:
+        return "not of the form https://msfp-<26>.invalid"
+    mid = m.group(1)
+    if len(mid) != 26:
+        return "%d characters between msfp- and .invalid, not 26" % len(mid)
+    raw = base64.b32decode(mid.upper() + "======")
+    if make_uncallable_address(raw) != a:
+        return "the unused bits aren't zero"
+    return None
+
+
+def check_base(s):
+    """None when a discovery document's base of core 11, else why not."""
+    if not isinstance(s, str) or len(s) > 256 or not s.isascii():
+        return "not at most 256 bytes of ASCII"
+    if not s.startswith("/") or not s.endswith(FED):
+        return "not an absolute path ending in /api/v1/federation/"
+    for seg in s[1:-1].split("/"):
+        if seg in ("", ".", ".."):
+            return "an empty, . or .. segment"
+        if not re.fullmatch(r"[A-Za-z0-9._~-]+", seg):
+            return "a character outside A-Z a-z 0-9 . _ ~ -"
+    return None
+
+
+def check_media_name(s):
+    """A file or track name of media 1, or None when valid."""
+    if not isinstance(s, str) or s in (".", "..") or not re.fullmatch(r"[A-Za-z0-9._-]{1,64}", s):
+        return "not 1 to 64 characters of A-Z a-z 0-9 . _ - (or . or ..)"
+    return None
+
+
+_REFUSED = [ipaddress.ip_network(n) for n in ("127.0.0.0/8", "::1/128", "169.254.0.0/16", "fe80::/10", "0.0.0.0/8",
+                                              "::/128", "224.0.0.0/4", "ff00::/8", "240.0.0.0/4")]
+
+
+def check_destination(text):
+    """None when core 3.3 lets a server connect to this IP address by
+    default, else why not."""
+    try:
+        ip = ipaddress.ip_address(text)
+    except ValueError:
+        return "not an IP address"
+    if ip.version == 6:
+        if ip.ipv4_mapped:
+            ip = ip.ipv4_mapped
+        elif ip in ipaddress.ip_network("64:ff9b::/96"):
+            ip = ipaddress.IPv4Address(ip.packed[12:])
+        elif ip in ipaddress.ip_network("2002::/16"):
+            ip = ipaddress.IPv4Address(ip.packed[2:6])
+    for n in _REFUSED:
+        if ip.version == n.version and ip in n:
+            return "refused: in %s" % n
+    return None
+
+
 def host_of(address):
-    """The <host> line of a request message (section 6.2)."""
+    """The <host> line of a request message (core 6.2)."""
     return address.split("://", 1)[1]
 
 
-# ---- Pairing codes (section 5.1) -----------------------------------------
+def split_hostport(hostport, default):
+    if hostport.startswith("["):
+        close = hostport.index("]")
+        h, rest = hostport[1:close], hostport[close + 1:]
+        return h, int(rest[1:]) if rest else default
+    if ":" in hostport:
+        h, port = hostport.rsplit(":", 1)
+        return h, int(port)
+    return hostport, default
 
-def parse_code(text):
-    """(key, secret, expiry, address) or raises ValueError, as 5.1 reads it."""
-    clean = "".join(ch for ch in text if not ch.isspace())
+
+def is_ip(h):
+    try:
+        ipaddress.ip_address(h)
+        return True
+    except ValueError:
+        return False
+
+
+# ---- The pairing code (core 5.1, 9.1) ------------------------------------------
+
+def parse_code(text, allow_http=False):
+    """(key, secret, expiry, address), or raises ValueError, as core 5.1 reads it."""
+    clean = "".join(ch for ch in text if ch not in WHITE_SPACE)
     if not clean.startswith(CODE_PREFIX):
-        raise ValueError("not the prefix overfin-pair-1.")
+        raise ValueError("not the exact prefix msfp-pair-1.")
     rest = clean[len(CODE_PREFIX):]
     if len(rest) > 779:
         raise ValueError("over 779 characters")
@@ -206,24 +347,28 @@ def parse_code(text):
         raise ValueError("72 bytes or fewer")
     key, secret, expiry, addr = b[:32], b[32:64], struct.unpack(">Q", b[64:72])[0], b[72:]
     if not ed25519.valid_point(key):
-        raise ValueError("the key breaks section 2.1")
+        raise ValueError("the key breaks core 2.1")
     if expiry > MAX_INT:
         raise ValueError("an expiry above 2^53 - 1")
     try:
         address = addr.decode("ascii")
     except UnicodeDecodeError:
         raise ValueError("an address that isn't ASCII")
-    why = check_address(address)
+    why = check_address(address, allow_http)
     if why:
         raise ValueError("address: " + why)
     return key, secret, expiry, address
+
+
+def make_code(key_pub, secret, expiry, address):
+    return CODE_PREFIX + b64u(key_pub + secret + struct.pack(">Q", expiry) + address.encode())
 
 
 def proof(secret, caller_key, address):
     return hmac.new(secret, PAIRING_LABEL + caller_key + b"\n" + address.encode(), hashlib.sha256).digest()
 
 
-# ---- Keys and messages (sections 4 and 6) ----------------------------------
+# ---- Keys, messages and statements (core 4, 6, 12) ------------------------------
 
 class Key:
     def __init__(self, seed=None):
@@ -246,10 +391,17 @@ class Key:
     def sign(self, m):
         return ed25519.sign(self.seed, m)
 
+    @property
+    def commitment(self):
+        return commitment(self.pub)
+
+    @property
+    def fingerprint(self):
+        return fingerprint(self.pub)
+
 
 def fingerprint(pub):
-    h = hashlib.sha256(pub).digest()[:15]
-    t = base64.b32encode(h).decode()
+    t = base64.b32encode(hashlib.sha256(pub).digest()[:15]).decode()
     return "-".join(t[i:i + 4] for i in range(0, 24, 4))
 
 
@@ -257,63 +409,184 @@ def request_message(method, host, target, date, nonce, body):
     return "\n".join([REQUEST_LABEL, method, host, target, date, nonce, sha256hex(body)]).encode("ascii")
 
 
-def answer_message(nonce, status, body):
-    return "\n".join([ANSWER_LABEL, nonce, str(status), sha256hex(body)]).encode("ascii")
+def answer_message(nonce, status, media_type, body):
+    return "\n".join([ANSWER_LABEL, nonce, str(status), media_type, sha256hex(body)]).encode("ascii")
 
 
-# ---- Certificates (section 3.1) ------------------------------------------
+_MT = re.compile(r"([A-Za-z0-9!#$%&'*+.^_`|~-]+)/([A-Za-z0-9!#$%&'*+.^_`|~-]+)[ \t]*(;.*)?")
+
+
+def media_type_of(headers):
+    """The <media type> line of core 6.3 from an answer's headers: '-'
+    without Content-Type (or with an empty one), None when it is sent twice
+    or doesn't read as type/subtype (the answer fails like a badly signed one)."""
+    vals = [v for k, v in headers if k.lower() == "content-type"]
+    if len(vals) > 1:
+        return None
+    if not vals or not vals[0].strip():
+        return "-"
+    m = _MT.fullmatch(vals[0].strip())
+    if not m:
+        return None
+    return ("%s/%s" % (m.group(1), m.group(2))).lower()
+
+
+def rotation_statement(old, new, next_commitment, date):
+    return "\n".join([ROTATION_LABEL, old, new, next_commitment or "-", str(date)]).encode("ascii")
+
+
+def revocation_statement(key, date):
+    return "\n".join([REVOCATION_LABEL, key, str(date)]).encode("ascii")
+
+
+def make_rotation(old, new, next_commitment=None, date=None):
+    """The members of a rotate request (core 9.3); old and new are Keys."""
+    date = int(time.time()) if date is None else date
+    st = rotation_statement(old.text, new.text, next_commitment, date)
+    r = {"newKey": new.text}
+    if next_commitment:
+        r["nextCommitment"] = next_commitment
+    r.update({"date": date, "oldSignature": b64u(old.sign(st)), "newSignature": b64u(new.sign(st))})
+    return r
+
+
+def make_revocation(key, date=None):
+    date = int(time.time()) if date is None else date
+    return {"date": date, "signature": b64u(key.sign(revocation_statement(key.text, date)))}
+
+
+def read_rotation(old_pub, r, now=None):
+    """Checks a rotation's members (a rotate body, or a pulled `rotation`)
+    as core 12.3 step 1 does. Returns (new key bytes, next commitment or
+    None), or raises ValueError with why `rotate` would answer 400."""
+    now = time.time() if now is None else now
+    if not isinstance(r, dict):
+        raise ValueError("not an object")
+    if has_null(r):
+        raise ValueError("a null member (core 2.3)")
+    nk, nc, d, so, sn = (r.get(x) for x in ("newKey", "nextCommitment", "date", "oldSignature", "newSignature"))
+    new = unb64u(nk, 32) if isinstance(nk, str) else None
+    if new is None or not ed25519.valid_point(new):
+        raise ValueError("newKey isn't a valid key (core 2.1)")
+    if new == old_pub:
+        raise ValueError("newKey is the old key (core 12.2)")
+    if "nextCommitment" in r and (not isinstance(nc, str) or unb64u(nc, 32) is None):
+        raise ValueError("nextCommitment isn't base64url of 32 bytes")
+    if not is_int(d) or d <= 0:
+        raise ValueError("date isn't a positive integer")
+    if abs(now - d) > 300:
+        raise ValueError("the date is %+d s from this clock (core 12.3: within 5 minutes)" % (d - now))
+    st = rotation_statement(b64u(old_pub), nk, nc, d)
+    so_b, sn_b = unb64u(so, 64), unb64u(sn, 64)
+    if so_b is None or not ed25519.verify_strict(old_pub, st, so_b):
+        raise ValueError("oldSignature doesn't verify under the old key")
+    if sn_b is None or not ed25519.verify_strict(new, st, sn_b):
+        raise ValueError("newSignature doesn't verify under the new key")
+    return new, nc
+
+
+def read_revocation(key_pub, r, now=None):
+    """Checks a revocation's members (core 12.6), or raises ValueError."""
+    now = time.time() if now is None else now
+    if not isinstance(r, dict):
+        raise ValueError("not an object")
+    d, s = r.get("date"), r.get("signature")
+    if not is_int(d) or d <= 0:
+        raise ValueError("date isn't a positive integer")
+    if abs(now - d) > 300:
+        raise ValueError("the date is %+d s from this clock (core 12.6: within 5 minutes)" % (d - now))
+    sb = unb64u(s, 64)
+    if sb is None or not ed25519.verify_strict(key_pub, revocation_statement(b64u(key_pub), d), sb):
+        raise ValueError("the signature doesn't verify under the revoked key")
+
+
+# ---- Certificates (core 3.2) --------------------------------------------------------
 
 def _der(b, i):
-    """(tag, start of content, end) of the DER element at i."""
-    tag = b[i]
-    n = b[i + 1]
-    j = i + 2
+    n, j = b[i + 1], i + 2
     if n & 0x80:
         k = n & 0x7F
         n = int.from_bytes(b[j:j + k], "big")
         j += k
-    return tag, j, j + n
+    return j, j + n
+
+
+def spki_of(cert_der):
+    """The SubjectPublicKeyInfo of a DER certificate."""
+    c = _der(cert_der, 0)[0]
+    i = _der(cert_der, c)[0]
+    if cert_der[i] == 0xA0:
+        i = _der(cert_der, i)[1]
+    for _ in range(5):              # serial, signature, issuer, validity, subject
+        i = _der(cert_der, i)[1]
+    return cert_der[i:_der(cert_der, i)[1]]
 
 
 def spki_pin(cert_der):
-    """The pin of section 3.1: SHA-256 of the SubjectPublicKeyInfo, base64url."""
-    _, c, _ = _der(cert_der, 0)          # Certificate
-    _, t, t_end = _der(cert_der, c)      # tbsCertificate
-    i = t
-    if cert_der[i] == 0xA0:              # [0] version
-        i = _der(cert_der, i)[2]
-    for _ in range(5):                   # serial, signature, issuer, validity, subject
-        i = _der(cert_der, i)[2]
-    _, s, e = _der(cert_der, i)          # subjectPublicKeyInfo
-    return b64u(hashlib.sha256(cert_der[i:e]).digest())
+    return b64u(hashlib.sha256(spki_of(cert_der)).digest())
+
+
+def read_pins(v):
+    """What a receiver keeps of `certificates` (core 3.2): the first 8
+    valid entries, each once. A member that isn't an array counts as none."""
+    pins = []
+    if isinstance(v, list):
+        for p in v:
+            if isinstance(p, str) and len(p) == 43 and unb64u(p, 32) is not None and p not in pins and len(pins) < 8:
+                pins.append(p)
+    return pins
 
 
 class CertificateRefused(Exception):
     pass
 
 
-# ---- A call to the target --------------------------------------------------
+# ---- Calls to the server under test ---------------------------------------------------
 
 def content_coding(headers):
-    """The answer's Content-Encoding when it is other than identity, else ""."""
     codings = [v.strip().lower() for k, v in headers if k.lower() == "content-encoding"]
     coded = [x for v in codings for x in (s.strip() for s in v.split(",")) if x and x != "identity"]
     return ", ".join(coded)
 
 
 class Answer:
-    def __init__(self, status, headers, body, signed, sig_header_count, nonce, leaf_pin=None, trusted=None):
-        self.status, self.headers, self.body = status, headers, body
-        self.signed = signed                  # signature verified under the peer's key
-        self.sig_header_count = sig_header_count
-        self.nonce = nonce
+    """An answer, checked as core 6.6 says against `keys`."""
+
+    def __init__(self, status, headers, body, nonce, keys, leaf_pin=None, trusted=None, path=""):
+        self.status, self.headers, self.body, self.nonce, self.path = status, headers, body, nonce, path
         self.leaf_pin, self.trusted = leaf_pin, trusted
-        self._json, self._json_error = None, None
-        # A content coding other than identity: such an answer counts as
-        # badly signed, whatever its signature (section 3).
+        sigs = [v for k, v in headers if k.lower() == "msfp-signature"]
+        self.sig_header_count = len(sigs)
+        self.media_type = media_type_of(headers)
         self.coding = content_coding(headers)
-        if self.coding:
-            self.signed = False
+        self.signer = None              # the key (bytes) whose signature verified
+        self.why_unsigned = ""
+        if len(sigs) != 1:
+            self.why_unsigned = "MSFP-Signature sent %d times" % len(sigs)
+        elif self.media_type is None:
+            self.why_unsigned = "Content-Type sent twice, or not type/subtype (core 6.3)"
+        elif self.coding:
+            self.why_unsigned = "Content-Encoding %s (core 3: counts as badly signed)" % self.coding
+        else:
+            sig = unb64u(sigs[0].strip(), 64)
+            if sig is None:
+                self.why_unsigned = "MSFP-Signature isn't base64url of 64 bytes"
+            else:
+                msg = answer_message(nonce, status, self.media_type, body)
+                for k in keys:
+                    if k is not None and ed25519.verify_strict(k, msg, sig):
+                        self.signer = k
+                        break
+                else:
+                    self.why_unsigned = "the signature doesn't verify under the key expected"
+        if self.signer is not None and status in (200, 202) and self.media_type != "application/json":
+            self.signer = None
+            self.why_unsigned = "a signed %d whose media type is %s, not application/json (core 6.3)" % (status, self.media_type)
+        self._json, self._json_error = None, None
+
+    @property
+    def signed(self):
+        return self.signer is not None
 
     @property
     def json(self):
@@ -329,94 +602,164 @@ class Answer:
         _ = self.json
         return self._json_error
 
+    def problem_type(self):
+        j = self.json
+        return j.get("type") if isinstance(j, dict) else None
+
+    def header(self, name):
+        vals = [v for k, v in self.headers if k.lower() == name.lower()]
+        return vals[0] if vals else None
+
     def short(self):
-        b = self.body[:160]
-        return "%s%s %r" % (self.status, " signed" if self.signed else " unsigned", b)
-
-
-def _split(hostport, default):
-    if hostport.startswith("["):
-        close = hostport.index("]")
-        h, rest = hostport[1:close], hostport[close + 1:]
-        return h, int(rest[1:]) if rest else default
-    if ":" in hostport:
-        h, port = hostport.rsplit(":", 1)
-        return h, int(port)
-    return hostport, default
+        t = self.problem_type() if self.status not in (200, 202) else None
+        return "%s%s%s %r" % (self.status, " signed" if self.signed else " unsigned", " " + t if t else "", self.body[:120])
 
 
 class Client:
-    """Signed calls to one target address, checked as sections 3.1 and 6.6
-    say. `connect` overrides where to connect (host:port), for tests behind
-    a different network path; the signed host stays the address's."""
+    """Signed calls to one server, checked as core 3.2 and 6.6 say.
 
-    def __init__(self, key, address, peer_pub=None, connect=None, timeout=20, any_certificate=False):
-        self.key, self.address, self.peer_pub = key, address, peer_pub
-        self.host = host_of(address)
-        self.https = address.startswith("https://")
+    connect: where to connect instead of the address's host (host:port),
+    the requests staying signed for the address. server_keys: the keys an
+    answer may verify under (normally the server's current key)."""
+
+    def __init__(self, key, address, server_keys=(), connect=None, timeout=20, base=FED, any_certificate=False):
+        self.key, self.address = key, address
+        self.server_keys = server_keys if isinstance(server_keys, list) else list(server_keys)   # shared, not copied
+        self.base = base
         self.connect_to = connect
         self.timeout = timeout
-        self.any_certificate = any_certificate   # a stranger has no pins to check against
-        self.pins = []           # named in the target's latest signed hello
-        self.log = []            # (path, request headers, body, Answer)
+        self.any_certificate = any_certificate
+        self.pins = []                  # of the server's latest signed hello
+        self.untrusted = set()          # hosts whose certificate failed the trusted check
+        self.log = []                   # every Answer
+        self.on_cert_refused = None     # sends a hello after a refused certificate (core 3.2, renewals)
 
-    def _conn(self, checked):
-        host, port = _split(self.connect_to or self.host, 443 if self.https else 80)
+    @property
+    def host(self):
+        return host_of(self.address)
+
+    @property
+    def https(self):
+        return self.address.startswith("https://")
+
+    def _conn(self, checked, timeout=None):
+        timeout = timeout or self.timeout
+        target = self.connect_to or self.host
+        h, port = split_hostport(target, 443 if self.https else 80)
         if not self.https:
-            return http.client.HTTPConnection(host, port, timeout=self.timeout), None, None
-        sni = None if _is_ip(host) else host
-        # Trusted first, as for any site.
-        ctx = ssl.create_default_context()
-        try:
-            c = http.client.HTTPSConnection(host, port, timeout=self.timeout, context=ctx)
-            if sni is None:
-                ctx.check_hostname = True
-            c.connect()
-            leaf = c.sock.getpeercert(binary_form=True)
-            return c, spki_pin(leaf), True
-        except ssl.SSLCertVerificationError:
-            pass
+            return http.client.HTTPConnection(h, port, timeout=timeout), None, None
+        name = split_hostport(self.host, 443)[0]
+        if self.host not in self.untrusted:
+            ctx = ssl.create_default_context()
+            raw = socket.create_connection((h, port), timeout)
+            try:
+                sock = ctx.wrap_socket(raw, server_hostname=name)
+                c = http.client.HTTPSConnection(h, port, timeout=timeout, context=ctx)
+                c.sock = sock
+                return c, spki_pin(sock.getpeercert(binary_form=True)), True
+            except (ssl.SSLCertVerificationError, ssl.CertificateError):
+                self.untrusted.add(self.host)
+                raw.close()
         ctx = ssl._create_unverified_context()
-        c = http.client.HTTPSConnection(host, port, timeout=self.timeout, context=ctx)
-        c.connect()
-        pin = spki_pin(c.sock.getpeercert(binary_form=True))
+        sock = ctx.wrap_socket(socket.create_connection((h, port), timeout),
+                               server_hostname=None if is_ip(name) else name)
+        pin = spki_pin(sock.getpeercert(binary_form=True))
         if checked and not self.any_certificate and pin not in self.pins:
-            c.close()
-            raise CertificateRefused("the leaf %s is neither trusted nor named" % pin)
+            sock.close()
+            raise CertificateRefused("the leaf certificate %s is neither trusted nor named in the server's latest "
+                                     "signed hello (named: %s)" % (pin, ", ".join(self.pins) or "none"))
+        c = http.client.HTTPSConnection(h, port, timeout=timeout, context=ctx)
+        c.sock = sock
         return c, pin, False
 
-    def raw(self, path, body, headers, method="POST", checked=None, sign_path=None):
-        """Sends exactly these headers (a list of pairs) and body."""
+    def _checked_conn(self, checked, timeout=None):
+        try:
+            return self._conn(checked, timeout)
+        except CertificateRefused:
+            if not (checked and self.on_cert_refused):
+                raise
+            before = set(self.pins)
+            self.on_cert_refused()
+            if set(self.pins) == before:
+                raise
+            return self._conn(checked, timeout)
+
+    def raw(self, path, body, headers, method="POST", checked=None, keys=None):
+        """Sends exactly these headers (pairs) and body; returns an Answer."""
+        name = path[len(self.base):] if path.startswith(self.base) else ""
         if checked is None:
-            checked = not (path.startswith(FED + "pair") or path.startswith(FED + "hello"))
-        c, pin, trusted = self._conn(checked)
-        c.putrequest(method, path, skip_accept_encoding=True)
-        for k, v in headers:
-            c.putheader(k, v)
-        c.putheader("Content-Length", str(len(body)))
-        c.endheaders(body)
-        r = c.getresponse()
-        data = r.read()
-        hdrs = r.getheaders()
-        c.close()
-        nonce = next((v for k, v in headers if k.lower() == "overfin-nonce"), "")
-        sigs = [v for k, v in hdrs if k.lower() == "overfin-signature"]
-        signed = False
-        if len(sigs) == 1 and self.peer_pub is not None:
-            sig = unb64u(sigs[0].strip(), 64)
-            if sig is not None:
-                try:
-                    signed = ed25519.verify_strict(self.peer_pub, answer_message(nonce, r.status, data), sig)
-                except ValueError:
-                    signed = False
-        a = Answer(r.status, hdrs, data, signed, len(sigs), nonce, pin, trusted)
-        self.log.append((path, headers, body, a))
+            checked = name not in ("pair", "hello")
+        c, pin, trusted = self._checked_conn(checked)
+        try:
+            c.putrequest(method, path, skip_host=True, skip_accept_encoding=True)
+            c.putheader("Host", self.host)
+            for k, v in headers:
+                c.putheader(k, v)
+            c.putheader("Content-Length", str(len(body)))
+            c.endheaders(body)
+            r = c.getresponse()
+            data = r.read(4 * 1024 * 1024 + 1)
+            hdrs = r.getheaders()
+        finally:
+            c.close()
+        nonce = next((v.strip() for k, v in headers if k.lower() == "msfp-nonce"), "")
+        a = Answer(r.status, hdrs, data, nonce, self.server_keys if keys is None else keys, pin, trusted, path)
+        if len(data) > 4 * 1024 * 1024:
+            a.signer, a.why_unsigned = None, "an answer over 4 MiB (core 3)"
+        self.log.append(a)
         return a
 
-    def burst(self, path, body, header_sets, connections=32):
-        """Sends many prepared requests over a few kept-alive connections
-        (a load check): a list of Answers, or exceptions, in order."""
+    def headers(self, path, body, date=None, nonce=None, key=None, sign_host=None, sign_path=None, method="POST"):
+        key = key or self.key
+        date = str(int(time.time())) if date is None else date
+        nonce = b64u(os.urandom(16)) if nonce is None else nonce
+        msg = request_message(method, sign_host or self.host, sign_path or path, date, nonce, body)
+        return [("Content-Type", "application/json"), (H_KEY, key.text), (H_DATE, date),
+                (H_NONCE, nonce), (H_SIG, b64u(key.sign(msg)))]
+
+    def call(self, name, body, key=None, keys=None, **kw):
+        if isinstance(body, (dict, list)):
+            body = dumps(body)
+        path = self.base + name
+        return self.raw(path, body, self.headers(path, body, key=key, **kw), keys=keys)
+
+    def get(self, url, headers=(), method="GET", limit=80 * 1024 * 1024):
+        """A media fetch (media 2): a plain GET, unsigned, needing a trusted
+        or named certificate. Returns (status, headers, body)."""
+        u = urllib.parse.urlsplit(url)
+        if "%s://%s" % (u.scheme, u.netloc) != self.address:
+            raise ValueError("%s isn't under the server's address %s" % (url, self.address))
+        target = url[len(self.address):]
+        c, _, _ = self._checked_conn(True, 90)
+        try:
+            c.putrequest(method, target, skip_host=True, skip_accept_encoding=True)
+            c.putheader("Host", self.host)
+            for k, v in headers:
+                c.putheader(k, v)
+            c.endheaders()
+            r = c.getresponse()
+            data = b"" if method == "HEAD" else r.read(limit)
+            return r.status, r.getheaders(), data
+        finally:
+            c.close()
+
+    def discovery(self):
+        """GET /.well-known/msfp, any certificate (core 11): (status, headers, body)."""
+        c, _, _ = self._conn(False)
+        try:
+            c.putrequest("GET", "/.well-known/msfp", skip_host=True, skip_accept_encoding=True)
+            c.putheader("Host", self.host)
+            c.endheaders()
+            r = c.getresponse()
+            return r.status, r.getheaders(), r.read(16 * 1024 + 1)
+        finally:
+            c.close()
+
+    def burst(self, name, body, header_sets, connections=32):
+        """Sends many prepared requests over a few kept-alive connections:
+        a list of Answers, or exceptions, in order."""
         import concurrent.futures
+        path = self.base + name
         chunks = [list(range(i, len(header_sets), connections)) for i in range(connections)]
         out = [None] * len(header_sets)
 
@@ -426,25 +769,19 @@ class Client:
                 try:
                     if conn is None:
                         conn = self._conn(True)[0]
-                    conn.putrequest("POST", path, skip_accept_encoding=True)
+                    conn.putrequest("POST", path, skip_host=True, skip_accept_encoding=True)
+                    conn.putheader("Host", self.host)
                     for k, v in header_sets[i]:
                         conn.putheader(k, v)
                     conn.putheader("Content-Length", str(len(body)))
                     conn.endheaders(body)
                     r = conn.getresponse()
                     data = r.read()
-                    hdrs = r.getheaders()
-                    nonce = dict(header_sets[i])["Overfin-Nonce"]
-                    sigs = [v for k, v in hdrs if k.lower() == "overfin-signature"]
-                    signed = False
-                    if len(sigs) == 1 and self.peer_pub is not None:
-                        sig = unb64u(sigs[0].strip(), 64)
-                        signed = sig is not None and ed25519.verify_strict(self.peer_pub, answer_message(nonce, r.status, data), sig)
-                    out[i] = Answer(r.status, hdrs, data, signed, len(sigs), nonce)
+                    out[i] = Answer(r.status, r.getheaders(), data, dict(header_sets[i])[H_NONCE], self.server_keys)
                     if (r.getheader("Connection") or "").lower() == "close":
                         conn.close()
                         conn = None
-                except (OSError, http.client.HTTPException) as e:
+                except (OSError, http.client.HTTPException, CertificateRefused) as e:
                     out[i] = e if isinstance(e, OSError) else OSError(str(e))
                     if conn is not None:
                         conn.close()
@@ -455,178 +792,3 @@ class Client:
         with concurrent.futures.ThreadPoolExecutor(connections) as ex:
             list(ex.map(worker, chunks))
         return out
-
-    def headers(self, path, body, date=None, nonce=None, key=None, sign_host=None, sign_path=None, method="POST"):
-        key = key or self.key
-        date = str(int(time.time())) if date is None else date
-        nonce = b64u(os.urandom(16)) if nonce is None else nonce
-        msg = request_message(method, sign_host or self.host, sign_path or path, date, nonce, body)
-        return [("Content-Type", "application/json"), ("Overfin-Key", key.text), ("Overfin-Date", date),
-                ("Overfin-Nonce", nonce), ("Overfin-Signature", b64u(key.sign(msg)))]
-
-    def call(self, name, body, **kw):
-        if isinstance(body, (dict, list)):
-            body = dumps(body)
-        path = FED + name
-        return self.raw(path, body, self.headers(path, body, **{k: v for k, v in kw.items() if k in ("date", "nonce", "key", "sign_host")}))
-
-
-def _is_ip(h):
-    try:
-        socket.inet_pton(socket.AF_INET6 if ":" in h else socket.AF_INET, h)
-        return True
-    except OSError:
-        return False
-
-
-# ---- The suite's own server -------------------------------------------------
-
-class PeerServer:
-    """Answers the target's calls as a paired peer would: hello, libraries
-    and titles, signed, from the target's key only. Every request it gets
-    is checked as section 6.4 says and kept in `requests`."""
-
-    def __init__(self, key, address, listen, target_pub=None):
-        self.key, self.address = key, address
-        self.host = host_of(address)
-        self.target_pub = target_pub
-        self.state = "theirs"                 # we used the target's code
-        self.offer = []                       # libraries offered to the target
-        self.pages = {}                       # after -> titles answer object
-        self.requests = []                    # dicts, see _record
-        self.nonces = set()
-        self.lock = threading.Lock()
-        self.started = time.time()
-        self.ended = False
-        h, port = _split(listen, 8000)
-        srv = self
-
-        class Handler(http.server.BaseHTTPRequestHandler):
-            protocol_version = "HTTP/1.1"
-
-            def log_message(self, *a):
-                pass
-
-            def do_POST(self):
-                srv._handle(self)
-
-            def do_GET(self):
-                self.send_response(404)
-                self.send_header("Content-Length", "0")
-                self.end_headers()
-
-        self.httpd = http.server.ThreadingHTTPServer((h, port), Handler)
-        self.httpd.daemon_threads = True
-        threading.Thread(target=self.httpd.serve_forever, daemon=True).start()
-
-    def close(self):
-        self.httpd.shutdown()
-
-    def _check(self, h, body):
-        """Section 6.4 for a request from the target; returns a list of faults."""
-        faults = []
-        names = [k.lower() for k in h.headers.keys()]
-        vals = {}
-        for n in ("overfin-key", "overfin-date", "overfin-nonce", "overfin-signature"):
-            c = names.count(n)
-            if c != 1:
-                faults.append("%s sent %d times (2.1)" % (n, c))
-            else:
-                vals[n] = h.headers.get(n).strip()
-                if "," in vals[n]:
-                    faults.append("%s holds a comma (2.1)" % n)
-        if "?" in h.path:
-            faults.append("a query in the target (6.2)")
-        ct = (h.headers.get("Content-Type") or "").split(";")[0].strip().lower()
-        if ct != "application/json":
-            faults.append("Content-Type %r (3)" % ct)
-        if any(k.lower().startswith("sec-fetch-") for k in h.headers.keys()):
-            faults.append("Sec-Fetch-* headers (3)")
-        if (h.headers.get("Content-Encoding") or "identity").lower() != "identity":
-            faults.append("a Content-Encoding on the request")
-        if len(vals) == 4:
-            key = unb64u(vals["overfin-key"], 32)
-            if key is None:
-                faults.append("Overfin-Key isn't base64url of 32 bytes (2.1)")
-            elif self.target_pub is not None and key != self.target_pub:
-                faults.append("Overfin-Key isn't the target's key")
-            d = vals["overfin-date"]
-            if not re.fullmatch(r"[1-9][0-9]*", d) or int(d) > MAX_INT:
-                faults.append("Overfin-Date %r not a positive integer in its one form (2.1)" % d)
-            elif abs(time.time() - int(d)) > 300:
-                faults.append("Overfin-Date %s more than 5 minutes off (6.4)" % d)
-            if unb64u(vals["overfin-nonce"], 16) is None:
-                faults.append("Overfin-Nonce isn't base64url of 16 bytes (2.1, 6.1)")
-            elif vals["overfin-nonce"] in self.nonces:
-                faults.append("a nonce used twice (6.5)")
-            sig = unb64u(vals["overfin-signature"], 64)
-            if sig is None:
-                faults.append("Overfin-Signature isn't base64url of 64 bytes (2.1)")
-            elif key is not None:
-                msg = request_message("POST", self.host, h.path, d, vals["overfin-nonce"], body)
-                if not ed25519.verify_strict(key, msg, sig):
-                    faults.append("the signature doesn't verify over this server's host %s (6.2)" % self.host)
-        try:
-            parse_ijson(body)
-        except NotIJSON as e:
-            faults.append("the body isn't I-JSON: %s (2.1)" % e)
-        return faults, vals.get("overfin-nonce")
-
-    def _handle(self, h):
-        n = int(h.headers.get("Content-Length") or 0)
-        body = h.rfile.read(n) if n else b""
-        call = h.path.split("?")[0].rsplit("/", 1)[-1] if h.path.startswith(FED) else None
-        with self.lock:
-            faults, nonce = self._check(h, body)
-            if nonce:
-                self.nonces.add(nonce)
-            rec = {"t": time.time(), "call": call, "path": h.path, "faults": faults, "body": body}
-            self.requests.append(rec)
-            known = (not faults) and call in ("hello", "libraries", "titles", "pair")
-            if not known or call == "pair":
-                self._send(h, 404, b"", None)
-                return
-            try:
-                j = parse_ijson(body)
-            except NotIJSON:
-                j = None
-            status, out = self._answer(call, j)
-            self._send(h, status, out, nonce)
-
-    def _answer(self, call, j):
-        nf = b'{"type":"not-found","title":"Not found","status":404}\n'
-        if self.ended:
-            return 404, nf
-        if call == "hello":
-            st = j.get("state") if isinstance(j, dict) else None
-            if not isinstance(st, str):
-                return 404, nf
-            if st == "ended":
-                self.ended = True
-                return 200, dumps({"state": "ended"})
-            if st == "paired" and self.state == "theirs":
-                self.state = "paired"
-            return 200, dumps({"state": "paired" if self.state == "paired" else "waiting"})
-        if self.state != "paired" or not isinstance(j, dict):
-            return 404, nf
-        if call == "libraries":
-            return 200, dumps({"name": "MSFP conformance suite", "libraries": self.offer})
-        if call == "titles":
-            after = j.get("after", "")
-            page = self.pages.get(after if isinstance(after, str) else "")
-            if page is None:
-                page = {"titles": [], "seq": self.pages.get("", {}).get("seq", 1)}
-            return 200, dumps(page)
-        return 404, nf
-
-    def _send(self, h, status, body, nonce):
-        h.send_response(status)
-        if status == 200:
-            h.send_header("Content-Type", "application/json")
-        elif body:
-            h.send_header("Content-Type", "application/problem+json")
-        if nonce is not None:
-            h.send_header("Overfin-Signature", b64u(self.key.sign(answer_message(nonce, status, body))))
-        h.send_header("Content-Length", str(len(body)))
-        h.end_headers()
-        h.wfile.write(body)

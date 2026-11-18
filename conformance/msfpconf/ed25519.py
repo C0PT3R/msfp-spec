@@ -1,5 +1,5 @@
-# Ed25519 (pure Ed25519, RFC 8032), with the strict checks of MSFP v0
-# section 2.1 on top.
+# Ed25519 (pure Ed25519, RFC 8032), with the strict checks of MSFP core 1
+# section 2.1 (spec/v1/core.md) on top.
 #
 # The arithmetic below (point_add to verify) is the reference code of
 # RFC 8032, section 6, lightly adapted (Python 3 only, no exceptions for
@@ -40,6 +40,7 @@
 # This is test code: it is slow and not constant-time. Never use it to
 # hold a key that matters.
 
+import functools
 import hashlib
 
 p = 2**255 - 19
@@ -149,8 +150,9 @@ def sign(seed, msg):
     return R + int.to_bytes(s, 32, "little")
 
 
-# ---- MSFP v0 section 2.1 ------------------------------------------------
+# ---- MSFP core 1 section 2.1 ------------------------------------------------
 
+@functools.lru_cache(maxsize=4096)
 def valid_point(b):
     """A public key, or R, as section 2.1 accepts it: 32 bytes, the
     canonical encoding of a point on the curve (y below p, the sign bit 0

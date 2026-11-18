@@ -1,0 +1,361 @@
+"""The suite's own side of the pairing: an HTTPS server (or plain HTTP
+under --plain-http) that answers the server under test as a core 1 peer
+would, checks each of its requests as core 6.4 says, and records them."""
+
+import http.server
+import re
+import socket
+import ssl
+import threading
+import time
+import urllib.parse
+
+from . import ed25519
+from .wire import (FED, H_SIG, MAX_INT, NotIJSON, answer_message, b64u, commitment, decimal, dumps, has_null,
+                   host_of, parse_ijson, read_revocation, read_rotation, request_message, split_hostport,
+                   unb64u)
+
+NOT_FOUND = b'{"type":"not-found","title":"Not found","status":404}\n'
+
+
+def problem(status, typ, title, **extra):
+    d = {"type": typ, "title": title, "status": status}
+    d.update(extra)
+    return dumps(d) + b"\n"
+
+
+class PeerServer:
+    """Plays the suite's side toward the server under test.
+
+    Shared state, read and changed by the checks under `lock`:
+    key (the suite's current key), server_keys (keys the server's requests
+    may be signed with: current first, then previous ones with until when),
+    hosts (signed hosts the suite accepts as its own), state, suspended
+    (the server's key revoked toward the suite), and what the suite offers."""
+
+    def __init__(self, suite):
+        self.suite = suite
+        self.lock = threading.RLock()
+        self.listeners = {}             # label -> (httpd, address)
+        self.requests = []              # every request, see _record
+        self.tls_errors = []            # (time, label, error)
+        self.events = []                # (time, what, detail): rotations, revocations from the server
+        self.nonces = set()
+        self.state = "theirs"
+        self.ended = False
+        self.suspended = False
+        self.hosts = set()              # signed hosts accepted as the suite's
+        self.known_hosts = set()        # every host the suite ever named (to tell what a request was signed for)
+        self.offer = []
+        self.pages = {}
+        self.server_commitment = None   # from the pair answer, then rotations
+        self.pending_rotation = None    # a new key of the server waiting for this suite's "operator"
+        self.auto_confirm = True
+        self.server_prev = None         # (key bytes, until)
+
+    # ---- listeners --------------------------------------------------------------
+
+    def listen(self, label, address, listen, context=None):
+        """Starts a listener for `address` on `listen` (host:port)."""
+        h, port = split_hostport(listen, 8000)
+        srv = self
+
+        class Handler(http.server.BaseHTTPRequestHandler):
+            protocol_version = "HTTP/1.1"
+            timeout = 30
+
+            def log_message(self, *a):
+                pass
+
+            def do_POST(self):
+                srv._handle(self, label)
+
+            def do_GET(self):
+                srv._get(self, label)
+
+            def do_HEAD(self):
+                srv._get(self, label)
+
+            def do_PUT(self):
+                srv._get(self, label)
+
+        class Server(http.server.ThreadingHTTPServer):
+            daemon_threads = True
+            allow_reuse_address = True
+            address_family = socket.AF_INET6 if ":" in h else socket.AF_INET
+
+            def finish_request(self, request, client_address):
+                request.settimeout(30)
+                if context is not None:
+                    try:
+                        request = context.wrap_socket(request, server_side=True)
+                    except (ssl.SSLError, OSError) as e:
+                        with srv.lock:
+                            srv.tls_errors.append((time.time(), label, "%s: %s" % (type(e).__name__, e)))
+                        return
+                self.RequestHandlerClass(request, client_address, self)
+
+        httpd = Server((h, port), Handler)
+        threading.Thread(target=httpd.serve_forever, daemon=True).start()
+        self.listeners[label] = (httpd, address)
+        self.known_hosts.add(host_of(address))
+        return httpd.server_address[1]
+
+    def close(self):
+        for httpd, _ in self.listeners.values():
+            httpd.shutdown()
+            httpd.server_close()
+
+    # ---- keys -------------------------------------------------------------------
+
+    def server_heard(self):
+        """The keys the server's requests may be signed with now."""
+        keys = list(self.suite.server_keys[:1])
+        if self.server_prev and self.server_prev[1] > time.time():
+            keys.append(self.server_prev[0])
+        return keys
+
+    # ---- requests ---------------------------------------------------------------
+
+    def _check(self, h, body):
+        """Core 6.4, and core 3's request rules, for a request from the
+        server under test: (faults, notes, values)."""
+        faults, notes, vals = [], [], {}
+        names = [k.lower() for k in h.headers.keys()]
+        for n in ("msfp-key", "msfp-date", "msfp-nonce", "msfp-signature"):
+            c = names.count(n)
+            if c != 1:
+                faults.append("%s sent %d times (core 2.4)" % (n, c))
+            else:
+                v = h.headers.get(n).strip(" \t")
+                if "," in v or re.search(r"\s", v):
+                    faults.append("%s holds a comma or white space (core 2.4)" % n)
+                vals[n] = v
+        if "?" in h.path:
+            faults.append("a query in the target (core 6.2)")
+        ct = h.headers.get_all("Content-Type") or []
+        if len(ct) != 1 or ct[0].split(";")[0].strip().lower() != "application/json":
+            faults.append("Content-Type %r, not application/json (core 3)" % ct)
+        if any(k.lower().startswith("sec-fetch-") for k in h.headers.keys()):
+            faults.append("Sec-Fetch-* headers (core 3: a server-to-server client sends none)")
+        if (h.headers.get("Content-Encoding") or "identity").strip().lower() != "identity":
+            faults.append("a Content-Encoding on the request (core 3)")
+        ae = (h.headers.get("Accept-Encoding") or "identity").strip().lower()
+        if ae not in ("identity", ""):
+            notes.append("Accept-Encoding %r (core 3: a caller should send none, or identity)" % ae)
+        if len(body) > 65536:
+            faults.append("a body of %d bytes, over 64 KiB (core 3)" % len(body))
+        if len(vals) == 4:
+            key = unb64u(vals["msfp-key"], 32)
+            vals["key"] = key
+            if key is None:
+                faults.append("MSFP-Key isn't base64url of 32 bytes (core 2.2)")
+            elif key not in self.server_heard():
+                faults.append("MSFP-Key %s isn't the server's key as this suite knows it" % vals["msfp-key"])
+            d = decimal(vals["msfp-date"])
+            if d is None or d == 0:
+                faults.append("MSFP-Date %r isn't a positive integer of core 2.2" % vals["msfp-date"])
+            elif abs(time.time() - d) > 300:
+                faults.append("MSFP-Date %s is %+d s from this clock (core 6.4: 5 minutes)" % (d, d - time.time()))
+            if unb64u(vals["msfp-nonce"], 16) is None:
+                faults.append("MSFP-Nonce isn't base64url of 16 bytes (core 6.1)")
+            elif vals["msfp-nonce"] in self.nonces:
+                faults.append("a nonce used twice (core 6.5)")
+            sig = unb64u(vals["msfp-signature"], 64)
+            if sig is None:
+                faults.append("MSFP-Signature isn't base64url of 64 bytes (core 6.1)")
+            elif key is not None:
+                for host in sorted(self.known_hosts):
+                    msg = request_message(h.command, host, h.path, vals["msfp-date"], vals["msfp-nonce"], body)
+                    if ed25519.verify_strict(key, msg, sig):
+                        vals["host"] = host
+                        break
+                else:
+                    faults.append("the signature doesn't verify over any host this suite has had (%s) (core 6.2)"
+                                  % ", ".join(sorted(self.known_hosts)))
+                if vals.get("host") and vals["host"] not in self.hosts:
+                    faults.append("signed for %s, not a host this suite serves now (core 6.2)" % vals["host"])
+        vals["refuse"] = bool(faults)
+        try:
+            j = parse_ijson(body)
+            vals["json"] = j
+            if not isinstance(j, dict):
+                faults.append("the body isn't a JSON object (core 8.1)")
+            elif has_null(j):
+                faults.append("the body sends null (core 2.3: no MSFP member is null)")
+        except NotIJSON as e:
+            faults.append("the body isn't I-JSON: %s (core 2.3)" % e)
+        return faults, notes, vals
+
+    def _record(self, **kw):
+        kw.setdefault("t", time.time())
+        self.requests.append(kw)
+        return kw
+
+    def _get(self, h, label):
+        hdrs = {k.lower(): v for k, v in h.headers.items()}
+        with self.lock:
+            self._record(listener=label, method=h.command, path=h.path, call="discovery" if h.path == "/.well-known/msfp" else None,
+                         faults=[x for x in ("msfp-key", "msfp-signature", "msfp-date", "msfp-nonce") if x in hdrs],
+                         notes=[], body=b"", host=None, json=None, status=404)
+        self._send(h, 404, b"", None, None)
+
+    def _handle(self, h, label):
+        n = int(h.headers.get("Content-Length") or 0)
+        body = h.rfile.read(min(n, 1024 * 1024)) if n else b""
+        path = h.path
+        call = path[len(FED):] if path.startswith(FED) and "/" not in path[len(FED):].split("?")[0] else None
+        if call:
+            call = call.split("?")[0]
+        with self.lock:
+            faults, notes, vals = self._check(h, body)
+            nonce = vals.get("msfp-nonce")
+            if nonce and unb64u(nonce, 16) is not None:
+                self.nonces.add(nonce)
+            rec = self._record(listener=label, method="POST", path=path, call=call, faults=faults, notes=notes, body=body,
+                               host=vals.get("host"), json=vals.get("json"), key=vals.get("key"), status=None,
+                               uncallable=not self.suite.inbound)
+            j = vals.get("json") if isinstance(vals.get("json"), dict) else None
+            known = call in ("pair", "hello", "rotate", "revoke", "libraries", "titles", "play", "progress", "stop")
+            if not known or vals["refuse"] or call == "pair":
+                rec["status"] = 404
+                self._send(h, 404, b"", None, None)
+                return
+            status, out = self._answer(call, j, vals.get("key"), rec)
+            rec["status"] = status
+            rec["answer"] = out
+            self._send(h, status, out, nonce, self.suite.key)
+
+    def _answer(self, call, j, key, rec):
+        s = self.suite
+        if self.ended:
+            return 404, NOT_FOUND
+        if j is None:
+            return (400, problem(400, "invalid-request", "Invalid request")) if call in ("rotate", "revoke", "play", "progress", "stop") \
+                else (404, NOT_FOUND)
+        if call == "revoke":
+            try:
+                read_revocation(key, j)
+            except ValueError as e:
+                rec["faults"].append("its revoke would be refused: %s (core 12.6)" % e)
+                return 400, problem(400, "invalid-request", "Invalid request")
+            self.suspended = True
+            self.events.append((time.time(), "revoke", {"key": key}))
+            return 200, dumps({"state": "suspended"})
+        if call == "rotate":
+            return self._rotate(j, key, rec)
+        if self.suspended:
+            return 404, NOT_FOUND
+        if call == "hello":
+            st = j.get("state")
+            if not isinstance(st, str):
+                return 404, NOT_FOUND
+            if st == "ended":
+                self.ended = True
+                return 200, dumps({"state": "ended"})
+            s.learn_hello(j, rec)
+            if st == "paired" and self.state == "theirs":
+                self.state = "paired"
+            return 200, dumps(s.hello_body("paired" if self.state == "paired" else "waiting", answer=True))
+        if self.state != "paired":
+            return 404, NOT_FOUND
+        if call == "libraries":
+            return 200, dumps({"name": "MSFP conformance suite", "libraries": self.offer})
+        if call == "titles":
+            libs = j.get("libraries")
+            after = j.get("after", "")
+            if not isinstance(libs, list) or any(not isinstance(x, str) for x in libs) or not isinstance(after, str):
+                return 404, NOT_FOUND
+            page = self.pages.get(after)
+            if page is None:
+                page = {"titles": [], "seq": 1}
+            offered = {x["id"] for x in self.offer}
+            page = dict(page, titles=[t for t in page.get("titles", []) if t["library"] in libs and t["library"] in offered])
+            return 200, dumps(page)
+        if call == "play":
+            return 409, problem(409, "not-playable", "This item can't be played")
+        if call == "progress":
+            return 410, problem(410, "playback-stopped", "Playback was stopped")
+        if call == "stop":
+            return 200, b"{}"
+        return 404, NOT_FOUND
+
+    def _rotate(self, j, key, rec):
+        """Core 12.3, as the receiver of the server's rotate."""
+        s = self.suite
+        if key != s.server_keys[0]:
+            # Signed with the previous key, after the rotation took effect.
+            if self.server_prev and key == self.server_prev[0] and j.get("newKey") == b64u(s.server_keys[0]):
+                return 200, dumps({"state": "rotated"})
+            return 409, problem(409, "rotation-refused", "Rotation refused")
+        try:
+            new, nc = read_rotation(key, j)
+        except ValueError as e:
+            rec["faults"].append("its rotate would be refused with 400: %s (core 9.3, 12.3)" % e)
+            self.events.append((time.time(), "rotate-bad", {"why": str(e)}))
+            return 400, problem(400, "invalid-request", "Invalid request")
+        matches = self.server_commitment is not None and commitment(new) == self.server_commitment
+        if self.suspended and not matches:
+            self.events.append((time.time(), "rotate-refused", {"new": new, "why": "suspended, no match"}))
+            return 409, problem(409, "rotation-refused", "Rotation refused")
+        if self.server_commitment is not None and not matches:
+            self.events.append((time.time(), "rotate-refused", {"new": new, "why": "doesn't match the commitment"}))
+            return 409, problem(409, "rotation-refused", "Rotation refused")
+        if not matches:
+            if self.pending_rotation != new:
+                self.pending_rotation = new
+                self.events.append((time.time(), "rotate-pending", {"new": new}))
+                return 202, dumps({"state": "pending"})
+            if not self.auto_confirm:
+                return 202, dumps({"state": "pending"})
+        self.pending_rotation = None
+        self.server_prev = (key, time.time() + 600)
+        s.server_keys[0] = new
+        self.server_commitment = nc
+        self.suspended = False
+        self.events.append((time.time(), "rotated", {"old": key, "new": new, "commitment": nc, "matched": matches}))
+        s.on_server_rotated(key, new)
+        return 200, dumps({"state": "rotated"})
+
+    def _send(self, h, status, body, nonce, key):
+        try:
+            h.send_response(status)
+            mt = "-"
+            if body and status in (200, 202):
+                mt = "application/json"
+            elif body:
+                mt = "application/problem+json"
+            if mt != "-":
+                h.send_header("Content-Type", mt)
+            if nonce is not None and key is not None:
+                h.send_header(H_SIG, b64u(key.sign(answer_message(nonce, status, mt, body))))
+            h.send_header("Content-Length", str(len(body)))
+            h.end_headers()
+            h.wfile.write(body)
+        except OSError:
+            pass
+
+    # ---- what the checks read ----------------------------------------------------------
+
+    def since(self, t, listener=None, call=None):
+        with self.lock:
+            return [r for r in self.requests if r["t"] >= t and (listener is None or r["listener"] == listener)
+                    and (call is None or r["call"] == call)]
+
+    def wait_for(self, pred, timeout, step=0.5):
+        end = time.time() + timeout
+        while time.time() < end:
+            with self.lock:
+                hit = [r for r in self.requests if pred(r)]
+            if hit:
+                return hit
+            time.sleep(step)
+        return []
+
+
+def is_int_str(v):
+    return isinstance(v, str) and decimal(v) is not None and int(v) <= MAX_INT
+
+
+def path_name(url):
+    return urllib.parse.urlsplit(url).path
