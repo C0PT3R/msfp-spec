@@ -1,6 +1,6 @@
 # Proposal 9: Private servers
 
-Status: Option 1 adopted (2026-11-16); option 2 (the reverse connection) set aside for now. Open points: 1, 2 and 3 decided, 4 to 7 and 9 set aside with option 2 (2026-11-17); 8 still open.
+Status: Option 1 adopted (2026-11-16); option 2 (the reverse connection) set aside for now. Open points: 1, 2, 3 and 8 decided, 4 to 7 and 9 set aside with option 2 (2026-11-17). None left for option 1.
 Touches: sections 3, 5.2, 7.1, 7.4, 9.1, 9.2, 11, 12.4, 12.6 and 13.2 of
 [spec/v1/core.md](../spec/v1/core.md), and sections 1, 2 and 4 of
 [spec/v1/media.md](../spec/v1/media.md); option 2 adds a part.
@@ -754,7 +754,8 @@ What changes:
    out of scope here.
 8. **Reporting a pulled rotation's outcome.** 1.4 has P send `pending` or
    `refused`; Q could do without, at the price of a panel that can't tell
-   why a peer hasn't moved.
+   why a peer hasn't moved. **Decided 2026-11-17: kept**, as reachable peers already
+   tell it through their answer to `rotate`.
 9. **Overfin behind its gateway, as Q** *Set aside with option 2 (2026-11-17).*: whether reverse connections end
    at the gateway, with the backend's signed calls and P's answers
    carried between them, or are handed whole to the backend through the
