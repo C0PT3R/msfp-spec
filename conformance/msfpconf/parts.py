@@ -659,6 +659,10 @@ class PartChecks:
                 raise Fail("\n".join(bad))
             return "200 {} (twice, and for an ID never given); then progress 410 and the media 404"
         self.check("PB6", "playback 4, 6.1, 6.3, media 4", "stop: 200 {} even when repeated; the playback ends at once", stop)
+        self.stop(st["pb"])
+        for later in getattr(self, "_subs_later", []):
+            self.check(*later)
+        self._subs_later = []
 
         self.track_checks(st["key"], st["pb"])
         self.limit_checks(st["key"])
@@ -917,20 +921,24 @@ class PartChecks:
                 return t, None, title
             others = [x["key"] for x in self.whole if x.get("kind") in ("movie", "episode") and x.get("subtitles")
                       and x["key"] != title and video_key(x["key"])]
+            tried = []
             for key in others[:8]:
                 a = self.play({"title": key})
                 if a.status != 200 or not isinstance(a.json, dict):
+                    tried.append("%s: %s" % (key, a.short()))
                     continue
-                t = next((x for x in tracks_of(a.json) if bool(x.get("pictures")) == pictures), None)
+                found = tracks_of(a.json)
+                t = next((x for x in found if bool(x.get("pictures")) == pictures), None)
                 if t:
                     return t, a.json, key
+                tried.append("%s: %d subtitle tracks with a url, none %s" % (key, len(found), "PGS" if pictures else "text"))
                 self.stop(a.json)
-            return None, None, title
+            return None, None, "; ".join(tried) or "no other title lists subtitles"
 
         def text_subs():
             t, other, key = find_track(False)
             if not t:
-                raise Skip("no text subtitle track with a url (in the first play, or in up to 8 others listing subtitles)")
+                raise Skip("no text subtitle track with a url, in the first play or in up to 8 others listing subtitles (%s)" % key)
             try:
                 return text_part(t) + ("" if other is None else " (of %s, played for it)" % key)
             finally:
@@ -951,12 +959,23 @@ class PartChecks:
             if not ct.lower().replace(" ", "").startswith("text/vtt"):
                 raise Fail("Content-Type %r, not text/vtt; charset=utf-8" % ct)
             return "%s part 0: %d bytes, in its rebuilt form" % (t["id"], len(body))
-        self.check(prefix + "6", "video 6.2, 6.3", "a text subtitle part: 200 text/vtt, already in its rebuilt form", text_subs)
+        # Without a track of its kind in the first play, a check waits
+        # for that playback to stop (PB6): another play may need the
+        # stream or the transcode it holds (a server-busy 503 otherwise).
+        self._subs_later = []
+
+        def check_subs(cid, section, name, fn, pictures):
+            if prefix == "M" and not any(bool(x.get("pictures")) == pictures for x in subs):
+                self._subs_later.append((cid, section, name, fn))
+            else:
+                self.check(cid, section, name, fn)
+        check_subs(prefix + "6", "video 6.2, 6.3", "a text subtitle part: 200 text/vtt, already in its rebuilt form", text_subs,
+                   False)
 
         def pgs():
             t, other, key = find_track(True)
             if not t:
-                raise Skip("no PGS track with a url (in the first play, or in up to 8 others listing subtitles)")
+                raise Skip("no PGS track with a url, in the first play or in up to 8 others listing subtitles (%s)" % key)
             try:
                 return pgs_part(t) + ("" if other is None else " (of %s, played for it)" % key)
             finally:
@@ -973,7 +992,7 @@ class PartChecks:
                                   "fails 6.4 (\"at least one segment\"), and no status is given for it")
                 raise Fail("part 0 of %s fails video 6.4: %s" % (t["id"], e))
             return "%s part 0: %d bytes of valid PGS" % (t["id"], len(body))
-        self.check(prefix + "7", "video 6.2, 6.4", "a PGS part: 200, every segment and object checked", pgs)
+        check_subs(prefix + "7", "video 6.2, 6.4", "a PGS part: 200, every segment and object checked", pgs, True)
 
         def sheets():
             tp = pb.get("trickplay")

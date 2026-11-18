@@ -130,7 +130,7 @@ The run goes in this order; the counts are the checks in each group.
 | Group | Checks | Sections | What is checked |
 |-------|--------|----------|-----------------|
 | C | 1 | core 5.1 | the code: prefix `msfp-pair-1.`, base64url, the key, the expiry, the address |
-| D | 1 | core 11 | the discovery document: a `404` like a missing path, or a valid document whose `base` the suite then uses |
+| D | 1 | core 11 | the discovery document: none, answered like a missing path (`404`, or whatever such a path gets), or a valid document whose `base` the suite then uses |
 | S | 4 | core 6.4, 3, 14 | strangers: the unsigned `404` on every call, like a missing path |
 | P | 11 | core 9.1, 2.1, 5.2, 6.5, 12.5 | `pair`: wrong proofs, forged and small-order keys, stale dates, bad addresses, bad members (`inbound`, `null`, wrong types), the pairing itself, the next key commitment, replay, the used code, the signed `409` |
 | W | 4 | core 7.1, 7.3 | waiting: `hello` `waiting`, no forcing `paired`, a signed `404` on `libraries`, the server's `hello` on acceptance |
@@ -187,7 +187,9 @@ itself breaks that rule there. It answers `play` with `409`
   is not tested (the suite paces its own plays under it).
 - **Media** is checked on the first stream, its first media playlist
   and segment, part 0 of one text and one PGS subtitle track, and sheet
-  0: the suite doesn't play a whole title.
+  0: the suite doesn't play a whole title. When the first title played
+  has no text or no PGS track, M6 or M7 waits for that playback to stop,
+  then plays up to 8 other films or episodes listing subtitles for one.
 - **Heuristics**: L3 (library IDs that look like a media server's) and
   the shortest-language-code rule (a list of common three-letter codes)
   can't be exact.
