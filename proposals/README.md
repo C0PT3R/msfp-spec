@@ -23,7 +23,7 @@ read or assumed, it says so.
 | 8 | [Changing a server's address](0008-address-changes.md): a signed, confirmed address change in `hello` | Adopted |
 | 9 | [Private servers](0009-private-servers.md): a server that can't be called says so in `hello` and pulls rotation and revocation (option 1); a reverse connection, the optional part `transport` (option 2) | Option 1 adopted; option 2 set aside |
 | 10 | [The mesh](0010-mesh.md): servers learn that others exist (signed, expiring announcements: key, name, address or "can't be called", versions), never catalogs; knowing is not trusting; spread through pairings (option a), open gossip (b) or a DHT (c); asks that end in an ordinary pairing; optional vouching; the optional part `mesh` | Proposed |
-| 11 | [Music](0011-music.md): the part `music`; artists, albums (release groups) and tracks (recordings) by MusicBrainz ID; titles carry their own names; art from the Cover Art Archive; one audio playback per track | Proposed; identity, descriptions, pictures, playback adopted |
+| 11 | [Music](0011-music.md): the part `music`; artists, albums (release groups) and tracks (recordings) by MusicBrainz ID; titles carry their own names; art from the Cover Art Archive; one audio playback per track | Proposed; identity, descriptions, pictures, playback adopted; every type optional (`video`, `music`) |
 | – | [Clarifications](clarifications.md): 34 small fixes that need only a "yes" | Accepted, all 34 |
 
 Some proposals lean on others; each says how it reads without them:

@@ -3,6 +3,15 @@
 Status: Proposed (2026-11-17). Decided so far: identity (section 1),
 descriptions (section 2), pictures (section 4) and playing a track
 (section 5), adopted 2026-11-17.
+
+**Decided 2026-11-17, wider than music:** every content type is
+optional. Version 1 is restructured before anyone implements it: the
+shared mechanics stay in `catalog`, `playback` and `media`, and the
+content types become two optional parts, **`video`** (films and series by
+TMDB: keys, episode order, subtitles, PGS, skip markers, previews) and
+**`music`** (this proposal). A server lists the ones it handles in
+`hello`. Named by what identifies the titles, not "audio": audiobooks
+and podcasts would be parts of their own. Not yet written into spec/v1.
 Touches: [catalog](../spec/v1/catalog.md) sections 1, 3 and 4,
 [playback](../spec/v1/playback.md) sections 2 and 6, and
 [media](../spec/v1/media.md) section 3; adds a part, `music`
