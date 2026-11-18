@@ -4,8 +4,10 @@
 Overfin and the Jellyfin plugin speak today.
 
 The `catalog` part says which libraries a server offers a peer, which
-titles they hold, and how titles are named. It needs only the
-[core](core.md). Its calls follow the core's rules for every call
+titles they hold, and the rules every title key follows. It needs only
+the [core](core.md). The content parts, [video](video.md) and
+[music](music.md), define the kinds of title, their keys and what each
+title carries. Its calls follow the core's rules for every call
 ([core section 8](core.md#8-common-rules-for-every-call)): signed `POST`s
 under the peer's base path, answered only to peers in state `paired`,
 and only when `catalog` is on between the two servers
@@ -35,10 +37,15 @@ specifications.
 - **Want**: the libraries of a peer's offer that this server reads. Only
   titles in a library one side offers and the other wants are shared.
 - **Owning server**: the server that holds a title's copy.
-- **Title key**: the text that names a film, series, season or episode
-  (section 4).
-- **Scheme**: the source of the identifier in a title key. Version 1 has
-  one, `tmdb` (The Movie Database).
+- **Title key**: the text that names a title (section 4). Its form is
+  defined by a content part.
+- **Scheme**: the source of the identifier in a title key. Each content
+  part defines its own: `tmdb` (The Movie Database) for
+  [video](video.md#4-title-keys), `mb` (MusicBrainz) for
+  [music](music.md#2-title-keys).
+- **Content part**: a part that names one kind of content's titles and
+  says how they play: `video` and `music` in version 1
+  ([core section 10.1](core.md#101-the-parts)).
 
 ## 2. Libraries
 
@@ -64,7 +71,10 @@ Library:
 | `kind` | string | one of `movies`, `tvshows`, `music`, `musicvideos`, `homevideos`, `boxsets`, `books`, `photos`, `mixed`, or `""` |
 
 `mixed` is for a library that holds several kinds; `""` is for kinds
-outside the list.
+outside the list. Which titles a kind holds is said by the content parts:
+`movies` and `tvshows` by [video](video.md#2-libraries), `music` by
+[music](music.md#6-libraries), `mixed` by both. The other kinds are
+labels only.
 
 ### 2.1 Library IDs
 
@@ -143,18 +153,19 @@ Title:
 | Field | Type | Content |
 |-------|------|---------|
 | `key` | string | the title key (section 4) |
-| `kind` | string | `movie`, `series`, `season` or `episode`: the kind its key names |
+| `kind` | string | the kind its key names, one a content part defines |
 | `library` | string | one of the requested libraries that holds it: when several do, the one whose ID comes first in byte order |
-| `audio` | array of string, optional | films and episodes only: its copies' audio languages, as language tags |
-| `subtitles` | array of string, optional | films and episodes only: its copies' subtitle languages, as tags |
-| `with` | array of string, optional | episodes only: the keys of the other episodes the same copy holds (section 4.3) |
-| `ids` | object, optional | films, series and episodes: other identifiers of the same title, by scheme (section 4.4) |
+
+A title carries, besides, the members its content part defines for its
+kind: [video section 3](video.md#3-titles) for films and series,
+[music section 3](music.md#3-what-a-title-carries) for artists, albums
+and tracks.
 
 **Language tags.** A tag uses the shortest code BCP 47 allows: the
 ISO 639-1 code where one exists (`en`, `fr`), else ISO 639-2/T or 639-3
 (`yue`), with a region when known (`fr-CA`), in the case conventions of
 [core section 2.5](core.md#25-case). `und`, `mul`, `zxx` and `mis` are not
-sent. Series and seasons carry no `audio` or `subtitles`.
+sent.
 
 ### 3.1 Paging and ordering
 
@@ -196,17 +207,15 @@ sent. Series and seasons carry no `audio` or `subtitles`.
 
 Anything else is skipped, title by title:
 
-- the key parses as a title key, is in canonical form (section 4), and its
-  scheme is one the caller knows (`tmdb` in version 1);
+- the key parses as a title key of a content part on between the two
+  servers, is in canonical form (section 4), and its kind and scheme are
+  ones that part defines;
 - `kind` matches the kind the key names;
 - `library` is one of the libraries it asked for;
-- at most 12 language tags in each list, each 2 to 12 characters of
-  `A–Z a–z 0–9 -`, each once (compared without case); a bad tag is
-  skipped, not the whole title;
-- at most 16 keys in `with`, each a valid episode key of the same series;
-  a bad key is skipped;
-- in `ids`, values of known schemes in their form (section 4.4); others
-  are skipped;
+- the members the content part defines are kept as that part says
+  ([video section 3.1](video.md#31-what-the-caller-keeps),
+  [music section 3.2](music.md#32-what-the-caller-keeps)); a bad member
+  is skipped, not the whole title, unless the part says otherwise;
 - `gone` keys over 128 bytes are skipped.
 
 Members of the wrong JSON type ([core section 2.3](core.md#23-json)):
@@ -218,10 +227,8 @@ Members of the wrong JSON type ([core section 2.3](core.md#23-json)):
   reading, and the caller would then drop titles the peer still holds.
 - An entry of `titles` that isn't an object, or whose `key`, `kind` or
   `library` isn't a string, is skipped.
-- An `audio`, `subtitles` or `with` member that isn't an array, or an
-  `ids` member that isn't an object, counts as absent; an entry of one
-  of those lists that isn't a string is skipped alone, as is a value of
-  `ids` that isn't in its scheme's form.
+- A member a content part defines, of the wrong type, is read as that
+  part says.
 - An entry of `gone` that isn't a string is skipped.
 
 Refusals: signed `404` when the caller isn't `paired`, or the body isn't
@@ -231,91 +238,30 @@ signed `404` `not-supported` when `catalog` is off; `500`.
 
 ## 4. Title keys
 
-Titles are named by their TMDB IDs, never by files, paths or the media
-server's item IDs. A title key has three parts, joined by `/`: the kind
-(`movie` or `series`), the scheme, and the identifier, followed for
-seasons and episodes by their place in the series:
+Titles are named by identifiers from a public source, never by files,
+paths or the media server's item IDs. A title key is ASCII text: a name
+for the kind, the scheme, and the identifier, joined by `/`, followed by
+what the content part adds (a season's or an episode's place in its
+series). The content parts define the kinds and the schemes:
 
-| Kind | Key | Example |
-|------|-----|---------|
-| film | `movie/tmdb/<id>` | `movie/tmdb/949` |
-| series | `series/tmdb/<id>` | `series/tmdb/1399` |
-| season | `series/tmdb/<id>/s<season>` | `series/tmdb/1399/s1` |
-| episode, by TMDB episode ID | `series/tmdb/<id>/e<episode id>` | `series/tmdb/1399/e63056` |
-| episode, by numbers | `series/tmdb/<id>/s<season>/e<episode>` | `series/tmdb/1399/s1/e2` |
+| Content part | Kinds | Scheme | Example | Defined in |
+|--------------|-------|--------|---------|------------|
+| `video` | `movie`, `series`, `season`, `episode` | `tmdb` | `movie/tmdb/949` | [video section 4](video.md#4-title-keys) |
+| `music` | `artist`, `album`, `track` | `mb` | `album/mb/<mbid>` | [music section 2](music.md#2-title-keys) |
 
-- `<id>` is the TMDB ID of the film or the series, in decimal, without
-  leading zeros: 1 to 9,999,999,999.
-- `<season>` is `0` or 1 to 4 digits without a leading zero; season 0
-  holds specials.
-- `<episode>` is `0` or `[1-9][0-9]{0,4}`. Episode 0 is valid wherever
-  TMDB numbers one (some seasons have a pilot or prologue as 0).
-- `<episode id>` is TMDB's ID of the episode, 1 to 10 digits, above 0,
-  without a leading zero.
-- Keys are canonical: no leading zeros anywhere (`s1`, not `s01`). A key
-  in another form is a different string, and the receiver skips it.
-- A season is named by its series' ID and its number, never by TMDB's
-  season ID.
-- `play` takes only films and episodes ([playback](playback.md#2-play)).
+- Keys are canonical: each content part gives one form for each title. A
+  key in another form is a different string, and the receiver skips it.
+- A receiver skips keys of a kind or a scheme it doesn't know, and keys
+  of a content part that is off between the two servers (section 3.3).
+- A title its content part can't name is not sent.
+- Each content part says which of its kinds `play` takes
+  ([playback section 2.4](playback.md#24-what-the-content-parts-add)).
 
-The only scheme of version 1 is `tmdb`. A receiver skips keys of a
-scheme it doesn't know. A later version of this part may admit keys of
-other schemes, for titles TMDB lacks; its rules would say which scheme
-wins when a title has several, so that every server picks the same key.
-
-A title TMDB doesn't know is not sent.
-
-### 4.1 Episode order
-
-Season and episode numbers in keys are TMDB's: the `season_number` and
-`episode_number` TMDB gives the episode in the series' own season list,
-not in an episode group. An owning server whose files are numbered
-another way (DVD, absolute, a broadcaster's order) maps them to TMDB's
-numbering before it sends keys. When it can't, it leaves the episode out.
-
-An episode TMDB lists is sent with the `e<episode id>` form. The
-`s<season>/e<episode>` form is only for an episode TMDB doesn't list
-(yet), in a season TMDB numbers; its numbers continue TMDB's numbering of
-that season. A receiver matches it only against the same form.
-
-The order a server shows its people is its own business and never
-appears in keys.
-
-### 4.2 Same title, same key
+### 4.1 Same title, same key
 
 Two titles are the same when their keys are equal, byte for byte. A
 viewer's server uses this to tell that a peer's title is one it already
 has, or to carry watched state across.
-
-### 4.3 Several episodes in one copy
-
-A copy that holds several episodes is listed once per episode, each under
-its own key. Each of those titles carries `with`: the keys of the other
-episodes the same copy holds, in byte order, at most 16. `play` of any of
-them plays that copy ([playback section 2.2](playback.md#22-what-the-owning-server-does)).
-
-A receiver may use `with` to show "episodes 1–2" as one entry, and to
-mark all of them watched together.
-
-### 4.4 Other identifiers
-
-Titles of kind `movie`, `series` and `episode` may carry `ids`: other
-identifiers of the same title, by scheme.
-
-| Scheme | Form | Example |
-|--------|------|---------|
-| `imdb` | `tt` and 7 to 10 digits | `tt0133093` |
-| `tvdb` | 1 to 10 digits, no leading zero | `81189` |
-
-Example: `"ids":{"imdb":"tt0133093"}`.
-
-- Each value is a string. Unknown schemes are ignored. A value that
-  breaks its form is ignored.
-- `ids` never replaces the key: two titles are the same when their keys
-  are equal. `ids` only helps a receiver find a title it holds under
-  another identifier.
-- An `imdb` value names the film or series; an episode's `ids` carry its
-  own IMDb or TVDB ID when known.
 
 ## 5. What is shared
 
@@ -324,6 +270,9 @@ anything.
 
 - Only titles in libraries it offers that peer, and only those the peer
   asked for. `titles` ignores other library IDs.
+- Only titles of the content parts on between the two servers
+  ([core section 10](core.md#10-versions-and-parts)). A receiver skips
+  the others anyway (section 3.3).
 - A server offers only its own libraries, never what it got from another
   peer.
 - Of the owning server, a peer never learns files, paths or its media
@@ -333,7 +282,8 @@ anything.
 ## 6. Security considerations
 
 - **A compromised peer** can make the other store a long title list, and
-  look those titles up at TMDB. Readers cap what they keep (section 3.3)
+  look those titles up at the outside services the content parts name
+  (TMDB, the Cover Art Archive). Readers cap what they keep (section 3.3)
   and should cap the total per peer.
 - **Hostile answers.** Treat every name and key as untrusted input: clean
   names, parse keys strictly, never show text as markup.
@@ -355,12 +305,17 @@ open, the text above follows the proposal's own default.
    [playback](playback.md#23-the-answer), the specification could state
    once that every identifier an owning server sends is opaque, and list
    them.
-4. **Series TMDB numbers differently** (proposal 5, open point 1). Series
-   that exist in TMDB only as one long season while files use real
-   seasons (or the reverse), common for anime: section 4.1 says "map, or
-   leave out". Is leaving out acceptable, or should the numbers form be
-   allowed with the owning server's numbering, marked as such?
-5. **IMDb episode IDs** (proposal 5, open point 2). Section 4.4 lets an
-   episode carry its own `imdb` ID. Should `ids` stay at film and series
-   level instead?
-6. **The cap of 16 for `with`** (proposal 5, open point 3).
+
+The open points of proposal 5 (TMDB's numbering, IMDb episode IDs, the
+cap of 16 for `with`) moved to [video](video.md#8-open-questions) with the
+rules they concern.
+
+**Choices this draft made, to confirm** (when the video rules were moved
+out of this part on 2026-11-17):
+
+4. **Language tags stay defined here** (section 3), since `play`'s
+   `audioLanguage` uses them whatever the content part; `video` uses them
+   in its `audio` and `subtitles`.
+5. **With no content part on** between two servers, `libraries` still
+   lists the libraries offered, and `titles` holds none of them
+   (section 5).

@@ -4,8 +4,9 @@
 Overfin and the Jellyfin plugin speak today.
 
 The `media` part says what the stream URLs of a playback serve, and how
-a viewer's server fetches them: HLS, the file itself, text and picture
-subtitles, and seek-bar preview sheets. It needs only the
+a viewer's server fetches them: HLS and the file itself. The content
+parts add their own: [video](video.md#6-media) adds text and picture
+subtitles and seek-bar preview sheets. It needs only the
 [core](core.md); [playback](playback.md) gives the URLs. Media is fetched
 with plain `GET` requests that carry the ticket only: they are not
 signed.
@@ -54,14 +55,9 @@ stream root:
 - `stream.protocol` is `hls`, with `<name>` `master.m3u8` and
   `stream.mimeType` `application/vnd.apple.mpegurl`; or `file`, with
   `<name>` `file` (the file as it is, served with byte ranges).
-- Subtitle and forced tracks carry a `url` of the form
-  `<stream root><ticket>/subtitles/<track>` for text, or
-  `<stream root><ticket>/pictures/<track>` for PGS, where `<track>` is the
-  track ID.
-- `trickplay.sheets[n]` is exactly `<stream root><ticket>/trickplay/<n>`,
-  with the stream's own `<ticket>` and `<n>` the entry's index in
-  decimal, without leading zeros: `sheets[0]` ends in `/trickplay/0`,
-  `sheets[1]` in `/trickplay/1`, and so on.
+- A content part may add URLs of its own under `<stream root><ticket>/`:
+  [video section 6.1](video.md#61-the-urls) adds subtitle, PGS and
+  preview sheet URLs, with a `<track>` name.
 
 The viewer's server refuses any URL that doesn't start with the owning
 server's stream root, or that names another ticket, or another file
@@ -185,51 +181,27 @@ single range its media server answers.
   `<stream root><ticket>/`. Fetch each the same way. Section 3.1 says
   what a playlist may hold.
 - **File.** Fetch `file`, with ranges.
-- **Text subtitles.** Fetch `<track url>/<part>`, where `<part>` is a
-  decimal integer from 0 to 9,999 without leading zeros. Part *n* covers
-  the video from *n* × 120 to (*n* + 1) × 120 seconds, and starts 10
-  seconds early, so a line already on screen comes along; drop the
-  doubles. The answer is WebVTT, at most 5 MiB, in the form of
-  section 3.2.
-- **PGS subtitles.** Fetch `<track url>/<part>` the same way. The answer
-  is the stretch's PGS data, `application/octet-stream`, at most 64 MiB,
-  checked as section 3.3 says.
-- **Preview sheets.** Fetch `trickplay.sheets[n]`
-  ([playback section 2.4](playback.md#24-seek-bar-previews)), the same
-  plain `GET` with the playback's ticket, no `Range`. The owning server
-  answers `404` for a sheet number at or past the sheet count, one with
-  leading zeros, a query string, or a ticket not live (section 4). The
-  answer is `200`, `Content-Type: image/jpeg`, a JPEG of at most 8 MiB, no
-  wider than `columns` × `tileWidth` and no taller than `rows` ×
-  `tileHeight` pixels. The owning server should re-encode every sheet
-  before sending it. A viewer's server may fetch the sheets when the
-  playback starts or when the viewer needs them; the fetches count as
-  media requests for section 4.
+- **What a content part adds.** Fetched as that part says
+  ([video section 6.2](video.md#62-what-is-fetched): subtitles, PGS,
+  preview sheets), with the same plain `GET`s and the same ticket.
 
 The owning server serves only what these rules allow. The viewer's server
 checks again everything it relays, whatever the owning server says it
 did:
 
-- playlists as section 3.1 says, WebVTT rebuilt as section 3.2 says, PGS
-  checked whole as section 3.3 says; whatever fails is a failed fetch
-  (section 2.3), answered `404` to the viewer;
-- a preview sheet is read whole, refused past 8 MiB, then checked from its
-  header, before decoding, to be a JPEG (by its content, whatever its
-  `Content-Type`) within the size above; any other is refused. It is
-  re-encoded as JPEG, so that only its pixels reach the viewer, and
-  served at the viewer's server's own playback route, to the viewer
-  playing it only. A viewer's server should bound how many sheets it
-  reads at once (for example 4).
+- playlists as section 3.1 says, and what a content part adds as that
+  part says ([video section 6.2](video.md#62-what-is-fetched)); whatever
+  fails is a failed fetch (section 2.3), answered `404` to the viewer.
 
 The viewer's server sets the `Content-Type` of what it relays itself:
-`application/vnd.apple.mpegurl` for playlists, `text/vtt; charset=utf-8`
-for WebVTT, `application/octet-stream` for PGS, `image/jpeg` for sheets.
-For the file and segments, it keeps a `video/*` or `audio/*` type made
-only of letters, digits and `.+-`, and sends `application/octet-stream`
-instead of any other.
+`application/vnd.apple.mpegurl` for playlists, and for what a content
+part adds the type that part gives. For the file and segments, it keeps
+a `video/*` or `audio/*` type made only of letters, digits and `.+-`,
+and sends `application/octet-stream` instead of any other.
 
-Test cases for sections 3.1 to 3.3 are in
-[vectors/v1/media.json](../../vectors/v1/media.json).
+Test cases for section 3.1 are in
+[vectors/v1/media.json](../../vectors/v1/media.json), beside video's
+WebVTT and PGS cases.
 
 ### 3.1 HLS playlists
 
@@ -296,148 +268,6 @@ of its media server with any other URI. As the viewer's server, it
 checks steps 1 to 8, and drops tags outside the subset, and comments,
 before serving. It fetches any bare name the viewer asks for.
 
-### 3.2 WebVTT
-
-A WebVTT part is rebuilt, not filtered: only cue timings and plain cue
-text survive. The owning server applies these rules to what it serves,
-and the viewer's server applies them again to what it relays.
-
-**Reading.**
-
-1. A part over 5 MiB (5,242,880 bytes) is refused.
-2. Each carriage return and line feed pair becomes a line feed, then each
-   remaining carriage return becomes a line feed. One byte order mark
-   (U+FEFF) at the start is removed.
-3. The text must start with `WEBVTT`; otherwise the part is refused.
-4. The text is cut into blocks at each pair of line feeds (an empty line).
-   A line of spaces is not empty. Line feeds at the start and end of a
-   block are removed.
-5. In each block, the first line that is a timing line, once white
-   space (Unicode's `White_Space`) at both ends is removed, starts a cue. The lines before it (the
-   header, a cue identifier) are dropped. A block without a timing line
-   is dropped whole: the header, `NOTE`, `STYLE`, `REGION`, or anything
-   malformed.
-6. A timing line is: a timestamp, one or more spaces, tabs or form
-   feeds, `-->`, one or more of them again, a timestamp, then optionally
-   one of them and anything. A timestamp is
-   `[<hours>:]<minutes>:<seconds>.<milliseconds>`: 1 to 3 digits of
-   hours, exactly 2 of minutes, 2 of seconds, 3 of milliseconds. What
-   follows the second timestamp (the cue settings) is dropped.
-7. Every line after the timing line, up to the end of the block, is a cue
-   text line, even one shaped like a timing line. Each is cleaned (below).
-   A line empty after cleaning is dropped. A cue with no line left is
-   dropped.
-8. More than 50,000 cues left refuses the part.
-
-**Cleaning a cue text line.**
-
-1. Remove invalid UTF-8, U+FFFD, and the direction controls U+061C,
-   U+200E, U+200F, U+202A to U+202E and U+2066 to U+2069.
-2. Remove tags. A tag starts at a `<` followed by a letter (any script),
-   `/`, `!` or `?`, and ends at the next `>`; the tag becomes one space.
-   A tag with no `>` removes the rest of the line. A `<` followed by
-   anything else stays (`a < b`, `<3`).
-3. Decode character references as HTML does in text: named (`&amp;`,
-   `&nbsp;`…), decimal (`&#60;`) and hexadecimal (`&#x3c;`).
-4. Do steps 1 and 2 again, so that `&lt;b&gt;` can't come back as a tag.
-5. Turn each control character and each white space character
-   (Unicode's `White_Space`) into a space. Collapse runs of spaces into
-   one, and remove spaces at both ends.
-6. Cut the line to at most 500 bytes without splitting a character, then
-   remove spaces at its end.
-7. Escape `&` as `&amp;`, `<` as `&lt;` and `>` as `&gt;`.
-
-So no markup survives: not `<b>`, `<i>`, `<u>`, `<c>`, `<v>`, `<lang>`,
-`<ruby>` or `<rt>`, nor their classes and annotations (a voice's name, a
-language); their text does. Unknown tags go the same way. There is no
-CSS, since `STYLE` blocks are dropped and nothing else can hold any. A
-URL in cue text stays as text, and nothing is ever fetched for a part.
-A timestamp tag (`<00:00:01.000>`) starts with a digit: it isn't a tag
-under step 2, and stays as escaped text.
-
-**Writing.** The part is `WEBVTT` and a line feed, then for each cue, in
-the order read: a line feed, the two timestamps as they were written,
-joined by ` --> `, a line feed, and the cleaned lines, each followed by a
-line feed. UTF-8, line feeds only, no byte order mark. A part with no cue
-left is `WEBVTT` and a line feed: it is valid. The answer's
-`Content-Type` is `text/vtt; charset=utf-8`.
-
-Not checked: that minutes and seconds are below 60, that a cue ends after
-it starts, that cues are in order, and how many lines a cue has. Players
-handle those.
-
-**Overfin.** These are Overfin's rules, as both owning and viewer's
-server.
-
-### 3.3 PGS
-
-A PGS part is checked whole, then served unchanged: a player decodes and
-draws it. Checking means reading every segment, and decoding every
-object's run-length data to count it, not to draw it.
-
-**The track.** A part is at least one segment and at most 64 MiB
-(67,108,864 bytes), made of segments one after another, up to its exact
-end. A segment is a 13-byte header and a payload:
-
-| Bytes | Content |
-|-------|---------|
-| 0–1 | `PG` |
-| 2–9 | presentation and decoding times (not checked) |
-| 10 | the segment's type |
-| 11–12 | the payload's size, big-endian |
-
-A header cut short, another magic, or a payload past the end refuses the
-part. So does any type but these five:
-
-| Type | Segment | Checks on its payload |
-|------|---------|-----------------------|
-| `0x16` | presentation (PCS) | at least 11 bytes; the screen's width (bytes 0–1) and height (2–3) are each 1 to 4,096; byte 10 counts composition objects, each 8 bytes, or 16 when its byte 3 has bit `0x80` (cropped); all of them within the payload |
-| `0x17` | window (WDS) | at least 1 byte; exactly 1 + 9 × byte 0 bytes |
-| `0x14` | palette (PDS) | at least 2 bytes; 2 + 5 × *n* bytes |
-| `0x15` | object (ODS) | below |
-| `0x80` | end | empty |
-
-**Objects.** An object segment is at least 4 bytes: the object's ID
-(bytes 0–1), a version (byte 2, not checked), flags (byte 3).
-
-- Bit `0x80` of the flags marks the object's first fragment. It is at
-  least 11 bytes; bytes 7–8 are the width and 9–10 the height, each 1 to
-  4,096; bytes 11 on are run-length data. Bytes 4–6 (the data's length)
-  are not checked. A part holds at most 20,000 first fragments. A first
-  fragment with an ID already open starts that object again.
-- Without bit `0x80`, the segment continues an open object of the same ID;
-  bytes 4 on are more data. No open object of that ID refuses the part.
-- Bit `0x40` marks the last fragment (it may be the first too). The
-  object's data, all its fragments together, must then fit its size, and
-  the object is closed.
-
-An object left open at the end of the part doesn't refuse it.
-
-**Run-length data fits** when, read from the start:
-
-- a byte other than 0 is one pixel;
-- `0x00 0x00` ends a line: the next pixel is at the start of the next
-  line; more than *height* line ends refuses it;
-- `0x00` then a flag byte *F* is a run: its length is *F* & `0x3F`, or,
-  when *F* has bit `0x40`, (*F* & `0x3F`) × 256 plus the next byte; when
-  *F* has bit `0x80`, a color byte follows;
-- a run cut short by the end of the data refuses it;
-- after each pixel or run, more than *width* pixels on the line refuses
-  it.
-
-Not checked: segments' times and order, that each display set ends with
-an end segment, IDs across segments, positions against the screen,
-palette entries and colors, lines shorter than *width* or fewer than
-*height*. A player must be robust to those itself.
-
-**Memory.** Nothing here makes a picture: the check keeps only the open
-objects' data, which the part's 64 MiB bounds. A player that draws a
-picture needs at most 4,096 × 4,096 pixels for it, and the screen as big.
-
-**Overfin.** These are Overfin's rules, as both owning and viewer's
-server. It accepts only PGS as picture subtitles; other picture formats
-(DVD, DVB) are left out of the track list.
-
 ## 4. How long a ticket works
 
 A ticket works while its playback is live. The playback ends, and the
@@ -459,16 +289,10 @@ URLs until it ends ([core section 13.2](core.md#132-a-peer-that-learns-of-a-move
   signed. HTTPS is required, with a *trusted* or *named* certificate, so
   an observer can't read a ticket, and an attacker on the path can't
   change the media without breaking TLS.
-- **Preview sheets are images from another server**, the only ones a peer
-  sends. Check a sheet's byte size first, then its dimensions from its
-  header against the layout, and only then decode it. Re-encode it, so
-  nothing but pixels (no metadata, no trailing bytes, no second image)
-  reaches a browser. The layout's bounds keep the number of fetches, and
-  the memory a sheet takes, small: at most 1,000 sheets of 4,096 × 4,096
-  pixels. Never give the browser the peer's sheet URLs: they carry the
-  ticket, and would let the peer see the viewer.
-- **Hostile media.** Check playlists and subtitles before relaying them;
-  never let a playlist name anything outside the stream.
+- **Hostile media.** Check playlists, and what the content parts add
+  ([video section 7](video.md#7-security-considerations): subtitles,
+  preview sheets), before relaying them; never let a playlist name
+  anything outside the stream.
 
 ## 6. Open questions
 
@@ -485,10 +309,18 @@ Choices of the review round of 2026-11-16, all confirmed by the owner on
 3. **Unknown tags** in a relayed playlist: dropped or passed on, at the
    viewer's server's choice (section 3.1), since URIs are checked in
    every tag either way.
-4. **Timestamp tags in WebVTT** stay as escaped text (section 3.2), as
-   Overfin does. Removing them would suit karaoke-style subtitles better.
-5. **Checks left to the player**: WebVTT timings out of range or order,
-   and PGS fields beyond sizes (sections 3.2 and 3.3). An open PGS object
-   at the end of a part isn't refused.
-6. **`Content-Range` checks** (section 2.1) are required of the viewer's
+4. **`Content-Range` checks** (section 2.1) are required of the viewer's
    server; Overfin makes them since 2026-11-16.
+
+The choices on timestamp tags in WebVTT and on checks left to the player
+moved to [video](video.md#8-open-questions) with the WebVTT and PGS rules.
+
+**Choices this draft made, to confirm** (when the video rules were moved
+out of this part on 2026-11-17):
+
+5. **Bounds stay here**: the sizes of WebVTT parts, PGS parts and sheets
+   (section 2.4), and the rule that they are fetched without `Range`
+   (section 2.1), are still listed with the other bounds, though only
+   `video` uses them.
+6. **URL checks stay here** (section 1): the `<track>` name that video's
+   URLs add follows the same pattern as `<name>`.

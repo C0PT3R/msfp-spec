@@ -4,10 +4,12 @@
 Overfin and the Jellyfin plugin speak today.
 
 The `playback` part lets a viewer's server start, keep and stop a
-playback of a film or an episode a peer holds, within limits the owning
-server sets. It needs the [core](core.md), [catalog](catalog.md) (it
-plays title keys from `titles`) and [media](media.md) (its answers point
-at media URLs). If either is off between two servers, `playback` is off
+playback of a title a peer holds, within limits the owning server sets.
+Which titles it plays, and what their playbacks carry besides, is said by
+the content parts, [video](video.md#5-playing-a-film-or-an-episode) and
+[music](music.md#5-playing-a-track) (section 2.4). It needs the
+[core](core.md), [catalog](catalog.md) (it plays title keys from
+`titles`) and [media](media.md) (its answers point at media URLs). If either is off between two servers, `playback` is off
 too ([core section 10.3](core.md#103-choosing)). Its calls follow
 [core section 8](core.md#8-common-rules-for-every-call): signed `POST`s
 under the peer's base path, answered only to peers in state `paired`. A
@@ -44,41 +46,39 @@ specifications.
 ## 2. play
 
 `play`, under the peer's base path. The viewer's server asks the owning
-server to start a playback of a film or an episode for one viewer.
+server to start a playback of a title for one viewer.
 
 ### 2.1 The request
 
 | Field | Type | Required | Content |
 |-------|------|----------|---------|
-| `title` | string | yes | the title key of a film or an episode, as the owning server sent it in `titles` |
+| `title` | string | yes | the key of a title `play` takes (section 2.4), as the owning server sent it in `titles` |
 | `capabilities` | capabilities object | no | what the viewer's device plays, coarsened (below) |
 | `startPositionMs` | integer | no | where to start, in milliseconds; 0 to 8,640,000,000 (100 days) |
 | `maxBitrateKbps` | integer | no | the viewer's bitrate cap, kbit/s; 0 to 10,000,000; 0 means none |
 | `audioLanguage` | string | no | the viewer's audio language, a tag; at most 12 characters of `A–Z a–z 0–9 -` |
-| `subtitleLanguage` | string | no | the viewer's subtitle language, same form |
 | `audioTrack` | string | no | an audio track ID from a former answer, `a` and 1 to 3 digits |
-| `subtitleTrack` | string | no | a subtitle track ID, `s` and 1 to 3 digits, or `off` |
 | `versionId` | string | no | a version ID from a former answer of the same title (section 2.3) |
 
-Capabilities (all fields optional; unknown values are ignored):
+The content parts may add members ([video section 5.1](video.md#51-the-request)).
+
+Capabilities (all fields optional; unknown values are ignored; the
+content parts may add more, as [video](video.md#51-the-request) does for
+video codecs, HDR, height and subtitles):
 
 | Field | Type | Values |
 |-------|------|--------|
 | `containers` | array of string | `mp4`, `m4v`, `mov`, `webm`, `mkv`, `ts`, `mp3`, `aac`, `m4a`, `flac`, `ogg`, `opus`, `wav` |
-| `videoCodecs` | array of string | `h264`, `hevc`, `av1`, `vp8`, `vp9` |
 | `audioCodecs` | array of string | `aac`, `mp3`, `opus`, `vorbis`, `flac`, `ac3`, `eac3`, `alac`, `pcm_s16le` |
-| `hdr` | array of string | `hdr10`, `hlg` |
-| `maxHeight` | integer | pixels; 0 means not said |
 | `maxAudioChannels` | integer | 0 means not said |
 | `maxBitrateKbps` | integer | 0 to 10,000,000; 0 means not said |
-| `subtitles` | array of string | no values are defined yet; send `[]` or leave it out |
 
 **Coarsening.** So that the owning server can't tell one device from
 another, the viewer's server must coarsen what it sends: only the values
-listed above, lowercase, each once, sorted; `maxHeight` stepped down to
-480, 720, 1080, 1440, 2160 or 4320 (below 480 becomes 480);
-`maxAudioChannels` stepped down to 2, 6 or 8 (below 2 becomes 2);
-`capabilities.maxBitrateKbps` rounded down to a whole 1,000, and below
+listed above (and by the content parts), lowercase, each once, sorted;
+the content parts' own steps ([video](video.md#51-the-request):
+`maxHeight`); `maxAudioChannels` stepped down to 2, 6 or 8 (below 2
+becomes 2); `capabilities.maxBitrateKbps` rounded down to a whole 1,000, and below
 1,000 left out (0); the request's `maxBitrateKbps` rounded down to a whole
 1,000 from 1,000 up, and kept as it is below.
 
@@ -91,11 +91,10 @@ listed above, lowercase, each once, sorted; `maxHeight` stepped down to
   Duplicates count once. Order doesn't matter.
 - An empty array, or one left with nothing once unknown entries are
   ignored, means the same as the member left out: nothing said.
-- Nothing said about `containers` or `videoCodecs`: no file is played as
-  it is (`direct`); the owning server remuxes or transcodes to H.264 and
-  AAC in HLS, which every viewer's server must be able to play. Nothing
-  said about `audioCodecs`: AAC only. Nothing said about `hdr`: standard
-  range only.
+- What the owning server serves when nothing is said is up to the
+  content part of the title (section 2.4): H.264 and AAC in HLS for a
+  film or an episode ([video section 5.1](video.md#51-the-request)), AAC
+  in HLS, audio only, for a track ([music section 5](music.md#5-playing-a-track)).
 
 **Overfin.** Since 2026-11-16, Overfin compares each entry a peer sends
 exactly, so `H264` is an unknown entry (before, it lowercased them).
@@ -103,8 +102,9 @@ Its own apps' API, which is not MSFP, still lowercases.
 
 ### 2.2 What the owning server does
 
-1. It refuses the request (`400`) when `title` isn't a film's or an
-   episode's key, or a number or tag is out of range.
+1. It refuses the request (`400`) when `title` isn't the key of a kind
+   `play` takes in a content part on between the two servers
+   (section 2.4), or a number or tag is out of range.
 2. It refuses (`409` `stream-limit-reached`) when the pairing's `streams`
    limit is 0.
 3. It looks for its copies of that exact key in the libraries it offers
@@ -112,7 +112,7 @@ Its own apps' API, which is not MSFP, still lowercases.
 4. It picks the copy `versionId` names, if it is one of them; else the
    copy whose audio has `audioLanguage` (same tag first, then same base
    language); else the first. Then it refuses (`400`) a malformed
-   `audioTrack` or `subtitleTrack`.
+   `audioTrack` or `subtitleTrack` ([video section 5.1](video.md#51-the-request)).
 5. It refuses (`409` `stream-limit-reached`) when the pairing's streams
    are all in use.
 6. The bitrate cap is the lowest non-zero of: `maxBitrateKbps`,
@@ -124,13 +124,8 @@ Its own apps' API, which is not MSFP, still lowercases.
    `not-playable`.
 8. It answers `200`, signed, with the playback.
 
-**Several episodes in one copy** ([catalog section 4.3](catalog.md#43-several-episodes-in-one-copy)).
-`play` of any of the episodes a copy holds plays that copy. Without
-`startPositionMs` (or with 0), the owning server starts at the episode's
-beginning when it knows where that is, else at the copy's beginning. A
-non-zero `startPositionMs` is a position in the copy, as for any other
-title. The answer's `positionMs` says where it started, in the copy, and
-the viewer's server must start there.
+A copy that holds several episodes starts where
+[video section 5.2](video.md#52-several-episodes-in-one-copy) says.
 
 ### 2.3 The answer
 
@@ -148,28 +143,22 @@ every field, as listed.
 | `versionId` | string, optional | the version playing | IDs as below |
 | `audioTracks` | array of track, optional | the audio tracks | IDs as below |
 | `audioTrack` | string, optional | the one playing, `a<n>` | |
-| `subtitleTracks` | array of track, optional | the subtitle tracks | `url` checked ([media](media.md#1-the-urls)) |
-| `subtitleTrack` | string, optional | the one to show, `s<n>` | |
-| `forcedTracks` | array of track, optional | forced subtitles | `url` checked |
-| `forcedTrack` | string, optional | the forced one matching the audio | |
-| `subtitleStretchSeconds` | integer, optional | 120 when there are subtitles | replaced by its own value, 120 |
 | `maxBitrateKbps` | integer, optional | the cap in effect | |
-| `segments` | array, optional | skip markers `{kind, startMs, endMs}` | kinds `intro`, `outro`, `recap`, `preview`, `commercial`; within 100 days; at most 32 kept |
-| `trickplay` | trickplay object, optional | the seek-bar previews of the copy playing (section 2.4) | sheet URLs checked ([media](media.md#1-the-urls)); out of bounds: dropped |
 | `info` | object, optional | how it's served: `reasons`, `container`, `bitrateKbps`, `video`, `audio` | text made plain, short |
+
+The content parts may add members: [video section 5.3](video.md#53-the-answer)
+adds subtitles, forced subtitles, skip markers and seek-bar previews.
 
 Track:
 
 | Field | Type | Content |
 |-------|------|---------|
-| `id` | string | `a<n>` for audio, `s<n>` for subtitles |
+| `id` | string | `a<n>` for audio, `s<n>` for subtitles ([video section 5.3](video.md#53-the-answer)) |
 | `label` | string | the language's name in itself |
 | `language` | string, optional | a language tag |
 | `channels` | integer, optional | audio channels |
 | `role` | string, optional | `commentary` or `description` |
 | `default`, `forced`, `hearingImpaired` | boolean, optional | flags |
-| `pictures` | boolean, optional | the subtitles are pictures (PGS) |
-| `url` | string, optional | subtitles only: where to fetch them ([media](media.md#1-the-urls)) |
 
 **IDs.** IDs of tracks and versions must match `^[A-Za-z0-9_-]{1,64}$`
 (or be `off`). The viewer's server drops tracks with another ID or an
@@ -192,44 +181,19 @@ server stops the playback and starts a new one with `play`. It waits up
 to 5 seconds for the `stop` to be answered first, so the old playback
 doesn't count against the limit.
 
-### 2.4 Seek-bar previews
+### 2.4 What the content parts add
 
-Trickplay: thumbnails of the video every `intervalMs`, laid out in a grid
-on JPEG images called sheets. Each sheet holds `columns` × `rows` tiles,
-each `tileWidth` × `tileHeight` pixels, read left to right, then top to
-bottom. Tile *t* (from 0) shows the video at *t* × `intervalMs`, and is
-tile *t* mod (`columns` × `rows`) of sheet ⌊*t* / (`columns` × `rows`)⌋.
-The last sheet may hold fewer tiles, and may be shorter or narrower than
-a full sheet.
+Each content part says which of its kinds `play` takes, what the owning
+server serves when the capabilities say nothing, and which members it
+adds to the request and the answer:
 
-| Field | Type | Content | Bounds |
-|-------|------|---------|--------|
-| `tileWidth` | integer | a tile's width, pixels | 1 to 2,048 |
-| `tileHeight` | integer | a tile's height, pixels | 1 to 2,048 |
-| `columns` | integer | tiles across a sheet | 1 to 100 |
-| `rows` | integer | tiles down a sheet | 1 to 100 |
-| `intervalMs` | integer | milliseconds between two tiles | 100 to 3,600,000 |
-| `tileCount` | integer | tiles in all | 1 or more |
-| `sheets` | array of string | sheet *n*'s URL at index *n* ([media section 1](media.md#1-the-urls)) | exactly ⌈`tileCount` / (`columns` × `rows`)⌉ entries, at most 1,000 |
+| Content part | `play` takes | Nothing said | Adds |
+|--------------|--------------|--------------|------|
+| `video` | films and episodes | H.264 and AAC in HLS | subtitles and forced subtitles, skip markers, seek-bar previews, video capabilities ([video section 5](video.md#5-playing-a-film-or-an-episode)) |
+| `music` | tracks | AAC in HLS, audio only | nothing; audio limits in `limits` ([music section 5](music.md#5-playing-a-track)) |
 
-Besides those bounds, a full sheet is at most 4,096 pixels each way:
-`columns` × `tileWidth` ≤ 4,096 and `rows` × `tileHeight` ≤ 4,096.
-
-- The owning server sends `trickplay` only when it has previews for the
-  copy playing, within these bounds. It sends one set, not one per width;
-  a set near 320 pixels wide is a good choice. Without previews, it leaves
-  the field out.
-- The viewer's server drops `trickplay`, and plays on without previews,
-  when a number is missing or out of bounds, or when `sheets` has another
-  number of entries. It refuses the whole answer (it sends `stop` and
-  gives up, as above) when a sheet URL isn't the one
-  [media section 1](media.md#1-the-urls) gives for its index, or when a
-  field has another JSON type than this table says.
-- Both sides may leave previews out: an owning server need not send
-  `trickplay`, and a viewer's server that offers no previews ignores it.
-- The viewer's server never hands the owning server's URLs to the viewer:
-  it serves each sheet at an address of its own, fetched as
-  [media section 3](media.md#3-what-is-fetched) says.
+A viewer's server ignores the members a content part adds when the title
+played isn't of that part.
 
 ### 2.5 Refusals
 
@@ -254,7 +218,8 @@ that isn't JSON counts as a body without a `type`. Any other refusal
 ### 2.6 Choosing the copy and the tracks
 
 The owning server chooses in this order: the copy, then the audio, then
-the subtitles, then how to serve it. A track ID (`a<n>`, `s<n>`) names a
+the subtitles ([video section 5.4](video.md#54-choosing-the-subtitles)),
+then how to serve it. A track ID (`a<n>`, `s<n>`) names a
 track of the copy chosen. Section 2.2 already refused a malformed ID
 (`400`). "The default audio" is the track the copy marks as default, else
 its first audio track. Language matching takes the same tag first
@@ -279,22 +244,6 @@ description.
 | not a track of the copy | any | as if `audioTrack` were absent |
 | absent | a track matches | that track |
 | absent | absent, or no track matches | the default audio |
-
-**The subtitles.** Subtitles are never burned into the video: they never
-make a playback transcode, and the choice only says which track to show.
-
-| `subtitleTrack` | `subtitleLanguage` | `subtitleTrack` in the answer |
-|-----------------|--------------------|-------------------------------|
-| `off` | any (ignored) | absent: none shown |
-| a track of the copy | any (ignored) | that track |
-| not a track of the copy | any | as if `subtitleTrack` were absent |
-| absent | a track matches | that track |
-| absent | absent, or no track matches | absent: none shown |
-
-Whatever is chosen, `forcedTrack` is the forced track in the language of
-the audio played, when the copy has one. Every text and PGS subtitle
-track is listed, whichever is shown; picture formats other than PGS are
-not listed.
 
 **How it's served.** `method` follows from the copy, the audio track and
 the capabilities, the cheapest first: `direct`, then `remux`, then
@@ -372,6 +321,9 @@ it at once. It sends `limits` only when `playback` is on between the two.
 | `streams` | integer | 0 to 50 | playbacks at the same time |
 | `transcodes` | integer | 0 to `streams` | of those, how many may be transcoded |
 | `bitrateKbps` | integer | 0 to 1,000,000 | a bitrate cap in kbit/s; 0 means none |
+
+A content part may add members: [music section 5.1](music.md#51-limits)
+adds `audioStreams` and `audioTranscodes`.
 
 The caller uses the limits only to avoid offering its people what the
 owning server would refuse. The owning server enforces them itself
@@ -509,20 +461,34 @@ implementations show):
    viewer's server passes version IDs back in a later `play` of the same
    title, but version 0's request has no member for it. This draft adds
    the optional `versionId`.
-2. **`startPositionMs` with several episodes in one copy** (section 2.2).
-   Proposal 5 says where a playback of a later episode starts, but not how
-   `startPositionMs` combines with it. This draft reads a non-zero
-   `startPositionMs` as a position in the copy.
+
+The second choice of that list, `startPositionMs` with several episodes
+in one copy, moved to [video](video.md#8-open-questions).
 
 Choices of the review round of 2026-11-16, confirmed on 2026-11-17:
 
-3. **An `audioTrack` or `subtitleTrack` the copy doesn't have** is read
+2. **An `audioTrack` or `subtitleTrack` the copy doesn't have** is read
    as absent (section 2.6), not refused with `400`.
-4. **No member to forbid transcoding** (section 2.6): a viewer's server
+3. **No member to forbid transcoding** (section 2.6): a viewer's server
    that doesn't want one has no way to say so; the limits decide.
-5. **The three states** of section 6.1, where started and active differ
+4. **The three states** of section 6.1, where started and active differ
    only in use. A server that needs no difference may keep one live state.
-6. **Ending at once** when a pairing ends or a library is no longer
+5. **Ending at once** when a pairing ends or a library is no longer
    offered (section 6.3): required as "the next media request fails";
    whether the transcode must also stop at the moment of the change is
    left to implementations.
+
+**Choices this draft made, to confirm** (when the video rules were moved
+out of this part on 2026-11-17):
+
+6. **The track object stays here** (section 2.3), with its `forced` and
+   `hearingImpaired` flags and the `s<n>` IDs; only the subtitle members
+   `pictures` and `url` moved to [video](video.md#53-the-answer).
+7. **Section 2.4 keeps its number** for what the content parts add, so
+   that sections 2.5 and 2.6 keep theirs.
+8. **Members of another content part** in an answer are ignored
+   (section 2.4); music already says so for a track's subtitles, skip
+   markers and previews.
+9. **`subtitleTrack` is still named here** (sections 2.2 and 2.6): the
+   order of the choice and the tables of the copy and the audio stay
+   here; the subtitles' table moved to video.
