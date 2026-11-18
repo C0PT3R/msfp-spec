@@ -394,8 +394,10 @@ self-signed certificate.
 
 **Self-signed certificates.** Recommended, not required: a key for the
 certificate of type Ed25519 or ECDSA P-256, kept apart from the federation
-key; a lifetime of a year or less; the new pin named in `hello` before
-the switch to a renewed certificate.
+key; the host of the server's address as its name (subject alternative
+name); a lifetime of a year or less, renewed by the implementation itself
+before it ends; the new pin named in `hello` before the switch to a
+renewed certificate.
 
 ### 3.3 Connecting to peers
 
@@ -1587,6 +1589,10 @@ date (within 5 minutes):
 - A `rotate` from the suspended key to a key matching the stored
   commitment lifts the suspension and rotates (section 12.3).
 - Its operator can end the pairing (section 7.4) at any time.
+- After 30 days suspended without a valid rotation, the peer becomes
+  `gone`, as if it had answered that it doesn't know us, and the
+  operator is told. 30 days is the rotating server's own overlap
+  (section 12.4).
 
 ### 12.7 What to do on compromise
 
@@ -1836,8 +1842,9 @@ Version 0 allowed `http` addresses; version 1 doesn't.
   `hello` at the new address (section 13.2). Once both addresses are
   `https`, the pairing moves to core 1 (section 16.4).
 - Without that, both operators pair again.
-- After the transition, `http` pairings stop. Its length is open: one
-  release, or a date (section 18).
+- After the transition, `http` pairings stop. The transition lasts one
+  release: the first stable release of version 1 keeps `http` pairings
+  in core 0, the next one drops them.
 
 ### 16.6 Talking to a version 0 peer
 
@@ -2008,9 +2015,10 @@ Its signature with key "a":
 
 ## 18. Open questions
 
-None of these is decided. Where a proposal of 2026-11-16 left a point
-open, the text above follows the proposal's own default, and the point is
-listed here, with its source in [proposals/](../../proposals/README.md).
+Where a proposal of 2026-11-16 left a point open, the text above
+follows the proposal's own default, and the point is listed here, with
+its source in [proposals/](../../proposals/README.md). Points 1 to 16
+were settled by the owner on 2026-11-17; each says how.
 
 **Rules and checks**
 
@@ -2018,17 +2026,21 @@ listed here, with its source in [proposals/](../../proposals/README.md).
    PyNaCl's `crypto_core_ed25519_is_valid_point` and `@noble/curves`
    (`isTorsionFree`) are believed to cover section 2.1's point checks.
    Not verified.
+   **Settled:** a check to make, not a choice: run these libraries
+   against the vectors, and write the result here.
 2. **A problem type for non-canonical input** (proposal 1, open point 3).
    Should a refusal for a non-canonical form, after the signature checked
    out, carry a specific `type` (`invalid-request`) to help implementers
    debug? Section 2 gives the status that call gives a bad body, with its
    usual `type`.
+   **Settled:** no specific `type`; the call's usual status and `type`.
 3. **An external review** of the signing scheme (proposal 6, open point
    2). It would settle the "custom crypto protocol" concern more directly
    than switching to HTTP Message Signatures (RFC 9421), which proposal 6
    compared and set aside.
-4. **Rate limits.** Closed by the review round of 2026-11-16: section 8.3
-   requires them, with the answers and the retry rules.
+   **Settled:** yes, before version 1 is called stable.
+4. **Rate limits.** Closed on 2026-11-16: section 8.3 requires them,
+   with the answers and the retry rules.
 
 **Rotation and revocation**
 
@@ -2037,47 +2049,59 @@ listed here, with its source in [proposals/](../../proposals/README.md).
    around. A shorter default with an operator setting is possible.
    Section 13's overlap is the same question (proposal 8, open point 1);
    both could share one setting.
+   **Settled:** 30 days, fixed, no setting.
 6. **A rotation from an unknown key** (proposal 3, open point 2). Should
    a rotation statement also be accepted from N, carrying O's signature,
    so that a server that lost O after rotating can still catch up a peer?
    This needs care with section 6.5's "who is heard" rule. Not allowed in
    this draft.
+   **Settled:** not allowed; a server that lost O pairs again.
 7. **Suspension forever?** (proposal 3, open point 3). Should a suspended
    peer become `gone` after some time without a valid rotation? In this
    draft it stays suspended until its operator ends the pairing.
+   **Settled:** no: after 30 days without a valid rotation, the peer becomes `gone` (section 12.6).
 8. **Proving the exported key** (proposal 3, open point 4). Section 12.5
    shows the committed key's fingerprint next to the export; probably
    enough.
+   **Settled:** the fingerprint is enough.
 
 **Versions and parts**
 
 9. **`media` as its own part** (proposal 4, open point 2), or a
    sub-version of `playback`. Separate in this draft, because the media
    formats are where most change is expected.
+   **Settled:** its own part.
 10. **Versions in `pair`** (proposal 4, open point 3). Should `pair`
     requests and answers carry `core` and `parts` too, so that a new
     pairing knows them before the first `hello`? Only `hello` carries them
     in this draft.
+    **Settled:** no; only `hello` carries them.
 11. **The 8-entry caps** on version lists (proposal 4, open point 4) are
     arbitrary limits against abuse.
+    **Settled:** kept.
 
 **HTTPS and addresses**
 
 12. **The transition for `http` pairings** (proposal 7, open point 1):
-    its length, and whether the cut-off is a version or a date. Section
-    16.5 leaves it open: one release, or a date the owner picks.
+    its length, and whether the cut-off is a version or a date.
+    **Settled:** one release (section 16.5).
 13. **Making a self-signed certificate** (proposal 7, open point 2).
     Should the specification say more (key type, names, lifetime) than
     section 3.2's recommendation?
+    **Settled:** section 3.2 now names the address's host as the
+    certificate's name, and renewal by the implementation.
 14. **Local testing** (proposal 7, open point 3). Section 3.1 leaves plain
     `http` to an implementation's test switch, outside the protocol.
+    **Settled:** outside the protocol, as said.
 15. **Several addresses** (proposal 8, open point 2), for example a public
     name and a LAN address. Not allowed: one address per server keeps the
     signed host simple.
+    **Settled:** one address.
 16. **A change of base path** (proposal 8, open point 3). Section 13
     announces addresses only. A peer learns a new base by fetching the
     discovery document again when calls fail (section 11); whether a
     change of `base` should be announced like an address is open.
+    **Settled:** not announced; the document is fetched again when calls fail.
 
 **Choices this draft made where the proposals were silent** (all confirmed by
 the owner on 2026-11-17; they may still change as implementations show)
