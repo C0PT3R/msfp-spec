@@ -734,7 +734,11 @@ msfp-1 response
   They carry no content coding (section 3).
 
 The caller builds `<media type>` from the `Content-Type` header it
-received. So a changed `Content-Type` makes the signature fail, and the
+received. An answer carries one `Content-Type` header or none: one sent
+more than once, or whose value doesn't read as `type/subtype` (with
+optional parameters), fails like a badly signed answer; an empty one
+counts as none (`-`). So two implementations never read different media
+types from the same answer. So a changed `Content-Type` makes the signature fail, and the
 caller can rely on the media type it reads. Other headers are not signed.
 
 A caller refuses a signed `200` or `202` whose media type isn't
