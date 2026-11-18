@@ -489,7 +489,7 @@ must check again at connection time, since a name's answer can change.
 
 **Overfin.** Overfin refuses the table above, by default, judged as this
 section says for IPv4-mapped, NAT64 (`64:ff9b::/96`, and
-`64:ff9b:1::/48` by its last 32 bits) and 6to4 addresses, and three
+`64:ff9b:1::/48` refused outright) and 6to4 addresses, and three
 cloud metadata addresses outside it (`100.100.100.200`, `168.63.129.16`,
 `fd00:ec2::254`), on every connection to a peer: calls, the media relay,
 preview sheets, the `hello` that confirms an address change, and the
@@ -1145,7 +1145,7 @@ server sets its own to fit its machine:
 | Limit | Suggested default |
 |-------|-------------------|
 | Request body | 64 KiB (section 3) |
-| Nonces remembered | 100,000 of known peers, 1,000 of strangers (section 6.5) |
+| Nonces remembered | 20,000 per known peer, 1,000 of strangers (section 6.5) |
 | Requests per network address, before any signature check | 50 a second, in bursts of up to 400 |
 | Calls per peer (item 1) | 20 a second, in bursts of up to 200 |
 | Calls of all peers together (item 2) | 200 a second, in bursts of up to 2,000 |
@@ -1255,8 +1255,7 @@ answers aren't signed either. Their statuses:
 A body that comes with a refusal is not read beyond a few kilobytes, and
 never shown.
 
-**Overfin.** Overfin speaks version 0, which says nothing of this. As the
-viewer's server, it answers a peer's `404` with a `404` to the viewer, for
+**Overfin.** As the viewer's server, it answers a peer's `404` with a `404` to the viewer, for
 every kind of fetch, and doesn't end the playback itself: the player
 stops on its own, and the playback ends by `stop` or, on both sides, by
 expiry (playback section 6.3).

@@ -430,7 +430,7 @@ func codeVerdicts(c core, allowHTTP bool) []verdict {
 	}
 	wrapped := good[:40] + "\r\n  " + good[40:90] + "\n\t" + good[90:] + " "
 	out := []verdict{
-		one("the code of section 15.2", good),
+		one(exampleName(c.prefix), good),
 		one("wrapped, with white space", wrapped),
 		one("the prefix in capitals", strings.ToUpper(c.prefix[:1])+good[1:]),
 		one("an address with a trailing slash", makeCode(c.prefix, keyA.pub, secret, expires, addrA+"/")),
@@ -443,4 +443,13 @@ func codeVerdicts(c core, allowHTTP bool) []verdict {
 		out = append(out, one("a version 0 code", makeCode(core0.prefix, keyA.pub, secret, expires, addrA)))
 	}
 	return out
+}
+
+// exampleName names the code example by where each version's text shows
+// it: version 0's section 15.2, version 1's core section 5.3.
+func exampleName(prefix string) string {
+	if strings.HasPrefix(prefix, "msfp-pair-1") {
+		return "the code of core section 5.3"
+	}
+	return "the code of section 15.2"
 }
