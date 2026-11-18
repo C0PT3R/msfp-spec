@@ -513,9 +513,7 @@ objects' data, which the part's 64 MiB bounds. A player that draws a
 picture needs at most 4,096 × 4,096 pixels for it, and the screen as big.
 
 **Overfin.** These are Overfin's rules, as both owning and viewer's
-server, but one: Overfin refuses an empty part, where this section now
-requires it to be served and relayed as a valid `200` with an empty
-body. It accepts only PGS as picture subtitles; other picture formats
+server, an empty part included. It accepts only PGS as picture subtitles; other picture formats
 (DVD, DVB) are left out of the track list.
 
 ## 7. Security considerations
