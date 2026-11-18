@@ -902,12 +902,41 @@ class PartChecks:
 
         if not video_key(title):
             return
-        subs = [t for t in (pb.get("subtitleTracks") or []) + (pb.get("forcedTracks") or []) if isinstance(t, dict) and t.get("url")]
+        def tracks_of(j):
+            return [t for t in (j.get("subtitleTracks") or []) + (j.get("forcedTracks") or [])
+                    if isinstance(t, dict) and t.get("url")]
+        subs = tracks_of(pb)
+
+        def find_track(pictures):
+            """A subtitle track with pictures (PGS) or text, with a url: the
+            first play's, else one of another film or episode whose title
+            lists subtitles, played for it (up to 8). Returns the track, the
+            other playback to stop then (or None), and what was played."""
+            t = next((x for x in subs if bool(x.get("pictures")) == pictures), None)
+            if t or prefix != "M":
+                return t, None, title
+            others = [x["key"] for x in self.whole if x.get("kind") in ("movie", "episode") and x.get("subtitles")
+                      and x["key"] != title and video_key(x["key"])]
+            for key in others[:8]:
+                a = self.play({"title": key})
+                if a.status != 200 or not isinstance(a.json, dict):
+                    continue
+                t = next((x for x in tracks_of(a.json) if bool(x.get("pictures")) == pictures), None)
+                if t:
+                    return t, a.json, key
+                self.stop(a.json)
+            return None, None, title
 
         def text_subs():
-            t = next((x for x in subs if not x.get("pictures")), None)
+            t, other, key = find_track(False)
             if not t:
-                raise Skip("no text subtitle track with a url")
+                raise Skip("no text subtitle track with a url (in the first play, or in up to 8 others listing subtitles)")
+            try:
+                return text_part(t) + ("" if other is None else " (of %s, played for it)" % key)
+            finally:
+                self.stop(other)
+
+        def text_part(t):
             status, hdrs, body = fetch(t["url"] + "/0")
             if status != 200:
                 raise Fail("%s/0: %d" % (t["id"], status))
@@ -925,9 +954,15 @@ class PartChecks:
         self.check(prefix + "6", "video 6.2, 6.3", "a text subtitle part: 200 text/vtt, already in its rebuilt form", text_subs)
 
         def pgs():
-            t = next((x for x in subs if x.get("pictures")), None)
+            t, other, key = find_track(True)
             if not t:
-                raise Skip("no PGS track with a url")
+                raise Skip("no PGS track with a url (in the first play, or in up to 8 others listing subtitles)")
+            try:
+                return pgs_part(t) + ("" if other is None else " (of %s, played for it)" % key)
+            finally:
+                self.stop(other)
+
+        def pgs_part(t):
             status, hdrs, body = fetch(t["url"] + "/0")
             if status != 200:
                 raise Fail("%s/0: %d" % (t["id"], status))
