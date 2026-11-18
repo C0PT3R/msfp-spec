@@ -1,8 +1,9 @@
 # Proposal 11: Music
 
-Status: Proposed (2026-11-17). Decided so far: identity (section 1),
-descriptions (section 2), pictures (section 4) and playing a track
-(section 5), adopted 2026-11-17.
+Status: Adopted (2026-11-17), open points still open. Decided: identity (section 1),
+descriptions (section 2), pictures (section 4), playing a track
+(section 5) and the library kind (section 6), adopted 2026-11-17. Open
+points 1 to 7 left for later versions of the part.
 
 **Decided 2026-11-17, wider than music:** every content type is
 optional. Version 1 is restructured before anyone implements it: the
