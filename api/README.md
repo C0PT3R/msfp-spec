@@ -8,7 +8,7 @@ server sends or accepts. Two servers interoperate if they follow
 
 | Piece | State |
 |-------|-------|
-| Go engine | **built**: package `msfp` inside Overfin's module (`github.com/overfin/server/msfp`), with the toolkit `msfp/wire`, two stores (`msfp/store/memory`, `msfp/store/jsonfile`) and an example host (`msfp/examples/share-folder`, about 400 lines) |
+| Go engine | **built**: [msfp-io/msfp-go](https://github.com/msfp-io/msfp-go) (module `github.com/msfp-io/msfp-go`, v0.1.0), package `msfp` at its root, with the toolkit `wire`, two stores (`store/memory`, `store/jsonfile`) and an example host (`examples/share-folder`, about 400 lines) |
 | Overfin on the engine | **built**: [overfin.md](overfin.md) |
 | C# engine (`msfp-dotnet`) | **not built yet**. Its forms below are the design |
 
@@ -99,7 +99,7 @@ RedeemCode(text) -> PeerView
 
 | Concept | Go (built) | C# (design) |
 |---------|------------|-------------|
-| Package | `github.com/overfin/server/msfp`; toolkit `…/msfp/wire` | assembly and namespace `Msfp`; toolkit `Msfp.Wire`; ASP.NET Core glue `Msfp.AspNetCore` |
+| Package | `github.com/msfp-io/msfp-go` (package `msfp`); toolkit `…/wire` | assembly and namespace `Msfp`; toolkit `Msfp.Wire`; ASP.NET Core glue `Msfp.AspNetCore` |
 | Engine | `*msfp.Engine` | `Msfp.MsfpEngine` |
 | Host interfaces | `Store`, `Catalog`, `Playback`, `Media`, `Sealer`, `Clock`, `Dialer`, `Notifier`, `SheetEncoder` | `IStore`, `ICatalog`, … ; `TimeProvider` for the clock |
 | Calls | `RedeemCode(ctx, text) (PeerView, error)` | `Task<PeerView> RedeemCodeAsync(string text, CancellationToken ct)` |

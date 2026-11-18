@@ -448,7 +448,7 @@ says nothing.
 `{ID, Name}`. **`CodeView`** `{ID, Note, Created, Expires}`.
 **`CodePreview`** `{Address, Fingerprint, Expires}`.
 
-**The toolkit** (`msfp/wire`) has the protocol's pieces: keys, codes,
+**The toolkit** (package `wire`, `github.com/msfp-io/msfp-go/wire`) has the protocol's pieces: keys, codes,
 signatures, strict JSON, pins, statements, and helpers a host uses:
 `ParseKey` (a title key, refusing all but the canonical form),
 `CleanText`, `WebVTTPart`, `Origin`, `CheckAddress`.
