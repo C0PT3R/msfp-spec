@@ -347,21 +347,31 @@ class Suite(PartChecks, KeyChecks):
     def discovery_checks(self):
         c = self.client
 
+        def missing():
+            cc = Client(Key(), self.target, connect=self.a.connect, any_certificate=True)
+            conn = cc._conn(False)[0]
+            conn.request("GET", "/.well-known/msfp-conformance-no-such-document")
+            r = conn.getresponse()
+            other = (r.status, r.read())
+            conn.close()
+            return other[0]
+
         def doc():
             status, hdrs, body = c.discovery()
             if status == 404:
-                cc = Client(Key(), self.target, connect=self.a.connect, any_certificate=True)
-                conn = cc._conn(False)[0]
-                conn.request("GET", "/.well-known/msfp-conformance-no-such-document")
-                r = conn.getresponse()
-                other = (r.status, r.read())
-                conn.close()
-                if other[0] != 404:
+                other = missing()
+                if other != 404:
                     return (PASS, "no document (404); a missing path answers %d, so the two can be told apart (core 11 "
-                                  "should: like any path that doesn't exist)" % other[0])
+                                  "should: like any path that doesn't exist)" % other)
                 return "no document: 404, like a path that doesn't exist (off by default)"
             if status != 200:
-                raise Fail("GET /.well-known/msfp answered %d: a document (200) or a 404" % status)
+                # A server that serves none answers like any path that
+                # doesn't exist (core 11), whatever that answer is.
+                other = missing()
+                if other == status:
+                    return "no document: %d, like a path that doesn't exist (off by default)" % status
+                raise Fail("GET /.well-known/msfp answered %d, and a path that doesn't exist %d: a document (200), "
+                           "or the answer of a missing path" % (status, other))
             try:
                 j = parse_ijson(body)
             except NotIJSON as e:
