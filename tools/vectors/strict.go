@@ -7,6 +7,7 @@ package main
 import (
 	"bytes"
 	"crypto/ed25519"
+	"encoding/base32"
 	"encoding/base64"
 	"errors"
 	"fmt"
@@ -402,6 +403,41 @@ func checkBase(s string) error {
 				return errors.New("a character outside A-Z a-z 0-9 . _ ~ - (no percent-encoding)")
 			}
 		}
+	}
+	return nil
+}
+
+// b32 is lowercase base32 (RFC 4648 section 6, a-z2-7), no padding.
+var b32 = base32.NewEncoding("abcdefghijklmnopqrstuvwxyz234567").WithPadding(base32.NoPadding)
+
+// uncallableAddress is the address a server that can't be called must
+// have (spec/v1/core.md section 5.2): https://msfp-<26>.invalid, the 26
+// characters being 16 bytes in lowercase base32.
+func uncallableAddress(b []byte) string { return "https://msfp-" + b32.EncodeToString(b) + ".invalid" }
+
+// checkUncallableAddress applies that rule: an address of section 5.2,
+// of that form, whose 26 characters are exactly the encoding of 16
+// bytes (the 2 unused bits of the last character are zero).
+func checkUncallableAddress(addr string) error {
+	if err := checkAddress(addr, false); err != nil {
+		return err
+	}
+	const pre, suf = "https://msfp-", ".invalid"
+	if !strings.HasPrefix(addr, pre) || !strings.HasSuffix(addr, suf) {
+		return errors.New("not of the form https://msfp-<26>.invalid")
+	}
+	mid := addr[len(pre) : len(addr)-len(suf)]
+	if len(mid) != 26 {
+		return fmt.Errorf("%d characters between msfp- and .invalid, not 26", len(mid))
+	}
+	for _, c := range []byte(mid) {
+		if !(c >= 'a' && c <= 'z' || c >= '2' && c <= '7') {
+			return fmt.Errorf("character %q outside a-z 2-7", c)
+		}
+	}
+	b, err := b32.DecodeString(mid)
+	if err != nil || len(b) != 16 || b32.EncodeToString(b) != mid {
+		return errors.New("unused bits are not zero")
 	}
 	return nil
 }

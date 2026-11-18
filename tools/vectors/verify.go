@@ -176,6 +176,7 @@ func verifyAll(read func(string) []byte) []error {
 	verdicts("v1/strict.json", "mediaNames", func(x obj) error { return checkMediaName(str(x, "text")) })
 	verdicts("v1/strict.json", "bases", func(x obj) error { return checkBase(str(x, "text")) })
 	verdicts("v1/strict.json", "destinations", func(x obj) error { return checkDestination(str(x, "text")) })
+	verdicts("v1/strict.json", "uncallableAddresses", func(x obj) error { return checkUncallableAddress(str(x, "text")) })
 	verdicts("v1/media.json", "hls", func(x obj) error { return checkPlaylist([]byte(str(x, "text"))) })
 	verdicts("v1/media.json", "pgs", func(x obj) error { return checkPGS(text(x)) })
 	for _, v := range load("v1/media.json")["webvtt"].([]any) {
@@ -229,6 +230,7 @@ func verifyAll(read func(string) []byte) []error {
 	checkCode("v1/code.json", core1, false, cf["code"].(obj), cf["proof"].(obj))
 	for _, e := range load("v1/exchanges.json")["exchanges"].([]any) {
 		checkExchange("v1/exchanges.json", core1, e.(obj))
+		checkPrivate("v1/exchanges.json: "+str(e.(obj), "name"), e.(obj), pubs, bad)
 	}
 
 	rf := load("v1/rotation.json")
@@ -270,4 +272,74 @@ func verifyAll(read func(string) []byte) []error {
 		bad("v1/revocation.json: the revoke request doesn't carry the statement")
 	}
 	return errs
+}
+
+// checkPrivate checks the members of a server that can't be called
+// (spec/v1/core.md sections 5.2, 7.5, 12.4 and 12.6) in an exchange: an
+// inbound false carries an address of the uncallable form, knownKey is a
+// test key, and the rotation and revocation an answer carries check out
+// under the key that signed the answer.
+func checkPrivate(where string, e obj, pubs map[string][]byte, bad func(string, ...any)) {
+	var req, ans obj
+	_ = json.Unmarshal([]byte(str(e, "body")), &req)
+	_ = json.Unmarshal([]byte(str(e, "answerBody")), &ans)
+	for _, m := range []obj{req, ans} {
+		if v, ok := m["inbound"]; ok {
+			if v != false {
+				bad("%s: inbound isn't false", where)
+			} else if err := checkUncallableAddress(str(m, "address")); err != nil {
+				bad("%s: inbound false with address %q: %v", where, str(m, "address"), err)
+			}
+		}
+	}
+	if k, ok := req["knownKey"]; ok {
+		found := false
+		for _, p := range pubs {
+			if b64.EncodeToString(p) == k {
+				found = true
+			}
+		}
+		if !found {
+			bad("%s: knownKey isn't a test key", where)
+		}
+		if k != b64.EncodeToString(pubs[str(e, "answerer")]) {
+			bad("%s: the answer isn't signed with the knownKey", where)
+		}
+	}
+	old := pubs[str(e, "answerer")]
+	if r, ok := ans["rotation"].(obj); ok {
+		nu, err := checkB64(str(r, "newKey"), 32)
+		if err == nil {
+			err = checkKey(nu)
+		}
+		if err != nil {
+			bad("%s: rotation newKey: %v", where, err)
+			return
+		}
+		st := rotationStatement(old, nu, str(r, "nextCommitment"), num(r, "date"))
+		for _, s := range []struct {
+			pub []byte
+			sig string
+		}{{old, str(r, "oldSignature")}, {nu, str(r, "newSignature")}} {
+			sig, err := checkB64(s.sig, 64)
+			if err == nil {
+				err = verifyStrict(s.pub, []byte(st), sig)
+			}
+			if err != nil {
+				bad("%s: rotation signature: %v", where, err)
+			}
+		}
+		if strconv.FormatInt(num(r, "date"), 10) != str(e, "date") {
+			bad("%s: rotation not dated as the exchange", where)
+		}
+	}
+	if v, ok := ans["revocation"].(obj); ok {
+		sig, err := checkB64(str(v, "signature"), 64)
+		if err == nil {
+			err = verifyStrict(old, []byte(revocationStatement(old, num(v, "date"))), sig)
+		}
+		if err != nil {
+			bad("%s: revocation signature: %v", where, err)
+		}
+	}
 }
