@@ -61,7 +61,12 @@ stream root:
   error messages.
 - `stream.protocol` is `hls`, with `<name>` `master.m3u8` and
   `stream.mimeType` `application/vnd.apple.mpegurl`; or `file`, with
-  `<name>` `file` (the file as it is, served with byte ranges).
+  `<name>` `file` (the file as it is, served with byte ranges). The
+  `file` protocol is only for a copy of one file; a copy of several
+  parts ([playback section 1](playback.md#1-terms)) is served as `hls`.
+  With `file`, the copy comes whole, with all its tracks; the viewer's
+  player selects `audioTrack` itself. A viewer's server can't tell a
+  copy's parts from the answer, and plays what it is given.
 - A content part may add URLs of its own under `<stream root><ticket>/`:
   [video section 6.1](video.md#61-the-urls) adds subtitle, PGS and
   preview sheet URLs, with a `<track>` name.

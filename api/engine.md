@@ -423,7 +423,7 @@ peer's title, the one public ID it was listed in).
 
 | Type | Fields |
 |------|--------|
-| `VideoTitle` | `Audio`, `Subtitles` (tags), `Pictures` (the host's, each copy's) or `Video` (a peer's: its best copy's, cleaned), `With` (episode keys), `IDs` (`imdb`, `tvdb`…) |
+| `VideoTitle` | `Audio`, `Subtitles` (tags; the host's may be its media server's codes), `Pictures` (the host's, each copy's) or `Video` (a peer's: its best copy's, cleaned), `With` (episode keys), `IDs` (`imdb`, `tvdb`…) |
 | `MusicTitle` | `Name`, `Artists`, `ArtistNames`, `Album`, `Disc`, `Number`, `Year`, `DurationMs`, `IDs` (`mbrelease`, `mbtrack`, `isrc`) |
 
 **`Limits`**: `Streams` (0 to 50), `Transcodes` (0 to streams),
@@ -451,7 +451,8 @@ says nothing.
 **The toolkit** (package `wire`, `github.com/msfp-io/msfp-go/wire`) has the protocol's pieces: keys, codes,
 signatures, strict JSON, pins, statements, and helpers a host uses:
 `ParseKey` (a title key, refusing all but the canonical form),
-`CleanText`, `WebVTTPart`, `Origin`, `CheckAddress`.
+`CleanText`, `WebVTTPart`, `Origin`, `CheckAddress`, `SentTag` and
+`SentTags` (a media server's language codes as MSFP sends them).
 
 ## 11. An example
 

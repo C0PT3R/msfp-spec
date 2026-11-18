@@ -8,7 +8,7 @@ server sends or accepts. Two servers interoperate if they follow
 
 | Piece | State |
 |-------|-------|
-| Go engine | **built**: [msfp-io/msfp-go](https://github.com/msfp-io/msfp-go) (module `github.com/msfp-io/msfp-go`, v0.1.0), package `msfp` at its root, with the toolkit `wire`, two stores (`store/memory`, `store/jsonfile`) and an example host (`examples/share-folder`, about 400 lines) |
+| Go engine | **built**: [msfp-io/msfp-go](https://github.com/msfp-io/msfp-go) (module `github.com/msfp-io/msfp-go`, v0.2.0), package `msfp` at its root, with the toolkit `wire`, two stores (`store/memory`, `store/jsonfile`) and an example host (`examples/share-folder`, about 400 lines) |
 | Overfin on the engine | **built**: [overfin.md](overfin.md) |
 | C# engine (`msfp-dotnet`) | **not built yet**. Its forms below are the design |
 

@@ -19,6 +19,11 @@ the engine. Notation: [README](README.md#notation). Each interface is a
 Without Catalog, Playback and Media, the host offers nothing and every
 `play` is answered `404`. It can still read and play its peers' titles.
 
+The host may be a separate service beside its media server rather than
+inside it ([core 1](../spec/v1/core.md#1-overview-and-terms)): it then
+relays the media, and holds the narrowest credential of the media server
+it can (a dedicated account limited to the offered libraries).
+
 ## 1. Store
 
 Spec: [core 7.2](../spec/v1/core.md#72-what-each-side-stores),
@@ -162,7 +167,11 @@ a warning in the log).
   ([engine.md section 10](engine.md#10-data-objects)). Its `Libraries`
   are the host libraries that hold it. The engine sends one public ID.
 - A title its part can't name (no TMDB ID, no recording MBID) is not
-  listed.
+  listed. An episode is named by its TMDB episode ID, looked up at TMDB
+  when the media server stores none: its numbers are often not TMDB's
+  ([video 4.1](../spec/v1/video.md#41-episode-order)).
+- A video title's `Subtitles` are the languages of the tracks `play`
+  would list: those the host can serve.
 - **Pictures.** A film's or episode's `Pictures` are each copy's:
   `Height` (for a picture wider than 16:9, a 16:9 picture's as wide) and
   `HDR` (`hdr10`, `hlg`, `dv`). A copy of unknown size is left out. The
@@ -212,15 +221,31 @@ picked one, and refused what the pairing's limits refuse early.
 | `Progress(handle, positionMs, paused)` | a peer's `progress`, passed on for the host's live view |
 | `Stop(handle, reason: EndReason)` | the playback ended; once for each `Start` that succeeded |
 
-**`CopyInfo`**: `AudioTracks`, `SubtitleTracks` (`Track`s; picture
-subtitles other than PGS left out), `DurationMs`, `EpisodeStartMs`
-(inside a copy holding several; 0 unknown), `Trickplay` (nil for none).
+**`CopyInfo`**: `AudioTracks`, `SubtitleTracks` (`Track`s: only those
+the host can serve as [video 6.2](../spec/v1/video.md#62-what-is-fetched)
+says, WebVTT parts for text and raw PGS parts for pictures; picture
+subtitles other than PGS left out), `DurationMs` (the whole copy),
+`Parts` (the files the copy is made of, played one after the other as
+one; 0 or 1: one file), `EpisodeStartMs` (inside a copy holding several;
+0 unknown), `Trickplay` (nil for none).
+
+- A copy of several parts is served as `hls`, never `file`
+  ([media 1](../spec/v1/media.md#1-the-urls)): the engine refuses a
+  `Started` with `file` for it (the host's playback stopped, `500`).
+- Languages (`Track.Language`, a title's `Audio` and `Subtitles`, a
+  `Copy`'s `Audio`) may be the media server's codes: the engine sends
+  them as `wire.SentTag` gives them (`fre` and `fra` as `fr`;
+  [catalog 3](../spec/v1/catalog.md#3-titles)).
+- `Default` is the track the file marks as default, never a person's
+  saved choice; `Role` is best effort, absent for the title's own sound
+  ([playback 2.3 and 2.6](../spec/v1/playback.md#26-choosing-the-copy-and-the-tracks)).
 
 **`StartRequest`**:
 
 | Field | Content |
 |-------|---------|
 | `Copy`, `Title` | the copy's handle; the key played (an episode's, in a copy holding several) |
+| `Parts` | the copy's parts, as `Describe` said (1 for one file): several are started as `hls` |
 | `AudioOnly` | a music track: serve no video |
 | `Peer` | `PeerRef{ID, Name}`, for the live view; never a person |
 | `AudioTrack`, `SubtitleTrack` | the engine's choice (empty: none shown); subtitles never make a playback transcode |
@@ -252,7 +277,7 @@ the limits refuse it.
 | `Protocol`, `MimeType` | `hls` or `file`; a `video/` or `audio/` type for `file` |
 | `PositionMs` | where it starts |
 | `Info` | `PlaybackInfo{Reasons, Container, BitrateKbps, Video, Audio}`; `Video` and `Audio` are `StreamInfo{Codec, Profile, Width, Height, BitDepth, Range, BitrateKbps, Channels, Language}` |
-| `Segments` | skip markers, `{Kind, StartMs, EndMs}` |
+| `Segments` | skip markers, `{Kind, StartMs, EndMs}`; credits are `outro`; `EndMs` 0 for an end not known, sent as the copy's `DurationMs` |
 
 The engine then makes the playback ID and the ticket, builds the URLs,
 the versions, tracks and previews, and answers the peer.

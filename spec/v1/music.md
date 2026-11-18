@@ -37,6 +37,11 @@ specifications.
 - **Track**: a recording: one performance, wherever it appears.
 - **Scheme**: `music` 1 has one, `mb` (MusicBrainz).
 
+Tagging tools write the recording MBID in the tag named "MusicBrainz
+Track Id", and the release track's in "MusicBrainz Release Track Id":
+`track/mb/…` takes the first, `mbtrack` the second. Media servers name
+their fields after the tags, so the two are easily confused.
+
 ## 2. Title keys
 
 Three kinds of title, named by MBIDs:

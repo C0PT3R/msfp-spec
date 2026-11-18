@@ -184,6 +184,13 @@ func verifyAll(read func(string) []byte) []error {
 			bad("v1/strict.json: helloVersions %q: the file says valid=%v, output %q; the rules give %v, %q", str(x, "name"), x["valid"], str(x, "output"), err, got)
 		}
 	}
+	for _, v := range load("v1/strict.json")["languageCodes"].([]any) {
+		x := v.(obj)
+		got, err := sentTag(str(x, "text"))
+		if (err == nil) != (x["valid"] == true) || got != str(x, "output") {
+			bad("v1/strict.json: languageCodes %q: the file says valid=%v, output %q; the rules give %v, %q", str(x, "text"), x["valid"], str(x, "output"), err, got)
+		}
+	}
 	verdicts("v1/media.json", "hls", func(x obj) error { return checkPlaylist([]byte(str(x, "text"))) })
 	verdicts("v1/media.json", "pgs", func(x obj) error { return checkPGS(text(x)) })
 	for _, v := range load("v1/media.json")["webvtt"].([]any) {

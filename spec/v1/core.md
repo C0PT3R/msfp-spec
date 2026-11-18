@@ -78,6 +78,12 @@ each trusts only the servers it paired with.
   **title key**, **playback**, **ticket**: defined by the parts that use
   them ([catalog](catalog.md#1-terms), [playback](playback.md#1-terms)).
 
+An implementation may run beside its media server rather than inside it,
+with its own address, or behind the same reverse proxy with a discovery
+`base` (section 11). It then relays the media, and holds a credential of
+the media server; it should hold the narrowest one the media server
+allows (a dedicated account limited to the offered libraries).
+
 Every call is an HTTP `POST` with a JSON body, signed by the caller. Every
 answer to a known key is signed by the server answering. The media itself
 is fetched with plain `GET` requests that carry a ticket only
@@ -2177,6 +2183,7 @@ generator also checks them.
 | `strict.json` | addresses and codes with their verdicts under core 1 (`https` only) |
 | `strict.json`, `destinations` | IP addresses a server connects to for a peer by default, or refuses (section 3.3) |
 | `strict.json`, `uncallableAddresses` | addresses of a server that can't be called, `https://msfp-<26>.invalid`, with their verdicts (section 5.2) |
+| `strict.json`, `languageCodes` | media servers' language codes and the tag sent for each, or none ([catalog section 3](catalog.md#3-titles)) |
 | `strict.json`, `helloVersions` | `hello` bodies and the versions a receiver keeps of them, or a bad body: `"core":[1,2.5]` lists core 1, and an unknown member or part of `null` is ignored (sections 2.3 and 10.2) |
 | `media.json` | WebVTT parts and what rebuilding them gives, HLS playlists and PGS parts, with their verdicts ([media section 3](media.md#3-what-is-fetched), [video section 6](video.md#6-media)) |
 | `music.json` | music title keys and music titles, with their verdicts and what the caller keeps of each title ([music sections 2 and 3](music.md#2-title-keys)) |
@@ -2560,3 +2567,32 @@ unclear while the engine's API was written down:
     ([music section 3.2](music.md#32-what-the-caller-keeps)); the
     viewer's server may pass a peer's `416` for a range the viewer asked
     for ([media section 2.3](media.md#23-statuses)).
+
+**Platform neutrality, decided by the owner on 2026-11-18**, from the
+check of how Plex and Emby map onto MSFP
+([api/platforms.md](../../api/platforms.md#5-what-the-spec-should-change-or-state)):
+
+43. Two changes. A copy may be several files played one after the other
+    as one (parts); `file` is only for a copy of one file, and a copy of
+    several parts is served as `hls`
+    ([playback section 1](playback.md#1-terms),
+    [media section 1](media.md#1-the-urls)). Only the subtitle tracks the
+    owning server can serve are listed, and a title's `subtitles` follow
+    the same rule ([video sections 3 and 5.4](video.md#54-choosing-the-subtitles)).
+44. Nine points stated: episodes keyed by their TMDB episode ID, looked
+    up with the owning server's own TMDB access, a media server's numbers
+    not being TMDB's by default ([video sections 4.1 and 7](video.md#41-episode-order));
+    credits are `outro`, a marker with no known end ends at `durationMs`
+    ([video section 5.3](video.md#53-the-answer)); previews kept one image
+    per interval are tiled into sheets, every *n*-th image allowed
+    ([video section 5.5](video.md#55-seek-bar-previews)); the default
+    audio is the file's, never a person's saved choice, and `role` is best
+    effort, absent meaning the title's own sound
+    ([playback sections 2.3 and 2.6](playback.md#26-choosing-the-copy-and-the-tracks));
+    ISO 639-2 codes sent as ISO 639-1
+    ([catalog section 3](catalog.md#3-titles), vectors `languageCodes`);
+    the tag "MusicBrainz Track Id" holds the recording MBID
+    ([music section 1](music.md#1-terms)); with `file`, the viewer's
+    player selects `audioTrack` itself
+    ([media section 1](media.md#1-the-urls)); an implementation may run
+    as a separate service, holding the narrowest credential (section 1).

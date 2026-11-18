@@ -38,8 +38,10 @@ specifications.
 - **Viewer's server**: the server whose signed-in person watches a title
   the owning server holds. The person's browser only ever talks to the
   viewer's server.
-- **Copy**: one file of a title on the owning server. A title may have
-  several (versions).
+- **Copy**: one version of a title on the owning server: one file, or
+  several files played one after the other as one (parts). A title may
+  have several copies (versions). Positions, `durationMs` and the
+  content parts' markers are in the whole copy.
 - **Playback**: one stream the owning server runs for the viewer's
   server. It has a playback ID and a ticket.
 - **Ticket**: an opaque string in the stream URLs. It is the only
@@ -179,6 +181,11 @@ a viewer's server passes them back only in a later `play` of the same
 title. Track IDs (`a<n>`, `s<n>`) are positions, not identifiers, and are
 not concerned.
 
+**Roles are best effort.** `role` is absent when the owning server
+doesn't know it; it may guess from a track's title. A viewer's server
+treats an absent role as the title's own sound, so an unflagged
+commentary may be chosen by language (section 2.6).
+
 When the answer breaks a "must" above, the viewer's server sends `stop`
 for that `id` and gives up.
 
@@ -229,8 +236,9 @@ The owning server chooses in this order: the copy, then the audio, then
 the subtitles ([video section 5.4](video.md#54-choosing-the-subtitles)),
 then how to serve it. A track ID (`a<n>`, `s<n>`) names a
 track of the copy chosen. Section 2.2 already refused a malformed ID
-(`400`). "The default audio" is the track the copy marks as default, else
-its first audio track. Language matching takes the same tag first
+(`400`). "The default audio" is the track the copy's file marks as default, else
+its first audio track; never a choice a person of the owning server
+saved. Language matching takes the same tag first
 (`fr-CA` for `fr-CA`), then the same base language (`fr` for `fr-CA`),
 and for audio only the title's own sound, never a commentary or a
 description.
@@ -498,3 +506,10 @@ out of this part on 2026-11-17):
 9. **`subtitleTrack` is still named here** (sections 2.2 and 2.6): the
    order of the choice and the tables of the copy and the audio stay
    here; the subtitles' table moved to video.
+
+**Decided by the owner on 2026-11-18** (platform neutrality,
+[core open questions 43 and 44](core.md#18-open-questions)):
+
+10. **A copy may be several files** (section 1), played as one; the
+    default audio is the file's, never a person's saved choice
+    (section 2.6); `role` is best effort (section 2.3).

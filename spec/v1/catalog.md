@@ -173,7 +173,11 @@ and tracks.
 ISO 639-1 code where one exists (`en`, `fr`), else ISO 639-2/T or 639-3
 (`yue`), with a region when known (`fr-CA`), in the case conventions of
 [core section 2.5](core.md#25-case). `und`, `mul`, `zxx` and `mis` are not
-sent.
+sent. Media servers often give the file's ISO 639-2/B code (`fre`,
+`ger`, `chi`) or its 639-2/T code (`fra`, `deu`, `zho`); either is sent
+as the ISO 639-1 code (`fr`, `de`, `zh`), a region kept (`fre-CA` is
+sent `fr-CA`). Test cases: `languageCodes` in
+[vectors/v1/strict.json](../../vectors/v1/strict.json).
 
 ### 3.1 Paging and ordering
 

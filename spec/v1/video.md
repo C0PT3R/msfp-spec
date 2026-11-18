@@ -52,7 +52,7 @@ A video title in `titles` carries the members of
 |-------|------|---------|
 | `kind` | string | `movie`, `series`, `season` or `episode`: the kind its key names |
 | `audio` | array of string, optional | films and episodes only: its copies' audio languages, as language tags ([catalog section 3](catalog.md#3-titles)) |
-| `subtitles` | array of string, optional | films and episodes only: its copies' subtitle languages, as tags |
+| `subtitles` | array of string, optional | films and episodes only: its copies' subtitle languages, as tags: the languages of the subtitle tracks `play` would list (section 5.4) |
 | `video` | object, optional | films and episodes only: what its best copy offers for playing (section 3.2) |
 | `with` | array of string, optional | episodes only: the keys of the other episodes the same copy holds (section 4.2) |
 | `ids` | object, optional | films, series and episodes: other identifiers of the same title, by scheme (section 4.3) |
@@ -198,6 +198,14 @@ An episode TMDB lists is sent with the `e<episode id>` form. The
 (yet), in a season TMDB numbers; its numbers continue TMDB's numbering of
 that season. A receiver matches it only against the same form.
 
+A media server's season and episode numbers are often not TMDB's (some
+keep the files' numbers, often TheTVDB's; others follow the order chosen
+for the show). An owning server should key each episode by its TMDB
+episode ID, and look it up at TMDB when its media server doesn't store
+one; it uses its stored numbers only when it knows they are TMDB's. Such
+lookups need the owning server's own TMDB access, kept within TMDB's
+limits (section 7).
+
 The order a server shows its people is its own business and never
 appears in keys.
 
@@ -302,6 +310,11 @@ checks and cleans every field, as listed.
 | `segments` | array, optional | skip markers `{kind, startMs, endMs}` | kinds `intro`, `outro`, `recap`, `preview`, `commercial`; within 100 days; at most 32 kept |
 | `trickplay` | trickplay object, optional | the seek-bar previews of the copy playing (section 5.5) | sheet URLs checked (section 6.1); out of bounds: dropped |
 
+**Skip markers from other media servers.** Credits are `outro`. A
+marker whose end the owning server doesn't know (credits that run to the
+end) ends at the copy's `durationMs`. An owning server that knows only
+some kinds sends those.
+
 A subtitle track is a track of playback section 2.3, with the ID
 `s<n>`, and these members besides:
 
@@ -331,8 +344,9 @@ When `subtitleLanguage` matches both a regular track and a forced one,
 the regular track is the one chosen; the forced one is still
 `forcedTrack`, as below. Whatever is chosen, `forcedTrack` is the forced
 track in the language of the audio played, when the copy has one. Every text and PGS subtitle
-track is listed, whichever is shown; picture formats other than PGS are
-not listed.
+track the owning server can serve as section 6.2 says is listed,
+whichever is shown; a track it can't serve that way, and picture formats
+other than PGS, are not listed.
 
 ### 5.5 Seek-bar previews
 
@@ -357,6 +371,9 @@ a full sheet.
 Besides those bounds, a full sheet is at most 4,096 pixels each way:
 `columns` × `tileWidth` ≤ 4,096 and `rows` × `tileHeight` ≤ 4,096.
 
+- An owning server whose media server keeps one image per interval
+  (BIF files) tiles them into sheets; it may send every *n*-th image,
+  with `intervalMs` multiplied by *n*, to stay within the bounds.
 - The owning server sends `trickplay` only when it has previews for the
   copy playing, within these bounds. It sends one set, not one per width;
   a set near 320 pixels wide is a good choice. Without previews, it leaves
@@ -592,6 +609,9 @@ server, an empty part included. It accepts only PGS as picture subtitles; other 
   names and pictures up at TMDB. A compromised peer can make it look up
   a long title list; readers cap what they keep
   ([catalog section 6](catalog.md#6-security-considerations)).
+  An owning server that looks up TMDB episode IDs (section 4.1) does so
+  with its own TMDB access, within TMDB's limits, caching what it
+  learns.
 - **Preview sheets are images from another server**, the only ones a peer
   sends. Check a sheet's byte size first, then its dimensions from its
   header against the layout, and only then decode it. Re-encode it, so
@@ -662,3 +682,8 @@ out of `catalog`, `playback` and `media` on 2026-11-17):
    (section 3.1), are in a file of their own,
    [vectors/v1/video.json](../../vectors/v1/video.json); the WebVTT and
    PGS cases stay where point 8 says.
+10. **Platform neutrality** (sections 3, 4.1, 5.3, 5.4, 5.5 and 7): only
+    the subtitles the owning server can serve are listed; episodes keyed
+    by their TMDB episode ID; credits, markers without an end, BIF
+    previews. With the rest of the check of Plex and Emby,
+    [core open questions 43 and 44](core.md#18-open-questions).

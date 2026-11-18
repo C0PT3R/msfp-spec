@@ -196,7 +196,9 @@ revocation statement, a `hello` carrying `core`, `parts`,
 `certificates` and `address`, and the `hello`s of a server that can't be
 called, with a rotation and a revocation pulled in an answer
 ([core section 17](core.md#17-test-vectors)), the addresses of servers
-that can't be called (`uncallableAddresses` in `strict.json`), the
+that can't be called (`uncallableAddresses` in `strict.json`), media
+servers' language codes and the tags sent (`languageCodes` in
+`strict.json`), the
 destinations a server
 refuses to connect to (`destinations` in `strict.json`), and WebVTT,
 HLS and PGS cases with their verdicts (`media.json`, media section 3 and

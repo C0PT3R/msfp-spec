@@ -3,9 +3,14 @@
 **Informative, not part of the protocol.** This note asks whether MSFP
 version 1 could be built on Plex Media Server and on Emby Server, not
 only on Jellyfin, and where Jellyfin's ways may have slipped into the
-specification. It changes nothing a server sends or accepts. Its
-recommendations go to the specification's owner; nothing here is
-decided.
+specification. It changes nothing a server sends or accepts by itself.
+
+**Adopted.** The owner accepted every point of
+[section 5](#5-what-the-spec-should-change-or-state) on 2026-11-18, the
+two changes and the nine clarifications, with the wording proposed there;
+they are in [spec/v1](../spec/v1/README.md)
+([core open questions 43 and 44](../spec/v1/core.md#18-open-questions)).
+The rest of this note is as written before.
 
 Written 2026-11-18, against the drafts of [spec/v1](../spec/v1/README.md)
 and [host.md](host.md) of that day. Sources are linked in each section.
@@ -469,6 +474,12 @@ What the two Jellyfin implementations met (Overfin as a separate service,
 - Jellyfin has no commentary flag either **(unconfirmed)**.
 
 ## 5. What the spec should change or state
+
+All adopted by the owner on 2026-11-18, as proposed (point 8 with a
+region kept and 639-2/T codes too, and test cases, `languageCodes` in
+[vectors/v1/strict.json](../vectors/v1/strict.json); point 3's TMDB
+lookups in [video section 7](../spec/v1/video.md#7-security-considerations);
+point 11 in [core section 1](../spec/v1/core.md#1-overview-and-terms)).
 
 ### 5.1 Must change to be platform-neutral
 

@@ -280,6 +280,7 @@ type v1StrictFile struct {
 	Dests     []verdict          `json:"destinations"`
 	Uncalled  []verdict          `json:"uncallableAddresses"`
 	Hellos    []helloVersionCase `json:"helloVersions"`
+	Languages []languageCase     `json:"languageCodes"`
 }
 
 // addrBPrivate is server B's address once it can't be called.
@@ -348,6 +349,7 @@ func genV1Strict() []byte {
 			"destinations: IP addresses a server connects to for a peer by default (valid), or refuses (spec/v1/core.md section 3.3; also version 0's section 3.2).",
 			"uncallableAddresses: the address a server that sends inbound false must have, https://msfp-<26>.invalid, the 26 characters being 16 bytes in lowercase base32 with the unused bits zero (spec/v1/core.md section 5.2).",
 			"helloVersions: hello bodies (text) and what a receiver keeps of their versions (output: core, and each known part by name; spec/v1/core.md sections 2.3 and 10.2), or a bad body (valid false). A number that isn't an integer is valid I-JSON, and is ignored in a version list.",
+			"languageCodes: a media server's language code (text) and the tag a server sends for it (output), or none (valid false): an ISO 639-2 code, /B or /T, of a language with an ISO 639-1 code sent as that code, the rest kept, in BCP 47's case conventions; und, mul, zxx and mis not sent (spec/v1/catalog.md section 3, language tags; spec/v1/core.md section 2.5).",
 		},
 		Addresses: addressVerdicts(false),
 		Codes:     codeVerdicts(core1, false),
@@ -356,5 +358,6 @@ func genV1Strict() []byte {
 		Dests:     destinationVerdicts(),
 		Uncalled:  uncallableVerdicts(),
 		Hellos:    helloVersionCases(),
+		Languages: languageCases(),
 	})
 }
