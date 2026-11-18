@@ -2082,3 +2082,22 @@ the owner on 2026-11-17; they may still change as implementations show)
     values Overfin uses. Confirmed by the owner on
     2026-11-17 (before, the per-peer, global, concurrent and `play`
     limits had none).
+
+**Outside services** (raised by the owner on 2026-11-17)
+
+26. **Depending on TMDB and MusicBrainz.** Title keys use their
+    identifiers, which is safe: a key is a string, and two servers compare
+    keys without asking anyone. Calling the service is the weak spot: a
+    video title carries a key only, so a viewer's server needs TMDB (a
+    company, proprietary data, a key required, terms that can change) to
+    show its name and pictures. MusicBrainz is a nonprofit with CC0 data
+    that can be mirrored. Three possible answers, none decided:
+    1. A statement here: no outside service is needed to speak MSFP;
+       schemes are identifier namespaces.
+    2. Optional descriptions for video titles (name, year), as music
+       titles carry ([proposal 11](../../proposals/0011-music.md), open
+       point 2), so that a viewer's server can list a peer's titles
+       without TMDB.
+    3. Wikidata (CC0, a nonprofit) as a later neutral scheme: it links
+       TMDB, IMDb, TVDB and MusicBrainz identifiers, a way out if TMDB
+       ever became a problem.
