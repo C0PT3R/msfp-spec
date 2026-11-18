@@ -126,7 +126,7 @@ title by title:
   or repeated entry is skipped; at most 16 kept, the first.
 - `album`: a valid album key; any other counts as absent.
 - `disc`, `number`, `year`, `durationMs`: integers in the ranges above;
-  any other counts as absent.
+  any other counts as absent. A `durationMs` of 0 counts as absent too.
 - `ids`: values of known schemes in their form, for the kinds the table
   of section 3.1 gives; others are skipped. MBIDs there have the form of
   section 2.

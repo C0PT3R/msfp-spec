@@ -254,7 +254,7 @@ values are ignored):
 |-------|------|--------|
 | `videoCodecs` | array of string | `h264`, `hevc`, `av1`, `vp8`, `vp9` |
 | `hdr` | array of string | `hdr10`, `hlg` |
-| `maxHeight` | integer | pixels; 0 means not said |
+| `maxHeight` | integer | pixels, 0 to 100,000; 0 means not said; a negative or larger value is refused (`400`) |
 | `subtitles` | array of string | no values are defined yet; send `[]` or leave it out |
 
 **Coarsening**, besides playback section 2.1's: `maxHeight` stepped down
@@ -327,8 +327,10 @@ make a playback transcode, and the choice only says which track to show.
 | absent | a track matches | that track |
 | absent | absent, or no track matches | absent: none shown |
 
-Whatever is chosen, `forcedTrack` is the forced track in the language of
-the audio played, when the copy has one. Every text and PGS subtitle
+When `subtitleLanguage` matches both a regular track and a forced one,
+the regular track is the one chosen; the forced one is still
+`forcedTrack`, as below. Whatever is chosen, `forcedTrack` is the forced
+track in the language of the audio played, when the copy has one. Every text and PGS subtitle
 track is listed, whichever is shown; picture formats other than PGS are
 not listed.
 

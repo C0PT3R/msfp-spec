@@ -106,7 +106,9 @@ of this section: library IDs, version IDs
 tickets ([playback](playback.md#2-play), [media](media.md#1-the-urls)).
 None may be, contain, or be computable from, an identifier of the media
 server, a file, a path or a name. Track IDs (`a<n>`, `s<n>`) are
-positions, not identifiers.
+positions, not identifiers: they have only the forms `a<n>` and `s<n>`
+([playback section 2.1](playback.md#21-the-request)), and no other rule
+for identifiers applies to them.
 
 ### 2.2 What the caller keeps
 
@@ -193,6 +195,12 @@ sent.
   still keeps its change log back to `since`, `since` isn't above its
   current `seq`, and what it offers the caller hasn't changed since
   `since`. Otherwise it answers with the whole list, whatever `since` was.
+  A change of what it offers the caller (section 5), and a change of
+  which parts are on between the two servers
+  ([core section 10](core.md#10-versions-and-parts)), count as such
+  changes: they force a whole reading. A receiver that keeps a change log
+  gives each one a number there, so that a `since` from before it gets
+  the whole list.
 - A caller asks with `since` only when `libraries` is exactly the set of
   the reading that gave that `seq`; otherwise it asks for the whole list.
 - The first page decides which kind of reading it is, and its `seq` is
@@ -201,6 +209,10 @@ sent.
 - After a whole-list reading, the caller drops every title of that peer
   it didn't see in the reading's pages. After a changes reading, it keeps
   `titles` (new or changed) and drops `gone`.
+- A reading counts only once its last page is read. A whole-list reading
+  that fails halfway (a failed answer, no answer, its time used up)
+  changes nothing: the caller keeps the list of its last complete reading
+  and drops the pages it read.
 - A title has changed when anything sent for it changes: its `kind` or
   `library`, or any member its content part adds (video's `audio`,
   `subtitles`, `video`, `with` and `ids`, music's descriptions). A changes reading

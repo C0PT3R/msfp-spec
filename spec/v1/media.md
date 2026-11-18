@@ -145,8 +145,10 @@ other method is refused (`404` or `405`).
 
 [Core section 8.4](core.md#84-media-answers) lists what each status
 means. The viewer's server accepts `200` and, under section 2.1, `206`;
-anything else is a failed fetch. It never passes on the owning server's
-body or headers with a failure, and it doesn't retry a failed fetch by
+anything else is a failed fetch, with one exception: a `416` to a range
+the viewer asked for may be passed to the viewer as a `416` of its own,
+without the owning server's body or headers. It never passes on the
+owning server's body or headers with a failure, and it doesn't retry a failed fetch by
 itself, except once after a renewed certificate (section 2).
 
 ### 2.4 Bounds

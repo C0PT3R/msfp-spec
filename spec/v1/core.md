@@ -782,7 +782,9 @@ that doesn't exist (section 3). The sender learns nothing about why. There
 is one exception, in step 8: a key whose pairing this receiver ended
 (section 7.4), or a suspended key on a call other than `rotate` and
 `revoke` (section 12.6), gets a **signed** `404`, so that its server can
-trust it.
+trust it. A request signed with the receiver's own key (the address check
+of section 13.1, step 2) gets a `404` signed with that same key, so that
+only the server itself can produce that answer.
 
 ### 6.5 Nonces, replay and restarts
 
@@ -1010,7 +1012,8 @@ requests and answers (section 9.2) carry an optional boolean `inbound`.
   any failure to make the connection (no route, refused, timed out, a
   name that doesn't resolve, TLS failing), except two: a certificate
   refused by section 3.2, and a destination refused by the server's own
-  rules (section 3.3).
+  rules (section 3.3). The answering server stops sending it once a call
+  of its own to the caller succeeds again; `pair` doesn't count.
 
 **What a peer does toward a server that can't be called.** Toward a peer
 whose `inbound` is `false`, a server opens no connection at all. Each
@@ -1035,7 +1038,11 @@ When a peer's `inbound` changes from `false` to `true`, the server
 confirms the peer's address as section 13.2, step 2 does (a `hello`
 there, answered under the peer's key) before it makes any other call to
 it: the stored address, or the new one when the same `hello` names one.
-Until that `hello` succeeds, it goes on as if `inbound` were `false`.
+Only a `200` answer confirms it; a signed `404` there doesn't. Until that
+`hello` succeeds, it goes on as if `inbound` were `false`, and retries as
+section 13.2, step 3 says (at most once an hour). An answer that carries
+`inbound: false` puts the peer back as one that can't be called, and the
+confirmation stops.
 Once it succeeds, the server reads the peer's catalog at once
 ([catalog section 3.2](catalog.md#32-whole-list-or-changes)): what it
 dropped while the peer couldn't be called comes back without waiting
@@ -1068,6 +1075,13 @@ for the next reading.
 5. **`knownKey`.** Its `hello` requests carry `knownKey`, the key it
    checks the peer's answers against now, so that a rotation of the
    peer's key reaches it (section 12.4).
+
+**Turning it off.** When its operator says it can be called again, the
+server first checks its real address as section 13.1, step 2 does (a
+request of its own there, recognised as its own). Until that address is
+reached, it goes on as above: it keeps sending `inbound: false` with its
+address of section 5.2's form, and keeps its scheduled `hello`s. Then it
+announces the real address (section 13.2).
 
 What stays as it is: its own calls (`pair`, `hello`, `libraries`,
 `titles`, `play`, `progress`, `stop`, the media) and everything the peer
@@ -1448,7 +1462,8 @@ other caller they are ignored, whatever their value.
   refused request.
 
 Refusals: `404` (unsigned to unknown keys, signed to forgotten or
-suspended ones); a signed `404` for a bad body; `500`.
+suspended ones, signed with its own key to the server's own key, section
+6.4); a signed `404` for a bad body; `500`.
 
 When a paired peer gets a signed `404` `not-found` on a part's call, it
 sends a `hello` at once. The peer may have ended the pairing, or not have
@@ -1653,8 +1668,13 @@ an `application/json` document:
   The fetch is a plain `GET` with no signature headers, any certificate
   accepted (section 3.2), no redirects followed, and a body of at most
   16 KiB. A `404`, or any answer that isn't a valid document, means the
-  default base. The server stores the base with the peer, and may fetch
-  the document again when calls at the stored base keep failing.
+  default base. So does an answer whose media type (section 2.4) isn't
+  `application/json`: it is not a valid document. The server stores the
+  base with the peer.
+- **Fetching it again.** After 3 calls in a row to the peer that got an
+  answer not signed by the peer (an unsigned `404`, say), the server
+  fetches the document again, at most once an hour per peer. A fetch that
+  gets no answer at all keeps the stored base.
 - With discovery, a server hosted under a path can federate: its address
   stays `https://host[:port]` (section 5.2), and `base` gives the path.
   Section 6.2's `<target>` is the full path as sent.
@@ -1917,7 +1937,11 @@ date (within 5 minutes):
    `{"revocation":{"date":…,"signature":…}}`, newly dated in each
    answer, instead of the signed `404` of a forgotten
    key. So a peer that can't be called, and any peer `revoke` didn't
-   reach, learns of it and suspends the pairing.
+   reach, learns of it and suspends the pairing. After the 30 days, such
+   a peer's calls get the plain unsigned `404` of an unknown key
+   (section 6.4), not one signed with the new key, which it can't know;
+   its usual rules for that answer then apply (the retry of section 6.5,
+   and `gone` by section 9.2).
 3. In both cases, the operator makes a new next key and stores it
    offline.
 
@@ -1934,10 +1958,13 @@ A server whose address changes from A1 to A2:
 1. accepts requests whose signed host is A1's host or A2's host, for
    30 days, or until every peer has moved (it knows a peer has moved when
    that peer's requests are signed for A2's host). Every peer counts but
-   those that are `gone`;
+   those that are `gone`; a peer that never calls counts as not moved
+   until the 30 days end. The 30 days run from when A2 is reached
+   (step 2): if it never is, A1's host stays accepted;
 2. announces A2 only once A2 answers: it checks that by a request of its
    own to A2 whose answer it can recognise as its own (A2 must reach
-   this server, not another one), retrying until it does; until then it
+   this server, not another one: the `404` signed with its own key of
+   section 6.4), retrying until it does; until then it
    names A1. Then it
    sends `hello` with `address` A2 to every peer, at once and then at
    each contact; a peer that can't be called (section 7.5) learns it by
@@ -1974,8 +2001,9 @@ What a server does with a signed `hello`, request or answer, whose
    is ignored, and the stored one stays.
 2. It fetches the peer's discovery document at the new address
    (section 11), then calls `hello` there, signed for the new host. If
-   the answer verifies under the peer's current key, it stores the new
-   address and base. This proves the key holder actually answers there.
+   the answer is a `200` that verifies under the peer's current key, it
+   stores the new address and base; a signed `404` there confirms
+   nothing. This proves the key holder actually answers there.
    If that answer names yet another address, the confirmed one is stored
    all the same, and the third waits for the peer's next `hello`.
 3. If that `hello` fails, it keeps the old address and tries again
@@ -1998,7 +2026,8 @@ peer's, and keeps no former address. If the peer later sends
 `inbound: true`, the confirmation of section 7.5 happens then. A server that turns
 "can't be called" on moves this way to its address of section 5.2's
 form; one that becomes reachable announces its real address in a `hello`
-without `inbound: false`, and is confirmed by step 2. A move to or from
+without `inbound: false`, once it has reached that address itself
+(section 7.5, "Turning it off"), and is confirmed by step 2. A move to or from
 an address of that form keeps no former address (section 13.1).
 
 ## 14. Security considerations
@@ -2495,3 +2524,39 @@ question above; they settle points the text left unclear or got wrong.
     the relayed media type ([media section 3](media.md#3-what-is-fetched)),
     empty PGS parts, progress in a copy of several episodes, and `ids`
     ([video sections 4.3, 5.2, 6.2 and 6.4](video.md#64-pgs)).
+
+**Also decided by the owner on 2026-11-18**, points the text left
+unclear while the engine's API was written down:
+
+41. Keys and addresses: after the 30 days of a key replaced
+    (section 12.7, case 2), a former peer gets the plain unsigned `404`;
+    a request signed with the server's own key, its address check, gets
+    a `404` signed with that key (sections 6.4 and 13.1); the 30 days of
+    a move run from when the new address is reached, and a peer that
+    never calls counts as not moved until they end (section 13.1);
+    `callsFailed` clears at the next successful call, `pair` not counting
+    (section 7.5); a peer's discovery document is fetched again after 3
+    calls in a row answered but not signed by the peer, at most once an
+    hour, a fetch with no answer keeping the stored base, and a wrong
+    media type is no document (section 11); a server turning "can't be
+    called" off stays as it was until it reaches its real address
+    (sections 7.5 and 13.2); only a `200` `hello` at the new address
+    confirms a move, an answer with `inbound: false` during confirmation
+    puts the peer back as one that can't be called, and confirmation
+    retries at most once an hour (sections 7.5 and 13.2). Point 16's
+    "fetched again when calls fail" now has a rule.
+42. Catalog and playback: a change of offers, or of the parts on, forces
+    a whole reading, numbered in the change log
+    ([catalog section 3.2](catalog.md#32-whole-list-or-changes)); a whole
+    reading that fails halfway keeps the last complete list, its pages
+    dropped (the same section); track IDs have only the forms `a<n>` and
+    `s<n>` ([catalog section 2.1](catalog.md#21-library-ids)); a
+    negative or out-of-range `maxAudioChannels` or `maxHeight` gets
+    `400` ([playback section 2.2](playback.md#22-what-the-owning-server-does),
+    [video section 5.1](video.md#51-the-request)); a `subtitleLanguage`
+    matching a regular and a forced track chooses the regular one
+    ([video section 5.4](video.md#54-choosing-the-subtitles)); a music
+    `durationMs` of 0 counts as absent
+    ([music section 3.2](music.md#32-what-the-caller-keeps)); the
+    viewer's server may pass a peer's `416` for a range the viewer asked
+    for ([media section 2.3](media.md#23-statuses)).

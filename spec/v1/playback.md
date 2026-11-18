@@ -72,7 +72,7 @@ video codecs, HDR, height and subtitles):
 |-------|------|--------|
 | `containers` | array of string | `mp4`, `m4v`, `mov`, `webm`, `mkv`, `ts`, `mp3`, `aac`, `m4a`, `flac`, `ogg`, `opus`, `wav` |
 | `audioCodecs` | array of string | `aac`, `mp3`, `opus`, `vorbis`, `flac`, `ac3`, `eac3`, `alac`, `pcm_s16le` |
-| `maxAudioChannels` | integer | 0 means not said |
+| `maxAudioChannels` | integer | 0 to 64; 0 means not said |
 | `maxBitrateKbps` | integer | 0 to 10,000,000; 0 means not said |
 
 **Coarsening.** So that the owning server can't tell one device from
@@ -106,7 +106,9 @@ Its own apps' API, which is not MSFP, still lowercases.
 
 1. It refuses the request (`400`) when `title` isn't the key of a kind
    `play` takes in a content part on between the two servers
-   (section 2.4), or a number or tag is out of range.
+   (section 2.4), or a number or tag is out of range: a negative
+   number, or one above its range, among them `capabilities`'
+   `maxAudioChannels` and video's `maxHeight`.
 2. It refuses (`409` `stream-limit-reached`) when the pairing's `streams`
    limit is 0.
 3. It looks for its copies of that exact key in the libraries it offers
