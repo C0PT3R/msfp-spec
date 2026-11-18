@@ -1,148 +1,221 @@
-# MSFP version 0 conformance suite
+# MSFP version 1 conformance suite
 
 A program that plays a peer against a server you run, and checks that
-server against [spec/v0.md](../spec/v0.md) as corrected on 2026-11-16 and
-2026-11-17.
-Version 0 was a test draft, superseded by
-[version 1](../spec/v1/README.md) and not to be implemented, so this suite
-tests a draft no server should speak. A version 1 suite is coming.
+server against [version 1](../spec/v1/README.md): the
+[core](../spec/v1/core.md) and the parts
+[catalog](../spec/v1/catalog.md), [playback](../spec/v1/playback.md),
+[media](../spec/v1/media.md), [video](../spec/v1/video.md) and, when the
+server lists it, [music](../spec/v1/music.md). It tests version 1 only.
+The version 0 suite is in this repository's git history (up to commit
+`8cb79af`).
 
 It pairs with the server from a pairing code, then checks the pairing,
-`hello` in its states, signatures both ways, the strict forms of section
-2.1, replay and nonces, `libraries` and `titles` (whole, changes, paging,
-`gone`), refusals (signed and unsigned `404`s), and, when asked, rate
-limits and ending. Every check names the section it tests, and whether
-that section says *must* or *should*. The output is a list of PASS, FAIL
-and SKIP.
+`hello` and the versions and parts it carries, signatures both ways,
+the strict forms of core section 2, replay and nonces, the catalog,
+playback and media, rotation and revocation of its own key, address
+changes, and what a server does toward a peer that can't be called.
+Every check names the file and section it tests (`core 6.4`,
+`media 2.1`), whether that section says *must* or *should*, whether it
+needs the server's operator, and why it passed, failed or was skipped.
 
 It needs Python 3 and its standard library, nothing else (tested with
-Python 3.13): Ed25519 is bundled, in
-pure Python (the reference code of RFC 8032 with section 2.1's point
-checks on top). It is test code: slow, not constant-time, never for a key
-that matters.
-
-`play`, `progress`, `stop` and the media of section 10 aren't checked yet.
+Python 3.13). Ed25519 is bundled in pure Python (the reference code of
+RFC 8032 with core section 2.1's point checks on top), and so is the
+ECDSA P-256 code that makes the suite's own self-signed certificate. It
+is test code: slow, not constant-time, never for a key that matters.
 
 ## Running it
 
-The target must be able to reach the suite: the suite puts its own
-address in the `pair` request, and the target calls it there (`hello`
-when its operator accepts, and `libraries` and `titles` when it reads
-the suite's catalog). Section 3.2 lets servers refuse loopback, so run
-the suite on another machine, or another container, on a private
-network the target reaches.
+The server must be able to reach the suite: the suite puts its own
+address in the `pair` request, and the server calls it there (`hello`
+when its operator accepts, `libraries` and `titles` when it reads the
+suite's catalog, the confirming `hello` of an address change). Core
+section 3.3 has servers refuse loopback, so run the suite on another
+machine, or another container, that the server reaches.
 
-1. On the target, make a pairing code (it works once: one code per run).
+1. On the server, make a pairing code (it works once: one code per run).
+   A second code, given as `--code2`, adds the checks of a second
+   pairing (see below).
 2. Run the suite:
 
    ```sh
    python3 conformance/run.py \
-       --code 'overfin-pair-1.…' \
-       --address http://192.0.2.40:8000 \
+       --code 'msfp-pair-1.…' \
+       --address https://192.0.2.40:8000 \
        --listen 0.0.0.0:8000
    ```
 
-   `--address` is where the target reaches the suite (`http://` only:
-   the suite serves no HTTPS); `--listen` is where it listens.
-3. When the suite says so, accept the pairing on the target. Check the
-   fingerprint it prints against the target's page. The suite waits
-   `--accept-timeout` seconds (600 by default).
-4. On the target, offer this peer at least one library, ideally with two
-   titles or more: the `titles` checks are skipped when nothing is
-   offered.
+   `--address` is where the server reaches the suite; `--listen` is
+   where the suite listens. The suite also listens on the next port
+   (8001 here) for the address-change checks: open both, or give
+   `--new-address` and `--new-listen`, or `--skip AD`.
+3. When the suite says so, do what it asks on the server: accept the
+   pairing first (check the fingerprint it prints against the server's
+   page). The suite waits for each step (`--accept-timeout`, 600 s;
+   `--operator-timeout`, 300 s); press Enter to skip a step.
+4. On the server, offer this peer at least one library holding a film
+   or an episode that plays: the catalog, playback and media checks are
+   skipped otherwise.
 
-Without `--code`, only the checks a stranger can make run (S1 to S4).
+Without `--code`, only the checks a stranger can make run (S1 to S4,
+D1), against `--target`.
 
-The suite offers the target one library, "Conformance films", with three
-films on two pages. To check the target as a reader too (Q1 to Q3), pass
-`--reader-timeout 120` and, on the target, want that library. The
-suite's first page is short and still has `next`, on purpose, to see
-that the target follows it; section 9.4 says a whole-list `next` comes
-only after a full page of 5,000, so the suite itself breaks that rule
-there.
+### HTTPS and pins
 
-Options that change the target, or load it, are off by default:
+Every call is over HTTPS, both ways, as core section 3 says. The suite
+serves HTTPS with a self-signed ECDSA P-256 certificate it makes for the
+run (for the host of `--address` and of the new address), and names its
+pin in every `hello` it sends or answers. The server must therefore
+accept it as core section 3.2 says: any certificate for `pair` and
+`hello`, the named pin for everything else. `--tls-cert` and
+`--tls-key` give a certificate of your own instead.
+
+As a client, the suite follows section 3.2 too: `pair`, `hello` and the
+discovery document take any certificate; every other call, and every
+media fetch, needs a certificate that is publicly trusted or whose pin
+the server named in its latest signed `hello` (a refused one sends a
+`hello` and tries once more, as for a renewal).
+
+### Plain http, for implementations' test switches
+
+`--plain-http` runs everything over plain `http`, both ways: the codes,
+the addresses and the calls. This is **outside the protocol**: core
+section 3.1 lets an implementation offer plain `http` as a test switch
+for its own development, and nothing else. The HTTPS checks are skipped
+then (H4 to H6, and the certificate rules everywhere else).
+
+### Checks that need the operator
+
+Some checks need the server's operator to do something on the server.
+They are marked `[operator]`:
+
+| Step | Checks |
+|------|--------|
+| accept the pairing | W4, and everything after it |
+| want the suite's library "Conformance films" | Q1 to Q3 |
+| add one title to an offered library and remove one (with `--watch-changes SECONDS`) | T9 |
+| accept the second pairing (with `--code2`) | UP2, UP3 |
+| confirm the suite's pending key rotation | K11 |
+| rotate the server's own key | O1, O2 |
+| rotate it again, while the suite can't be called | O3 |
+| revoke the server's key (with a rotation in the same action, if it has one) | O4 |
+
+They run when the suite is run from a terminal (or with `--operator`);
+not run interactively, they are skipped with that reason. `--no-operator`
+skips them all. The pairing must still be accepted: with
+`--no-operator`, the suite waits `--accept-timeout` (60 s by default
+then) for a test switch that accepts it by itself, and skips everything
+after the pairing if nothing does.
+
+### Other options
 
 | Option | What it does |
 |--------|--------------|
-| `--watch-changes SECONDS` | T8: asks you to add one title to an offered library and remove one on the target, then reads `since` until the change shows, and checks that `titles` and `gone` add up to the new whole list. |
-| `--load` | R1 and R2: sends `--load-count` (1,000) calls at once over 32 connections, and expects a signed `429` `rate-limited` (or `503` `server-busy`) with `retryAfter` (section 8.3). The numbers are each server's, so a burst that meets no limit is a SKIP unless it was big and fast (1,000 calls at 300 a second or more); a pure-Python client rarely gets there over HTTPS. |
-| `--end` | E1 and E2: ends the pairing with `hello` `ended` (section 7.4). Without it, the pairing stays: remove the peer on the target afterwards. |
+| `--code2 CODE` | P11: a second live code from the known key gets the signed `409` with no body; then UP1 to UP4: a second pairing, as a server that can't be called (`inbound: false`, an address `https://msfp-<26>.invalid`), accepted by the operator, ended with `hello` `ended` |
+| `--load` | R1 and R2: a burst of `--load-count` (1,000) calls over 32 connections, expecting a signed `429` `rate-limited` (or `503` `server-busy`) with `retryAfter`, then calls passing again. A burst that meets no limit is a SKIP unless it was big and fast (1,000 calls at 300 a second or more) |
+| `--end` | E1 and E2: ends the pairing with `hello` `ended`. Without it, the pairing stays: remove the peer on the server afterwards |
+| `--skip IDS` | skips checks by ID or prefix: `--skip AD,X1,U` |
+| `--uncallable-watch SECONDS` | how long the suite watches that nothing connects to it once it says it can't be called (20) |
+| `--connect host:port` | connects elsewhere than the server's address says, the requests staying signed for the address |
+| `--key FILE` | keeps the suite's key between runs |
+| `--json FILE` | the results as JSON |
+| `-v` | the whole detail of passing checks too |
 
-Other options: `--target` (the target's address, when not given by a
-code), `--connect host:port` (connect elsewhere than the address says,
-the requests staying signed for the address), `--key FILE` (keep this
-peer's key between runs), `--json FILE` (the results as JSON), `-v`
-(details of passing checks too). The exit status is 1 when a check
-failed.
+The exit status is 1 when a check failed.
 
-Over `https`, the suite follows section 3.1: `pair` and `hello` take any
-certificate; every other call needs one that is publicly trusted or
-whose pin the target named in its latest signed `hello`.
+## What it checks
 
-`python3 conformance/selftest.py` runs the suite's own readers over
-`vectors/v0-strict.json` and checks key "a" of `vectors/v0.json`; it
-needs no server.
+The run goes in this order; the counts are the checks in each group.
 
-## The checks
+| Group | Checks | Sections | What is checked |
+|-------|--------|----------|-----------------|
+| C | 1 | core 5.1 | the code: prefix `msfp-pair-1.`, base64url, the key, the expiry, the address |
+| D | 1 | core 11 | the discovery document: a `404` like a missing path, or a valid document whose `base` the suite then uses |
+| S | 4 | core 6.4, 3, 14 | strangers: the unsigned `404` on every call, like a missing path |
+| P | 11 | core 9.1, 2.1, 5.2, 6.5, 12.5 | `pair`: wrong proofs, forged and small-order keys, stale dates, bad addresses, bad members (`inbound`, `null`, wrong types), the pairing itself, the next key commitment, replay, the used code, the signed `409` |
+| W | 4 | core 7.1, 7.3 | waiting: `hello` `waiting`, no forcing `paired`, a signed `404` on `libraries`, the server's `hello` on acceptance |
+| H | 6 | core 9.2, 10, 3.2 | `hello`: its members, versions and parts (core 1; catalog, playback, media, video), its address, the pin of the certificate served, calls that need *trusted* or *named*, removing and naming pins |
+| V | 6 | core 10.2 to 10.4, catalog 5 | versions: bad `core` and `parts` refused, odd entries ignored, a part that is off answered `404` `not-supported` (`playback`, `catalog`, `media` as a dependency), no `limits` and no video titles when their parts are off |
+| J | 2 | core 2.3 | I-JSON and types: twice-named members, surrogates, noncharacters, bad UTF-8, a byte order mark, `null`, wrong types refused; white space and unknown members accepted |
+| G | 10 | core 2.2, 2.4, 3, 6.2, 6.4 | signatures: dates, nonces, keys and signatures outside their one form, another host, path or key, duplicate headers, a query, percent-encoding, the media type, `Sec-Fetch-Site`, content codings, a body over 64 KiB |
+| N | 3 | core 6.5, 6.3 | replay, a nonce used again, the answer bound to the nonce and the media type |
+| L | 5 | catalog 2, playback 5, music 5.1 | `libraries`: IDs, kinds, `limits` and their ranges, opaque and stable IDs, bad bodies |
+| T | 9 | catalog 3, 4, 5; video 3, 4; music 2, 3 | `titles`: canonical keys, kinds, libraries, language tags, `with`, `ids`, music descriptions, order, paging, `since` and `seq`, bad requests, the first library, changes adding up |
+| PB | 11 | playback 2 to 6, video 5, music 5 | `play`: malformed requests (`400`), keys not offered (`404`), the playback object and its URLs, nothing said (HLS, not direct); `progress` and `stop` and the playback's states; the choice of audio, subtitles and copy; the streams limit and the race for the last stream |
+| M | 9 | media 1 to 4, video 5.5, 6 | the media: the HLS subset in master and media playlists, segments, ranges (`206` and `416`), refusals (a query, browser headers, an unknown ticket, other methods), WebVTT parts in their rebuilt form, PGS parts, preview sheets |
+| Q | 3 | catalog 2, 3; core 6.4 | the server as a reader of the suite's catalog: its calls well signed, its `titles` requests, following `next` |
+| R | 2 | core 8.3 | (`--load`) a signed `429` or `503` with `retryAfter`, then calls passing again |
+| UP | 4 | core 7.5, 9.1, 7.4 | (`--code2`) a pairing as a server that can't be called |
+| K | 11 | core 9.3, 9.4, 12 | the suite's own key: a rotation not matching the commitment (`409`), bad `rotate` and `revoke` bodies (`400`), revocation and suspension (only `rotate` and `revoke` answered), a rotation to the committed key lifting it, a statement with `-`, the previous key heard for 10 minutes, a repeated rotation, `202` `pending` without a commitment, the operator's confirmation |
+| AD | 3 | core 13.2 | address changes: a new address the suite serves, confirmed by a `hello` there before any other call; moving back; an address nothing serves, the old one staying |
+| X | 1 | core 3.3 | refused destinations: loopback addresses announced as the suite's are never connected to |
+| O | 4 | core 9.3, 12.3, 12.4, 12.6, 12.7 | the server's own key: a pushed `rotate` signed with the old key and matching its commitment, then signing with the new key only; a rotation and a revocation pulled in `hello` answers by a server that can't be called |
+| U | 7 | core 5.2, 7.5, 9.2, 13.2 | the suite as a server that can't be called: `inbound: false` only with an address `https://msfp-<26>.invalid` (the forms of `vectors/v1/strict.json`), stored at once, `knownKey` and `rotation` type-checked, its own calls still answered, no connection to it at all, and `inbound` back to `true` confirmed by a `hello` first |
+| E | 2 | core 7.4 | (`--end`) `hello` `ended`, then the unsigned `404` |
+| A | 2 | core 6.6, 8.2 | every answer that had to be signed was, and every signed refusal is a problem document |
 
-| ID | Section | What is checked |
-|----|---------|-----------------|
-| C1 | 5.1 | the pairing code reads as section 5.1 says (prefix, base64url, key, expiry, address) |
-| S1 | 6.4 | a stranger's `hello` gets the unsigned `404` |
-| S2 | 6.4 | a stranger's `libraries` and `titles` get the unsigned `404` |
-| S3 | 3, 14 | the unsigned `404` can't be told from a path that doesn't exist (should) |
-| S4 | 3, 14 | a wrong method on a federation path answers like a missing path (should) |
-| P1 | 9.1, 6.6 | `pair` with a wrong proof: the unsigned `404`, the code stays live |
-| P2 | 2.1, 4.1 | `pair` under the identity key with the forged signature (R the identity, S = 0) is refused |
-| P3 | 2.1, 4.1 | `pair` under a small-order key, a key with a small-order part, or a non-canonical key is refused |
-| P4 | 6.4 | `pair` dated 400 seconds ago is refused |
-| P5 | 5.2, 9.1 | `pair` naming an address that breaks section 5.2 is refused, the code stays live |
-| P6 | 9.1, 7.1 | `pair` with the code: `200`, signed by the code's key, with a name |
-| P7 | 6.5 | the same `pair` request again (its nonce replayed): the unsigned `404` |
-| P8 | 9.1, 7.1 | the used code again, from the now known key: a signed `404` |
-| W1 | 9.2, 7.3 | `hello` `waiting`: `200` signed, `waiting` |
-| W2 | 7.1, 9.2 | `hello` `paired` from a waiting peer changes nothing |
-| W3 | 7.3 | `libraries` before the target's operator accepts: a signed `404` |
-| W4 | 7.1, 6.4 | on accepting, the target sends the suite a well-signed `hello` `paired` |
-| H1 | 9.2 | `hello` `paired`: `200` signed, `paired`, `certificates` an array if there |
-| H2 | 3.1 | over `https`, the target names the pin of the leaf it serves (should) |
-| H3 | 3.1 | over `https`, checked calls pass with the certificate trusted or named |
-| J1 | 2.1, 9.2 | `hello` bodies that aren't valid get a signed `404`: no or bad `state`, `State`, `certificates` not an array, not an object, a member twice (also escaped, also nested), lone surrogates, a noncharacter, invalid UTF-8, a byte order mark |
-| J2 | 2.1, 9.2 | valid bodies pass: white space between tokens, an escaped surrogate pair, unknown members, `null` as absent, an unknown `state` |
-| G1 | 2.1, 6.4 | dates (±330 s, `+`, a leading zero, a fraction, `0`, 2^53), nonces (15 bytes, padding, nonzero unused bits, another alphabet), a key text with nonzero unused bits, and requests signed for another host or path get the unsigned `404` |
-| G2 | 2.1, 6.4 | a signature header twice, a nonce header twice, a comma in the signature, a tab inside the date: the unsigned `404` |
-| G3 | 2.1 | header names in any case, white space around a value, `charset` on `Content-Type`: accepted |
-| G4 | 6.2, 6.4 | a call with a query is refused, even when signed so |
-| G5 | 6.2 | the target is taken as received: a percent-encoded path signed in its decoded form fails |
-| G6 | 3 | no `Content-Type`, or `text/plain`: refused, unsigned (`404`; Overfin's `415` is its version 0 note) |
-| G7 | 3 | a cross-site `Sec-Fetch-Site`: refused, unsigned |
-| G8 | 3, 6.3 | a `hello` sent with `Accept-Encoding: gzip`: `200` signed, with no `Content-Encoding` (any answer with a content coding counts as unsigned) |
-| N1 | 6.5 | a request replayed with its nonce: the unsigned `404` |
-| N2 | 6.5 | a nonce used again in a new, validly signed request: the unsigned `404` |
-| N3 | 6.3 | the answer's signature is bound to the request's nonce |
-| L1 | 9.3 | `libraries`: `200` signed, IDs and kinds in their forms, no ID twice, `limits` in range |
-| L2 | 9.3, 12 | library IDs don't look like a media server's (32 hex digits, a GUID); a heuristic (should) |
-| L3 | 9.3, 2.1 | a `libraries` body that isn't an I-JSON object: a signed `404` |
-| T1 | 9.4, 11 | the whole list: canonical TMDB keys, matching kinds, asked libraries, language tags (form, once, no `und`/`mul`/`zxx`/`mis`, case, shortest code), no languages on series and seasons, ascending order, `next` rules, `seq` |
-| T2 | 9.4 | a page starts strictly after `after` |
-| T3 | 9.4 | `since` the current `seq`: a changes answer, or the whole list |
-| T4 | 9.4 | `since` above the current `seq`: the whole list |
-| T5 | 9.4 | a negative `since`: answered like `0` |
-| T6 | 9.4, 2.1, 9 | `since` as `"5"`, `1.0`, `1e1`, 2^53 or `-0`, `after` over 512 bytes, a library ID that isn't a string, `libraries` missing or `null`: a signed `404` (for `libraries` missing, by section 9's "required") |
-| T7 | 9.4, 12 | a library ID that isn't offered is ignored |
-| T8 | 9.4 | (`--watch-changes`) after a change: `titles` and `gone` add up to the new whole list |
-| Q1 | 6.4, 9.3, 9.4 | (`--reader-timeout`) the target's calls to the suite: each signature header once, the date in the window, a fresh nonce, a valid signature over the suite's host, JSON, no query, no `Sec-Fetch-*` |
-| Q2 | 9.4 | the target's `titles` requests: libraries the suite offers, `after` a string, `since` an integer |
-| Q3 | 9.4 | the target follows `next` |
-| R1 | 8.3 | (`--load`) past a peer's limit: a signed `429` `rate-limited` or `503` `server-busy`, `retryAfter` from 1 to 3,600 |
-| R2 | 8.3 | (`--load`) after `retryAfter`, calls pass again |
-| E1 | 7.4, 9.2 | (`--end`) `hello` `ended`: `200` signed, `ended` |
-| E2 | 7.4, 6.4 | (`--end`) afterwards the target has deleted the suite: the unsigned `404` (the receiver of `ended` doesn't record the ender as forgotten) |
-| A1 | 6.6 | every answer the suite checked was signed by the target's key, by section 2.1's rules |
+That is 121 checks in all, with `--code2`, `--load` and `--end`.
 
-Every signed answer is also read as I-JSON (section 2.1) and checked for
-`null` (section 2: a sender must not send it).
+Every signed answer is also read as I-JSON and checked for `null`; a
+signed `200` or `202` must be `application/json`, and the answer's media
+type is signed as core section 6.3's fifth line.
+
+The suite offers the server one library, "Conformance films", with
+three films on two pages. Its first page is short and still has `next`,
+on purpose, to see that the server follows it; catalog section 3.1 says
+a whole-list `next` comes only after a full page of 5,000, so the suite
+itself breaks that rule there. It answers `play` with `409`
+`not-playable`: it serves no media.
+
+## Its limits
+
+- **Seen from outside.** The suite sees only what reaches it and what
+  the server answers. Refused destinations (core 3.3) can fail only for
+  loopback, and only when the suite shares the server's machine;
+  link-local, metadata, multicast, NAT64 and 6to4 addresses can't be
+  seen. "Never connects to a peer that can't be called" is seen as
+  nothing reaching the suite's real addresses after the switch.
+- **The server's own operations** (its rotations, revocations,
+  acceptances, renewals of its certificate) need its operator; the
+  suite can't make a server rotate.
+- **Timing rules** that take long are not waited for: the 30-day
+  overlaps, the 30-day suspension turning `gone`, the hourly retry of a
+  failed address confirmation, the 2-minute expiry of an unused
+  playback, the 24-hour code.
+- **Limits** are each server's numbers (core 8.3). The burst of `--load`
+  is pure Python, and may not reach them over HTTPS; the `play` limit
+  is not tested (the suite paces its own plays under it).
+- **Media** is checked on the first stream, its first media playlist
+  and segment, part 0 of one text and one PGS subtitle track, and sheet
+  0: the suite doesn't play a whole title.
+- **Heuristics**: L3 (library IDs that look like a media server's) and
+  the shortest-language-code rule (a list of common three-letter codes)
+  can't be exact.
+- **Not tested**: what a receiver does after a `hello` with no common
+  core; a change of `base` (not announced, core open question 16);
+  several certificates; a peer that ends the pairing toward the server
+  while it is suspended.
+
+When it ends, the suite prints the points of the specification it found
+unclear or couldn't test from outside.
+
+## Its self-test
+
+```sh
+python3 conformance/selftest.py           # about 5 minutes
+python3 conformance/selftest.py --quick   # without the fault pass
+```
+
+It checks the suite's readers against every case of `vectors/v1/` (and
+those of `vectors/v0-strict.json` that core section 17 says hold for
+core 1), then runs the whole suite, over HTTPS both ways, against an
+in-process fake version 1 server (`msfpconf/fake.py`, built from the
+specification and the vectors, with the self-test as its operator):
+every check must pass. Then it runs again with deliberate faults in the
+fake (replays accepted, `null` accepted, wrong changes, a bad `with`, no
+stream limit, a query served, several ranges served, WebVTT not
+rebuilt, loopback connected to, the old key kept after a rotation), and
+the checks aimed at each fault must fail.
 
 ## License
 

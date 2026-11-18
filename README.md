@@ -56,11 +56,13 @@ valid and invalid cases, for an implementation's tests.
 ## Conformance suite
 
 [conformance/](conformance/README.md): a program that pairs with a server
-you run, as a peer, and checks it against version 0 (pairing, `hello`,
-signatures, the strict rules, replay, `libraries` and `titles`,
-refusals, and on request rate limits and ending). Version 0 is a test
-draft, so this suite is too; a version 1 suite is coming. Python 3,
-standard library only. Its code is under the MIT license.
+you run, as a peer, and checks it against version 1, over HTTPS both
+ways: pairing, `hello`, versions and parts, signatures, the strict
+rules, replay, the catalog, playback and media, rotation and revocation,
+address changes, servers that can't be called, and on request rate
+limits and ending. Python 3, standard library only, with a self-test
+against a fake server. Its code is under the MIT license. The version 0
+suite is in git history.
 
 ## Implementations
 
