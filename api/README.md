@@ -189,7 +189,9 @@ each: `Task` is simpler for them.
 
 ## 6. Open questions
 
-Each with a recommendation. Numbered for answers.
+Each with a recommendation. Numbered for answers. **All 16 were decided
+by the owner on 2026-11-18, as recommended, except 12** (see its
+decision). Each says so.
 
 1. **Storage shape.** Records with transactions (the engine reads and
    writes typed records inside `Update`; [host.md section 1](host.md#1-storage)),
@@ -199,69 +201,85 @@ Each with a recommendation. Numbered for answers.
    protocol's rules stay in the engine; both Overfin's SQLite and the
    plugin's JSON files do it easily (the plugin's `PeerStore.Change` is
    already this).
+   *Decided 2026-11-18: as recommended.*
 2. **Stores shipped with the libraries.** *Recommended: yes, two:* one in
    memory (tests, and the conformance suite's runs) and one in JSON files
    (small hosts, the plugin). Overfin writes its own on SQLite, because
    its pages join peers' titles with its own.
+   *Decided 2026-11-18: as recommended.*
 3. **The own catalog's change log.** Host or engine? *Recommended: both
    ways:* a host whose database already notes changes (Overfin) answers
    `Changes`; a host that can't (the plugin, which diffs today) leaves it
    out, and the engine keeps the log from snapshots of `Titles` in
    storage. [host.md section 2](host.md#2-catalog).
+   *Decided 2026-11-18: as recommended.*
 4. **Choosing the copy and the tracks.** *Recommended: the engine*, from
    the tracks the host lists, by the tables of
    [playback section 2.6](../spec/v1/playback.md#26-choosing-the-copy-and-the-tracks)
    and [video section 5.4](../spec/v1/video.md#54-choosing-the-subtitles).
    Then the host only decides how to serve the chosen tracks. The rules
    are the same everywhere; written once, they are tested once.
+   *Decided 2026-11-18: as recommended.*
 5. **Tickets.** *Recommended: the engine makes, checks and ends peers'
    tickets.* The host's own people's tickets stay the host's. The
    engine's stream handler takes a fallback for every ticket it doesn't
    know, so one route can serve both (Overfin's does).
+   *Decided 2026-11-18: as recommended.*
 6. **Stream counts.** *Recommended: the engine counts the pairing's
    streams and transcodes; the host counts its server-wide transcode
    budget*, both in one `Admit` step the host calls once it knows the
    method ([host.md section 3](host.md#3-playback)). The engine can't know
    the method before the host decides; the host can't know the pairing's
    limits without asking.
+   *Decided 2026-11-18: as recommended.*
 7. **Checking the host's own playlists.** On the owning side, should the
    engine check what the host's media sends against media 1's subset
    before it leaves? *Recommended: yes, playlists only.* It is cheap, and
    a host's rewrite bug then shows as a refused fetch and a warning, not as
    a peer refusing every fetch.
+   *Decided 2026-11-18: as recommended.*
 8. **Re-encoding relayed preview sheets.** Go has a JPEG encoder; .NET
    has none built in. *Recommended: a `SheetEncoder` hook*, given by
    default in Go, required in C# for previews: a C# host without one
    relays no previews (the viewer plays on without them, as
    [video section 5.5](../spec/v1/video.md#55-seek-bar-previews) allows).
+   *Decided 2026-11-18: as recommended.*
 9. **C# errors.** *Recommended: exceptions*, as section 5 explains.
+   *Decided 2026-11-18: as recommended.*
 10. **Events.** One callback, `Notify`, that must not block, or a channel
     or stream the host reads? *Recommended: the callback.* A channel left
     unread holds events or loses them; a callback is the same in both
     languages. The engine calls it outside its locks, in order, from one
     goroutine or task at a time.
+    *Decided 2026-11-18: as recommended.*
 11. **The discovery document and base paths.** As far as I found,
     Overfin calls fixed paths and stores no base path. *Recommended: the
     engine does both*: it fetches peers' documents where
     [core section 11](../spec/v1/core.md#11-the-discovery-document) says,
     stores the base, and serves its own document when the host turns it
     on (off by default).
+    *Decided 2026-11-18: as recommended.*
 12. **The next key's exported text.** Overfin exports
     `overfin-next-key-1.<seed>`. *Recommended: the engine exports
     `msfp-next-key-1.<seed>` and accepts both forms*, so keys already kept
     offline by Overfin's operators still work.
+    *Decided 2026-11-18: `msfp-next-key-1.<seed>`, now in [core section 12.5](../spec/v1/core.md#125-the-next-key-commitment), is the only form; no `overfin-` form is accepted (nobody exported one).*
 13. **Nonces.** *Recommended: in memory only*, refusing requests dated
     before the process started, as
     [core section 6.5](../spec/v1/core.md#65-nonces-replay-and-restarts)
     allows. No storage for them.
+    *Decided 2026-11-18: as recommended.*
 14. **Content parts.** Built into the engine, or modules a host adds?
     *Recommended: built in.* `video` and `music` are small; the host says
     which it serves (`Config.Parts`), and its catalog only lists those.
+    *Decided 2026-11-18: as recommended.*
 15. **Versions of the libraries.** *Recommended: one version number for
     both libraries, kept in step*, separate from the protocol's versions,
     and both run against the conformance suite and the vectors before
     each release.
+    *Decided 2026-11-18: as recommended.*
 16. **An admin API.** Should the engine also give JSON routes for a
     panel? *Recommended: no.* Panels differ; the actions and queries are
     enough, and a route would be a second, unsigned, way in that the host
     must guard anyway.
+    *Decided 2026-11-18: as recommended.*

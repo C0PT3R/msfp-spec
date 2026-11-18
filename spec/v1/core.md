@@ -1752,6 +1752,11 @@ pulled. When Q rotates from O to N and P can't be called:
   server's storage can't rotate. Next to the export, the panel should show
   the fingerprint of the committed key (section 4.2), so the operator can
   check that the exported key is the committed one.
+- The exported text is `msfp-next-key-1.` followed by the seed's 32
+  bytes in base64url (section 2.2), so a key exported by one
+  implementation can be used by another. A reader removes white space,
+  refuses any other prefix, and checks that the seed's public key matches
+  the stored commitment before it uses it.
 - After a rotation, the server makes a new next key, whose commitment is
   the one in the statement.
 
