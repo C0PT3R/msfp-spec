@@ -272,13 +272,14 @@ func genV1Revocation() []byte {
 }
 
 type v1StrictFile struct {
-	About     []string  `json:"about"`
-	Addresses []verdict `json:"addresses"`
-	Codes     []verdict `json:"codes"`
-	Names     []verdict `json:"mediaNames"`
-	Bases     []verdict `json:"bases"`
-	Dests     []verdict `json:"destinations"`
-	Uncalled  []verdict `json:"uncallableAddresses"`
+	About     []string           `json:"about"`
+	Addresses []verdict          `json:"addresses"`
+	Codes     []verdict          `json:"codes"`
+	Names     []verdict          `json:"mediaNames"`
+	Bases     []verdict          `json:"bases"`
+	Dests     []verdict          `json:"destinations"`
+	Uncalled  []verdict          `json:"uncallableAddresses"`
+	Hellos    []helloVersionCase `json:"helloVersions"`
 }
 
 // addrBPrivate is server B's address once it can't be called.
@@ -346,6 +347,7 @@ func genV1Strict() []byte {
 			"mediaNames: file and track names in media URLs (spec/v1/media.md section 1). bases: the discovery document's base (spec/v1/core.md, the discovery document).",
 			"destinations: IP addresses a server connects to for a peer by default (valid), or refuses (spec/v1/core.md section 3.3; also version 0's section 3.2).",
 			"uncallableAddresses: the address a server that sends inbound false must have, https://msfp-<26>.invalid, the 26 characters being 16 bytes in lowercase base32 with the unused bits zero (spec/v1/core.md section 5.2).",
+			"helloVersions: hello bodies (text) and what a receiver keeps of their versions (output: core, and each known part by name; spec/v1/core.md sections 2.3 and 10.2), or a bad body (valid false). A number that isn't an integer is valid I-JSON, and is ignored in a version list.",
 		},
 		Addresses: addressVerdicts(false),
 		Codes:     codeVerdicts(core1, false),
@@ -353,5 +355,6 @@ func genV1Strict() []byte {
 		Bases:     baseVerdicts(),
 		Dests:     destinationVerdicts(),
 		Uncalled:  uncallableVerdicts(),
+		Hellos:    helloVersionCases(),
 	})
 }

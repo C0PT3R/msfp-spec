@@ -177,6 +177,13 @@ func verifyAll(read func(string) []byte) []error {
 	verdicts("v1/strict.json", "bases", func(x obj) error { return checkBase(str(x, "text")) })
 	verdicts("v1/strict.json", "destinations", func(x obj) error { return checkDestination(str(x, "text")) })
 	verdicts("v1/strict.json", "uncallableAddresses", func(x obj) error { return checkUncallableAddress(str(x, "text")) })
+	for _, v := range load("v1/strict.json")["helloVersions"].([]any) {
+		x := v.(obj)
+		got, err := keptVersions([]byte(str(x, "text")))
+		if (err == nil) != (x["valid"] == true) || got != str(x, "output") {
+			bad("v1/strict.json: helloVersions %q: the file says valid=%v, output %q; the rules give %v, %q", str(x, "name"), x["valid"], str(x, "output"), err, got)
+		}
+	}
 	verdicts("v1/media.json", "hls", func(x obj) error { return checkPlaylist([]byte(str(x, "text"))) })
 	verdicts("v1/media.json", "pgs", func(x obj) error { return checkPGS(text(x)) })
 	for _, v := range load("v1/media.json")["webvtt"].([]any) {
