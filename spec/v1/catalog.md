@@ -98,6 +98,14 @@ kept with the server's other federation state. Unlike a MAC of the media
 server's ID, a stored value survives a change of media server: the
 operator (or an import) maps the old library to the new one.
 
+**Every identifier an owning server sends** follows the first paragraph
+of this section: library IDs, version IDs
+([playback section 2.3](playback.md#23-the-answer)), playback IDs and
+tickets ([playback](playback.md#2-play), [media](media.md#1-the-urls)).
+None may be, contain, or be computable from, an identifier of the media
+server, a file, a path or a name. Track IDs (`a<n>`, `s<n>`) are
+positions, not identifiers.
+
 A server whose former IDs broke this rule changes them once; its peers'
 operators then choose their libraries again
 ([core section 16.7](core.md#167-choosing-libraries-again)).
@@ -292,19 +300,21 @@ anything.
 
 ## 7. Open questions
 
-None of these is decided. Where a proposal of 2026-11-16 left a point
-open, the text above follows the proposal's own default.
+Settled by the owner on 2026-11-17; each says how.
 
 1. **Paging.** A whole-list reading whose size is a multiple of 5,000 ends
    with one empty page.
+   **Settled:** fine as it is; one more small call.
 2. **How often a library ID may change** (proposal 2, open point 2).
    Section 2.1 says "stable" and "never reused"; a cap (for example "only
    when the library is removed") would be hard to check.
+   **Settled:** "stable" and "never reused", no cap.
 3. **One rule for every identifier** (proposal 2, open point 3). Rather
    than one rule for library IDs here and one for version IDs in
    [playback](playback.md#23-the-answer), the specification could state
    once that every identifier an owning server sends is opaque, and list
    them.
+   **Settled:** yes, section 2.1 states it once and lists them.
 
 The open points of proposal 5 (TMDB's numbering, IMDb episode IDs, the
 cap of 16 for `with`) moved to [video](video.md#8-open-questions) with the

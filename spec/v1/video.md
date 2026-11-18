@@ -523,18 +523,23 @@ server. It accepts only PGS as picture subtitles; other picture formats
 
 ## 8. Open questions
 
-None of these is decided. Where a proposal of 2026-11-16 left a point
-open, the text above follows the proposal's own default.
+Points 1 to 3 were settled by the owner on 2026-11-17; point 4 is open.
+Where a proposal of 2026-11-16 left a point open, the text above follows
+the proposal's own default.
 
 1. **Series TMDB numbers differently** (proposal 5, open point 1). Series
    that exist in TMDB only as one long season while files use real
    seasons (or the reverse), common for anime: section 4.1 says "map, or
    leave out". Is leaving out acceptable, or should the numbers form be
    allowed with the owning server's numbering, marked as such?
+   **Settled:** map, or leave out; to look at again if implementations
+   show it leaves out too much (anime).
 2. **IMDb episode IDs** (proposal 5, open point 2). Section 4.3 lets an
    episode carry its own `imdb` ID. Should `ids` stay at film and series
    level instead?
+   **Settled:** episodes keep their own `imdb` ID.
 3. **The cap of 16 for `with`** (proposal 5, open point 3).
+   **Settled:** 16, kept.
 4. **Descriptions for video too**
    ([proposal 11](../../proposals/0011-music.md), open point 2;
    [music open question 2](music.md#8-open-questions)). Video titles
