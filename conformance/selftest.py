@@ -1,77 +1,271 @@
 #!/usr/bin/env python3
-"""Checks the suite's own readers against vectors/v0-strict.json and
-vectors/v0.json: keys, signatures, base64url, dates, JSON, addresses and
-codes. Needs no server. Exit 0 when every case decides as the file says."""
+"""The suite's self-test. Needs no server.
 
+1. The suite's readers against the vectors: vectors/v1/*.json (keys,
+   code, exchanges, rotation, revocation, strict, media, music) and the
+   cases of vectors/v0-strict.json that core 1 section 17 says hold for
+   core 1 (keys, signatures, base64url, dates, integers, JSON).
+2. The whole suite against an in-process fake version 1 server
+   (msfpconf/fake.py, built from the specification and the vectors),
+   over HTTPS both ways, with the self-test playing the server's
+   operator. Every check must pass.
+
+3. The same run against the fake with deliberate faults (FAULTS below):
+   the checks aimed at each fault must fail, so the suite is seen to
+   catch what it checks.
+
+    python3 conformance/selftest.py [-v] [--vectors-only] [--quick]
+
+--quick skips part 3. Exit 0 when every part passes."""
+
+import io
 import json
 import os
+import re
+import socket
 import sys
+import time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 
 from msfpconf import ed25519  # noqa: E402
-from msfpconf.wire import (NotIJSON, answer_message, check_address, parse_code, parse_ijson, proof,  # noqa: E402
-                           request_message, unb64u, b64u, Key, fingerprint, is_int)
+from msfpconf.content import music_vectors_ok  # noqa: E402
+from msfpconf.media import Refused, check_pgs, check_playlist, rebuild_vtt  # noqa: E402
+from msfpconf.wire import (Answer, Key, NotIJSON, answer_message, b64u, check_address, check_base,  # noqa: E402
+                           check_destination, check_media_name, check_uncallable_address, commitment, decimal,
+                           fingerprint, is_int, make_rotation, parse_code, parse_ijson, proof, read_revocation,
+                           read_rotation, request_message, unb64u)
+
+VEC = os.path.join(HERE, "..", "vectors")
+
+# The second pass: faults put in the fake on purpose (msfpconf/fake.py),
+# and the checks that must then fail. Other checks may fail too, from the
+# same faults; only these are required to.
+FAULTS = {
+    "nonce": ["N1", "N2"],          # replays accepted (core 6.5)
+    "null": ["J1"],                 # null members in hello accepted (core 2.3)
+    "since": ["T4"],                # changes for a since above seq (catalog 3.2)
+    "with": ["T1"],                 # an episode's with naming another series (video 4.2)
+    "limits": ["PB10"],             # no stream limit (playback 6)
+    "progress": ["PB5"],            # progress of a playback that isn't live answered 200 (playback 6.1)
+    "query": ["M4"],                # media served with a query string (media 2)
+    "range": ["M9"],                # several ranges served as the first (media 2.1)
+    "vtt": ["M6"],                  # a WebVTT part served as it is, not rebuilt (video 6.3)
+    "loopback": ["X1"],             # connects to a loopback address for a peer (core 3.3)
+    "oldkey": ["O2"],               # still signs with the old key after the peer answered rotated (core 12.4)
+}
 
 
-def main():
-    vec = os.path.join(HERE, "..", "vectors")
-    strict = json.load(open(os.path.join(vec, "v0-strict.json")))
+def vectors():
     bad = []
 
     def expect(group, name, want, got):
         if want != got:
             bad.append("%s / %s: expected %s, got %s" % (group, name, want, got))
 
-    for c in strict["keys"]:
+    load = lambda *p: json.load(open(os.path.join(VEC, *p)))
+    v0 = load("v0-strict.json")
+    for c in v0["keys"]:
         k = unb64u(c["text"], 32)
-        expect("keys", c["name"], c["valid"], k is not None and ed25519.valid_point(k))
-    for c in strict["signatures"]:
-        expect("signatures", c["name"], c["valid"],
+        expect("v0-strict keys", c["name"], c["valid"], k is not None and ed25519.valid_point(k))
+    for c in v0["signatures"]:
+        expect("v0-strict signatures", c["name"], c["valid"],
                ed25519.verify_strict(unb64u(c["public"], 32), c["message"].encode(), unb64u(c["signature"], 64) or b""))
-    for c in strict["base64url"]:
+    for c in v0["base64url"]:
         size = 16 if "nonce" in c["name"] else 32 if "key" in c["name"] else None
-        expect("base64url", c["name"], c["valid"], unb64u(c["text"], size) is not None)
-    import re
-    for c in strict["dates"]:
-        t = c["text"]
-        expect("dates", t, c["valid"], bool(re.fullmatch(r"[1-9][0-9]*", t)) and int(t) <= 2**53 - 1)
-    for c in strict["integers"]:
+        expect("v0-strict base64url", c["name"], c["valid"], unb64u(c["text"], size) is not None)
+    for c in v0["dates"]:
+        expect("v0-strict dates", c["text"], c["valid"], decimal(c["text"]) not in (None, 0))
+    for c in v0["integers"]:
         try:
             ok = is_int(parse_ijson(('{"n":%s}' % c["text"]).encode())["n"])
         except NotIJSON:
             ok = False
-        expect("integers", c["text"], c["valid"], ok)
-    for c in strict["json"]:
+        expect("v0-strict integers", c["text"], c["valid"], ok)
+    for c in v0["json"]:
         raw = bytes.fromhex(c["hex"]) if "hex" in c else c["text"].encode("utf-8", "surrogatepass")
         try:
             parse_ijson(raw)
             ok = True
         except NotIJSON:
             ok = False
-        expect("json", c["name"], c["valid"], ok)
-    for c in strict["addresses"]:
-        expect("addresses", c["text"], c["valid"], check_address(c["text"]) is None)
-    for c in strict["codes"]:
+        expect("v0-strict json", c["name"], c["valid"], ok)
+
+    st = load("v1", "strict.json")
+    for c in st["addresses"]:
+        expect("addresses", c.get("text", ""), c["valid"], check_address(c.get("text", "")) is None)
+    for c in st["codes"]:
         try:
-            parse_code(c["text"])
+            parse_code(c.get("text", ""))
             ok = True
         except ValueError:
             ok = False
         expect("codes", c["name"], c["valid"], ok)
+    for c in st["mediaNames"]:
+        expect("mediaNames", c.get("text", ""), c["valid"], check_media_name(c.get("text", "")) is None)
+    for c in st["bases"]:
+        expect("bases", c.get("text", ""), c["valid"], check_base(c.get("text", "")) is None)
+    for c in st["destinations"]:
+        expect("destinations", c.get("text", ""), c["valid"], check_destination(c.get("text", "")) is None)
+    for c in st["uncallableAddresses"]:
+        expect("uncallableAddresses", c.get("text", ""), c["valid"], check_uncallable_address(c.get("text", "")) is None)
 
-    v0 = json.load(open(os.path.join(vec, "v0.json")))
-    a = v0["keys"]["a"]
-    k = Key(bytes.fromhex(a["seed"]))
-    expect("v0", "key a", a["public"], k.text)
-    expect("v0", "fingerprint a", a["fingerprint"], fingerprint(k.pub))
+    keys = load("v1", "keys.json")
+    K = {}
+    for name, k in keys["keys"].items():
+        K[name] = Key(bytes.fromhex(k["seed"]))
+        expect("keys", name + " public", k["public"], K[name].text)
+        expect("keys", name + " fingerprint", k["fingerprint"], fingerprint(K[name].pub))
+        expect("keys", name + " commitment", k["commitment"], commitment(K[name].pub))
+    import hashlib
+    for name, c in keys["certificates"].items():
+        expect("certificates", name, c["pin"], b64u(hashlib.sha256(bytes.fromhex(c["spki"])).digest()))
 
+    code = load("v1", "code.json")
+    key, secret, expiry, address = parse_code(code["code"]["text"])
+    expect("code", "key", K[code["code"]["key"]].pub, key)
+    expect("code", "secret", code["code"]["secret"], secret.hex())
+    expect("code", "expiry", code["code"]["expires"], expiry)
+    expect("code", "address", code["code"]["address"], address)
+    expect("code", "secretHash", code["code"]["secretHash"], b64u(hashlib.sha256(secret).digest()))
+    pr = code["proof"]
+    expect("code", "proof", pr["value"], b64u(proof(secret, K[pr["redeemer"]].pub, pr["address"])))
+
+    ex = load("v1", "exchanges.json")["exchanges"] + [load("v1", "rotation.json")["exchange"], load("v1", "revocation.json")["exchange"]]
+    for e in ex:
+        n = e["name"]
+        signer, answerer = K[e["signer"]], K[e["answerer"]]
+        nonce = b64u(bytes.fromhex(e["nonce"]))
+        expect("exchanges", n + " nonce", e["nonceText"], nonce)
+        msg = request_message(e["method"], e["host"], e["target"], e["date"], nonce, e["body"].encode())
+        expect("exchanges", n + " message", e["message"], msg.decode())
+        expect("exchanges", n + " signature", e["signature"], b64u(signer.sign(msg)))
+        am = answer_message(nonce, e["status"], e["answerContentType"], e["answerBody"].encode())
+        expect("exchanges", n + " answer message", e["answerMessage"], am.decode())
+        a = Answer(e["status"], [("Content-Type", e["answerContentType"]), ("MSFP-Signature", e["answerSignature"])],
+                   e["answerBody"].encode(), nonce, [answerer.pub])
+        expect("exchanges", n + " answer verifies", True, a.signed)
+        body = json.loads(e["answerBody"]) if e["answerContentType"] == "application/json" else {}
+        if "rotation" in body:
+            new, nc = read_rotation(answerer.pub, body["rotation"], now=body["rotation"]["date"])
+            expect("exchanges", n + " pulled rotation", K["a2"].pub, new)
+        if "revocation" in body:
+            read_revocation(answerer.pub, body["revocation"], now=body["revocation"]["date"])
+
+    rot = load("v1", "rotation.json")["rotation"]
+    mine = make_rotation(K["a"], K["a2"], rot["nextCommitment"], rot["date"])
+    expect("rotation", "oldSignature", rot["oldSignature"], mine["oldSignature"])
+    expect("rotation", "newSignature", rot["newSignature"], mine["newSignature"])
+    new, nc = read_rotation(K["a"].pub, mine, now=rot["date"])
+    expect("rotation", "reads", (K["a2"].pub, rot["nextCommitment"]), (new, nc))
+    rev = load("v1", "revocation.json")["revocation"]
+    read_revocation(K["a"].pub, {"date": rev["date"], "signature": rev["signature"]}, now=rev["date"])
+
+    media = load("v1", "media.json")
+    for c in media["webvtt"]:
+        raw = bytes.fromhex(c["hex"]) if "hex" in c else c.get("text", "").encode("utf-8", "surrogatepass")
+        try:
+            out, ok = rebuild_vtt(raw).decode(), True
+        except Refused:
+            out, ok = None, False
+        expect("webvtt", c["name"], (c["valid"], c.get("output")), (ok, out if ok else None))
+    for c in media["hls"]:
+        expect("hls", c["name"], c["valid"], check_playlist(c.get("text", "").encode())[0] is None)
+    for c in media["pgs"]:
+        try:
+            check_pgs(bytes.fromhex(c.get("hex", "")))
+            ok = True
+        except Refused:
+            ok = False
+        expect("pgs", c["name"], c["valid"], ok)
+    bad += music_vectors_ok(os.path.join(VEC, "v1", "music.json"))
+    return bad
+
+
+def free_ports(n):
+    """A base port with n free ports after it, on 127.0.0.1."""
+    import random
+    for _ in range(200):
+        base = random.randint(20000, 60000)
+        socks = []
+        try:
+            for i in range(n):
+                s = socket.socket()
+                s.bind(("127.0.0.1", base + i))
+                socks.append(s)
+            return base
+        except OSError:
+            continue
+        finally:
+            for s in socks:
+                s.close()
+    raise OSError("no free ports")
+
+
+def end_to_end(verbose, faults=()):
+    import run
+    from msfpconf.checks import Suite
+    from msfpconf.fake import FakeServer
+    from msfpconf.report import FAIL, SKIP, Report
+    fake = FakeServer({"suite.example.org": "127.0.0.1"}, faults=faults)
+    port = free_ports(3)
+    args = run.parser().parse_args([
+        "--code", fake.make_code(), "--code2", fake.make_code(),
+        "--address", "https://suite.example.org:%d" % port, "--listen", "127.0.0.1:%d" % port,
+        "--connect", "127.0.0.1:%d" % fake.port, "--operator", "--operator-timeout", "20", "--accept-timeout", "20",
+        "--watch-changes", "20", "--load", "--load-count", "150", "--uncallable-watch", "3", "--end"])
+    out = sys.stdout if verbose else io.StringIO()
+    report = Report(out=out, verbose=verbose)
+    t0 = time.time()
+    suite = Suite(args, report, operator_hook=fake.operator)
+    try:
+        suite.run()
+    finally:
+        fake.close()
+    bad = []
+    for r in report.results:
+        if r.status == FAIL:
+            bad.append("%s %s: FAIL: %s" % (r.id, r.title, r.detail))
+        elif r.status == SKIP:
+            bad.append("%s %s: SKIP: %s" % (r.id, r.title, r.detail))
+    n = len(report.results)
+    return bad, n, time.time() - t0, report, suite
+
+
+def main():
+    verbose = "-v" in sys.argv
+    bad = vectors()
     if bad:
         print("\n".join(bad))
-        print("%d case(s) wrong" % len(bad))
+        print("vectors: %d case(s) wrong" % len(bad))
         return 1
-    print("every case of v0-strict.json, and v0.json's key a, decide as the files say")
+    print("vectors: every case of vectors/v1/ and of v0-strict.json (as core 1 section 17 says) decides as the files say")
+    if "--vectors-only" in sys.argv:
+        return 0
+    bad, n, took, report, suite = end_to_end(verbose)
+    groups = {}
+    for r in report.results:
+        g = re.match(r"[A-Z]+", r.id).group(0)
+        groups[g] = groups.get(g, 0) + 1
+    print("end to end against the fake server: %d checks in %.0f s (%s)" % (n, took, ", ".join(
+        "%s %d" % (k, v) for k, v in sorted(groups.items()))))
+    if bad:
+        print("\n".join(bad))
+        print("%d check(s) didn't pass against the fake server" % len(bad))
+        return 1
+    print("every check passed against the fake server")
+    if "--quick" in sys.argv:
+        return 0
+    _, n, took, report, _ = end_to_end(verbose, faults=list(FAULTS))
+    status = {r.id: r.status for r in report.results}
+    missed = ["%s (fault %s): %s" % (cid, f, status.get(cid, "not run")) for f, ids in FAULTS.items() for cid in ids
+              if status.get(cid) != "fail"]
+    if missed:
+        print("the fake server with deliberate faults: these checks should have failed and didn't:\n" + "\n".join(missed))
+        return 1
+    print("with %d deliberate faults in the fake server, the %d checks aimed at them all failed (%d checks in %.0f s)"
+          % (len(FAULTS), sum(len(v) for v in FAULTS.values()), n, took))
     return 0
 
 
