@@ -175,7 +175,8 @@ func keepMusicTitle(raw []byte, libraries []string) ([]byte, error) {
 		}
 		t.Disc = integerIn(o["disc"], 1, 999)
 		t.Number = integerIn(o["number"], 1, 999)
-		t.DurationMs = integerIn(o["durationMs"], 0, 86_400_000)
+		// 0 counts as absent (music section 3.2).
+		t.DurationMs = integerIn(o["durationMs"], 1, 86_400_000)
 	}
 	if ids, ok := o["ids"].(map[string]any); ok {
 		for scheme, val := range ids {
