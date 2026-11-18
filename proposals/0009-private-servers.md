@@ -1,6 +1,6 @@
 # Proposal 9: Private servers
 
-Status: Option 1 adopted (2026-11-16); option 2 (the reverse connection) set aside for now. Open points still open.
+Status: Option 1 adopted (2026-11-16); option 2 (the reverse connection) set aside for now. Open points: 1 decided, 4 to 7 and 9 set aside with option 2 (2026-11-17); 2, 3 and 8 still open.
 Touches: sections 3, 5.2, 7.1, 7.4, 9.1, 9.2, 11, 12.4, 12.6 and 13.2 of
 [spec/v1/core.md](../spec/v1/core.md), and sections 1, 2 and 4 of
 [spec/v1/media.md](../spec/v1/media.md); option 2 adds a part.
@@ -717,7 +717,8 @@ What changes:
 
 1. **The `hello` period** of 1.3 (5 minutes): it is the delay before a
    pairing Q ended, a rotation or a revocation reaches P. Shorter costs a
-   call a peer a minute or so; longer delays revocation.
+   call a peer a minute or so; longer delays revocation. **Decided
+   2026-11-17: 5 minutes, kept.**
 2. **Knowing that one can't be called.** This draft leaves it to the
    operator. A peer could help: a `hello` answer could say whether the
    peer's last call to the sender failed to connect. Not proposed: it
@@ -726,25 +727,25 @@ What changes:
 3. **The address of a server that can't be called.** Whether section 5.2
    should reserve the `https://msfp-<26>.invalid` form, or only recommend
    it.
-4. **The upgrade's form**: an `Upgrade` token of MSFP's own (this draft),
+4. **The upgrade's form** *Set aside with option 2 (2026-11-17).*: an `Upgrade` token of MSFP's own (this draft),
    WebSocket (alternative 6), or HTTP/2's extended `CONNECT` (RFC 8441),
    which works on a Q reached over HTTP/2 but is less supported. And `GET`
    (this draft) or `POST` for the opening. Worth trying behind Caddy,
    nginx and a hosted front end before deciding.
-5. **Reverse connections from reachable peers.** This draft lets any
+5. **Reverse connections from reachable peers.** *Set aside with option 2 (2026-11-17).* This draft lets any
    `paired` peer open one, and Q uses it while it is open. Only peers that
    can't be called would be simpler; allowing all lets a server that is
    reachable only sometimes use it.
-6. **The numbers**: 15 and 10 seconds for pings, 1 to 60 seconds between
+6. **The numbers** *Set aside with option 2 (2026-11-17), except option 1's own 20 seconds, 5 minutes and 1 hour (section 1.3; 5 minutes decided with point 1).*: 15 and 10 seconds for pings, 1 to 60 seconds between
    openings, one opening per 10 seconds, 100 streams, a bound on
    connections in all with no default.
-7. **Two private servers.** Neither option pairs them. A relay, or hole
+7. **Two private servers.** *Set aside with option 2 (2026-11-17).* Neither option pairs them. A relay, or hole
    punching with a relay behind it (alternatives 3 and 4), would; both are
    out of scope here.
 8. **Reporting a pulled rotation's outcome.** 1.4 has P send `pending` or
    `refused`; Q could do without, at the price of a panel that can't tell
    why a peer hasn't moved.
-9. **Overfin behind its gateway, as Q**: whether reverse connections end
+9. **Overfin behind its gateway, as Q** *Set aside with option 2 (2026-11-17).*: whether reverse connections end
    at the gateway, with the backend's signed calls and P's answers
    carried between them, or are handed whole to the backend through the
    link (Cost), which then holds the HTTP/2 client itself. The second
