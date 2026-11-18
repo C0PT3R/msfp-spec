@@ -1,6 +1,6 @@
 # Proposal 9: Private servers
 
-Status: Option 1 adopted (2026-11-16); option 2 (the reverse connection) set aside for now. Open points: 1 decided, 4 to 7 and 9 set aside with option 2 (2026-11-17); 2, 3 and 8 still open.
+Status: Option 1 adopted (2026-11-16); option 2 (the reverse connection) set aside for now. Open points: 1 and 2 decided, 4 to 7 and 9 set aside with option 2 (2026-11-17); 3 and 8 still open.
 Touches: sections 3, 5.2, 7.1, 7.4, 9.1, 9.2, 11, 12.4, 12.6 and 13.2 of
 [spec/v1/core.md](../spec/v1/core.md), and sections 1, 2 and 4 of
 [spec/v1/media.md](../spec/v1/media.md); option 2 adds a part.
@@ -723,7 +723,12 @@ What changes:
    operator. A peer could help: a `hello` answer could say whether the
    peer's last call to the sender failed to connect. Not proposed: it
    would let a peer claim anything, and a failed connection has many
-   causes.
+   causes. **Decided 2026-11-17: a hint, shown only.** A `hello` answer
+   may carry `callsFailed: true` ("my last calls to you couldn't
+   connect"). The receiver's panel shows it with a suggestion to turn on
+   "this server can't be called"; nothing changes by itself, so a lying
+   peer can only put a message on a panel. `inbound` stays the operator's
+   setting.
 3. **The address of a server that can't be called.** Whether section 5.2
    should reserve the `https://msfp-<26>.invalid` form, or only recommend
    it.
