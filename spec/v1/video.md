@@ -54,12 +54,13 @@ A video title in `titles` carries the members of
 | `audio` | array of string, optional | films and episodes only: its copies' audio languages, as language tags ([catalog section 3](catalog.md#3-titles)) |
 | `subtitles` | array of string, optional | films and episodes only: its copies' subtitle languages, as tags: the languages of the subtitle tracks `play` would list (section 5.4) |
 | `video` | object, optional | films and episodes only: what its best copy offers for playing (section 3.2) |
+| `place` | object | episodes keyed by their TMDB episode ID only, and required for them: the episode's place in TMDB's numbering, `{"season": <n>, "episode": <n>}` (section 4.1) |
 | `with` | array of string, optional | episodes only: the keys of the other episodes the same copy holds (section 4.2) |
 | `ids` | object, optional | films, series and episodes: other identifiers of the same title, by scheme (section 4.3) |
 
 Series and seasons carry no `audio`, `subtitles` or `video`.
 
-A change of any of these members (a new `ids` value, or another `video`,
+A change of any of these members (a new `ids` value, another `video`, or a new `place`,
 say) is a change of the title: a changes reading sends it again
 ([catalog section 3.2](catalog.md#32-whole-list-or-changes)).
 
@@ -75,6 +76,12 @@ Besides the rules of [catalog section 3.3](catalog.md#33-what-the-caller-keeps-o
   a bad key is skipped;
 - in `ids`, values of known schemes in their form (section 4.3); others
   are skipped.
+- for an episode keyed by its TMDB episode ID, `place` is an object whose
+  `season` is an integer from 0 to 9,999 and whose `episode` is an
+  integer from 0 to 99,999 ([core section 2.3](core.md#23-json): `1.0`
+  and `"1"` aren't); without such a `place` the caller skips the
+  episode. Other members of `place` are ignored. `place` on any other
+  title (a film, an episode keyed by its numbers) is ignored.
 
 Members of the wrong JSON type ([core section 2.3](core.md#23-json)): an
 `audio`, `subtitles` or `with` member that isn't an array, or an `ids`
@@ -187,27 +194,36 @@ A title TMDB doesn't know is not sent.
 
 ### 4.1 Episode order
 
-Season and episode numbers in keys are TMDB's: the `season_number` and
-`episode_number` TMDB gives the episode in the series' own season list,
-not in an episode group. An owning server whose files are numbered
-another way (DVD, absolute, a broadcaster's order) maps them to TMDB's
-numbering before it sends keys. When it can't, it leaves the episode out.
+TMDB is MSFP's reference for episodes: their identity and their order
+are TMDB's. An episode's key names it; its `place` (section 3) says where
+TMDB puts it now. Season and episode numbers are TMDB's: the
+`season_number` and `episode_number` TMDB gives the episode in the
+series' own season list, not in an episode group.
 
-An episode TMDB lists is sent with the `e<episode id>` form. The
-`s<season>/e<episode>` form is only for an episode TMDB doesn't list
-(yet), in a season TMDB numbers; its numbers continue TMDB's numbering of
-that season. A receiver matches it only against the same form.
-
-A media server's season and episode numbers are often not TMDB's (some
-keep the files' numbers, often TheTVDB's; others follow the order chosen
-for the show). An owning server should key each episode by its TMDB
-episode ID, and look it up at TMDB when its media server doesn't store
-one; it uses its stored numbers only when it knows they are TMDB's. Such
-lookups need the owning server's own TMDB access, kept within TMDB's
-limits (section 7).
+- **An episode TMDB lists** is keyed by its TMDB episode ID
+  (`series/tmdb/<id>/e<episode id>`), and carries `place`. The key never
+  changes; when TMDB renumbers (a season split or merged, an episode
+  moved), the owning server sends the new `place` under the same key: a
+  change of the title ([catalog section 3.2](catalog.md#32-whole-list-or-changes)).
+  A receiver places the episode by `place`, and moves it when `place`
+  changes; what it keeps of the episode (watched state, say) follows the
+  key.
+- **An episode TMDB doesn't list (yet)**, in a season TMDB numbers, is
+  keyed by its numbers (`series/tmdb/<id>/s<season>/e<episode>`); its
+  numbers continue TMDB's numbering of that season, and it carries no
+  `place`. A receiver matches it only against the same form. Once TMDB
+  lists it, the owning server sends it under its episode ID instead: one
+  title gone, another new.
+- **An owning server whose files are numbered another way** (DVD,
+  absolute, a broadcaster's order, TheTVDB's) maps them to TMDB's numbers
+  before it sends `place`. It may find an episode's TMDB numbers from its
+  IMDb or TheTVDB ID (TMDB's lookup by external ID gives the series, the
+  season number and the episode number), once per episode, kept, within
+  TMDB's limits (section 7). When it can't place an episode in TMDB's
+  numbering, it leaves the episode out.
 
 The order a server shows its people is its own business and never
-appears in keys.
+appears in keys or `place`.
 
 ### 4.2 Several episodes in one copy
 
@@ -625,7 +641,8 @@ server, an empty part included. It accepts only PGS as picture subtitles; other 
 
 ## 8. Open questions
 
-Points 1 to 3 were settled by the owner on 2026-11-17; point 4 is open.
+Points 1 to 3 were settled by the owner on 2026-11-17, point 5 on
+2026-11-19; point 4 is open.
 Where a proposal of 2026-11-16 left a point open, the text above follows
 the proposal's own default.
 
@@ -648,6 +665,14 @@ the proposal's own default.
    carry keys only; optional names would let a viewer's server list a
    peer's titles without TMDB
    ([core open question 26](core.md#18-open-questions)).
+
+5. **Placing an episode keyed by its TMDB ID.** A receiver can't place
+   such an episode from its key: neither TMDB nor a media server looks an
+   episode up by its TMDB episode ID alone. Found while building the
+   Jellyfin plugin's viewing side.
+   **Settled:** the owning server sends `place`, TMDB's current season
+   and episode numbers, required for those episodes (sections 3, 3.1 and
+   4.1); the key stays the episode's identity when TMDB renumbers.
 
 Choices confirmed by the owner on 2026-11-17, moved here from
 [playback](playback.md#8-open-questions) and [media](media.md#6-open-questions)

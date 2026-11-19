@@ -58,6 +58,12 @@ type videoPicture struct {
 	HDR    []string `json:"hdr,omitempty"`
 }
 
+// videoPlace is an episode's place in TMDB's numbering (section 4.1).
+type videoPlace struct {
+	Season  int64 `json:"season"`
+	Episode int64 `json:"episode"`
+}
+
 // videoTitle is what a caller keeps of a video title, in the order the
 // vectors write it.
 type videoTitle struct {
@@ -67,6 +73,7 @@ type videoTitle struct {
 	Audio     []string          `json:"audio,omitempty"`
 	Subtitles []string          `json:"subtitles,omitempty"`
 	Video     *videoPicture     `json:"video,omitempty"`
+	Place     *videoPlace       `json:"place,omitempty"`
 	With      []string          `json:"with,omitempty"`
 	IDs       map[string]string `json:"ids,omitempty"`
 }
@@ -172,6 +179,18 @@ func keepVideoTitle(raw []byte, libraries []string) ([]byte, error) {
 	if kind == "movie" || kind == "episode" {
 		t.Audio, t.Subtitles = keepTags(o["audio"]), keepTags(o["subtitles"])
 		t.Video = keepPicture(o["video"])
+	}
+	if kind == "episode" && !strings.Contains(key, "/s") {
+		// Keyed by TMDB's episode ID: its place is required (section 4.1).
+		p, ok := o["place"].(map[string]any)
+		if !ok {
+			return nil, errors.New("an episode keyed by its TMDB ID without a place")
+		}
+		season, episode := integerIn(p["season"], 0, 9999), integerIn(p["episode"], 0, 99999)
+		if season == nil || episode == nil {
+			return nil, errors.New("place: season or episode missing or out of range")
+		}
+		t.Place = &videoPlace{Season: *season, Episode: *episode}
 	}
 	if kind == "episode" {
 		list, _ := o["with"].([]any)

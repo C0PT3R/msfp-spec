@@ -239,6 +239,15 @@ def title_problems(t, libs, parts_on):
                     vx = video_key(x)
                     if not vx or vx[0] != "episode" or vx[1] != vk[1] or x == k:
                         bad.append("%s: with holds %r, not another episode of the same series" % (k, x))
+        by_id = kind == "episode" and "/s" not in k
+        if by_id:
+            pl = t.get("place")
+            ok = isinstance(pl, dict) and all(
+                type(pl.get(f)) is int and 0 <= pl[f] <= hi for f, hi in (("season", 9999), ("episode", 99999)))
+            if not ok:
+                bad.append("%s: an episode keyed by its TMDB ID without a place of integers (season 0 to 9,999, episode 0 to 99,999) (video 3.1, 4.1)" % k)
+        elif "place" in t:
+            bad.append("%s (%s) carries place (video 3: episodes keyed by their TMDB ID only)" % (k, kind))
         if "ids" in t:
             ids = t["ids"]
             if kind == "season":
