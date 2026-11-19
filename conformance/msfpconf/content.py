@@ -99,7 +99,8 @@ def keep_music_title(t, libraries):
                 out[f] = t[f]
     if kind in ("album", "track") and _int_in(t.get("year"), 1000, 9999) is not None:
         out["year"] = t["year"]
-    if kind == "track" and _int_in(t.get("durationMs"), 0, 86400000) is not None:
+    # music 3.2: a durationMs of 0 is absent.
+    if kind == "track" and _int_in(t.get("durationMs"), 1, 86400000) is not None:
         out["durationMs"] = t["durationMs"]
     if isinstance(t.get("ids"), dict):
         ids = {}
