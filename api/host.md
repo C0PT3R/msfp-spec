@@ -169,7 +169,10 @@ a warning in the log).
 - A title its part can't name (no TMDB ID, no recording MBID) is not
   listed. An episode is named by its TMDB episode ID, looked up at TMDB
   when the media server stores none: its numbers are often not TMDB's
-  ([video 4.1](../spec/v1/video.md#41-episode-order)).
+  ([video 4.1](../spec/v1/video.md#41-episode-order)). The host fills its
+  `Place` with TMDB's current season and episode numbers (found by the
+  episode's IMDb or TheTVDB ID when the media server's numbers aren't
+  TMDB's); an episode without one isn't sent.
 - A video title's `Subtitles` are the languages of the tracks `play`
   would list: those the host can serve.
 - **Pictures.** A film's or episode's `Pictures` are each copy's:

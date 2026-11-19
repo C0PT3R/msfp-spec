@@ -423,7 +423,7 @@ peer's title, the one public ID it was listed in).
 
 | Type | Fields |
 |------|--------|
-| `VideoTitle` | `Audio`, `Subtitles` (tags; the host's may be its media server's codes), `Pictures` (the host's, each copy's) or `Video` (a peer's: its best copy's, cleaned), `With` (episode keys), `IDs` (`imdb`, `tvdb`…) |
+| `VideoTitle` | `Audio`, `Subtitles` (tags; the host's may be its media server's codes), `Pictures` (the host's, each copy's) or `Video` (a peer's: its best copy's, cleaned), `Place` (`Season`, `Episode`: TMDB's current numbers; required for an episode keyed by its TMDB episode ID, which isn't sent without it; a peer's is always set for those), `With` (episode keys), `IDs` (`imdb`, `tvdb`…) |
 | `MusicTitle` | `Name`, `Artists`, `ArtistNames`, `Album`, `Disc`, `Number`, `Year`, `DurationMs`, `IDs` (`mbrelease`, `mbtrack`, `isrc`) |
 
 **`Limits`**: `Streams` (0 to 50), `Transcodes` (0 to streams),
