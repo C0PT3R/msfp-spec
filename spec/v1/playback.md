@@ -179,7 +179,11 @@ by the owning server, not derived from its media server's IDs without a
 key. They need to be stable only for the life of a title's copies, since
 a viewer's server passes them back only in a later `play` of the same
 title. Track IDs (`a<n>`, `s<n>`) are positions, not identifiers, and are
-not concerned.
+not concerned. *n* is the owning server's own number for the track in
+that copy, the same at every `play` of it: its media server's stream
+index, for example, so that a film whose video is stream 0 has its
+first audio track at `a1`. A viewer's server reads nothing into *n*: it
+only sends back an ID a former answer gave it.
 
 **Roles are best effort.** `role` is absent when the owning server
 doesn't know it; it may guess from a track's title. A viewer's server
@@ -301,8 +305,10 @@ Answer `200`: `{}`.
 Refusals: `400` for a malformed body; `410` `playback-stopped` when the
 playback isn't live, or isn't this pairing's.
 
-The viewer's server should send `progress` at most every 45 seconds while
-the viewer watches, and at once when the viewer pauses or resumes. The
+The viewer's server should send `progress` while the viewer watches,
+paused too: no more often than every 45 seconds, but often enough that 2
+minutes never pass without one (below; once a minute does), and at once
+when the viewer pauses or resumes. The
 owning server ends a playback that has neither a progress report nor a
 media request for 2 minutes ([media section 4](media.md#4-how-long-a-ticket-works)).
 An open media response held by a paused player counts as use.
@@ -354,8 +360,13 @@ anything.
 - **Stream caps.** Per pairing: at most `streams` playbacks at once
   (0 refuses every `play`), and at most `transcodes` of them transcoded.
   Across the server: its transcode budget, less the transcodes it keeps
-  for its own people. A remux found to re-encode the video counts as a
-  transcode from then on. The bitrate is the lowest cap of section 2.2,
+  for its own people. A server whose media server has no such budget
+  (Jellyfin starts as many transcodes as it is asked) makes one, an
+  operator setting counting its own people's transcodes and its peers'
+  together. A remux found to re-encode the video counts as a
+  transcode from then on, when the owning server can tell (its media
+  server names the encoder of the job, for example); one that can't asks
+  for a remux only when its media server copies the video. The bitrate is the lowest cap of section 2.2,
   step 6.
 - **Defaults.** A reasonable start for a new pairing is 2 streams, 1
   transcode and no bitrate cap; the operator changes them.
@@ -429,6 +440,8 @@ A live playback ends, and its ticket stops working at once, when:
 - the pairing ends, the caller is no longer `paired`, or its key is
   suspended ([core section 12.6](core.md#126-revocation));
 - the library holding the copy is no longer offered to that peer;
+- it is a remux found to re-encode the video, and no transcode is left
+  for it, in the pairing or in the server's budget (section 6.2);
 - the owning server's operator stops it.
 
 When it ends, the owning server stops the work it started for it (the
