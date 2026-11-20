@@ -179,7 +179,11 @@ by the owning server, not derived from its media server's IDs without a
 key. They need to be stable only for the life of a title's copies, since
 a viewer's server passes them back only in a later `play` of the same
 title. Track IDs (`a<n>`, `s<n>`) are positions, not identifiers, and are
-not concerned.
+not concerned. *n* is the owning server's own number for the track in
+that copy, the same at every `play` of it: its media server's stream
+index, for example, so that a film whose video is stream 0 has its
+first audio track at `a1`. A viewer's server reads nothing into *n*: it
+only sends back an ID a former answer gave it.
 
 **Roles are best effort.** `role` is absent when the owning server
 doesn't know it; it may guess from a track's title. A viewer's server
