@@ -305,8 +305,10 @@ Answer `200`: `{}`.
 Refusals: `400` for a malformed body; `410` `playback-stopped` when the
 playback isn't live, or isn't this pairing's.
 
-The viewer's server should send `progress` at most every 45 seconds while
-the viewer watches, and at once when the viewer pauses or resumes. The
+The viewer's server should send `progress` while the viewer watches,
+paused too: no more often than every 45 seconds, but often enough that 2
+minutes never pass without one (below; once a minute does), and at once
+when the viewer pauses or resumes. The
 owning server ends a playback that has neither a progress report nor a
 media request for 2 minutes ([media section 4](media.md#4-how-long-a-ticket-works)).
 An open media response held by a paused player counts as use.
