@@ -358,7 +358,10 @@ anything.
 - **Stream caps.** Per pairing: at most `streams` playbacks at once
   (0 refuses every `play`), and at most `transcodes` of them transcoded.
   Across the server: its transcode budget, less the transcodes it keeps
-  for its own people. A remux found to re-encode the video counts as a
+  for its own people. A server whose media server has no such budget
+  (Jellyfin starts as many transcodes as it is asked) makes one, an
+  operator setting counting its own people's transcodes and its peers'
+  together. A remux found to re-encode the video counts as a
   transcode from then on. The bitrate is the lowest cap of section 2.2,
   step 6.
 - **Defaults.** A reasonable start for a new pairing is 2 streams, 1
