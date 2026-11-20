@@ -1098,10 +1098,9 @@ class Suite(PartChecks, KeyChecks):
             if a.status == 200:
                 raise Fail("a request marked Content-Encoding: gzip (its body not gzip at all) was answered 200: the "
                            "receiver must never decode a coded request, and this one isn't even coded")
-            return "refused: %s" % a.short()
-        self.check("G9", "core 3", "a request with a Content-Encoding is refused", coded_request)
-        self.note_unclear("core 3", "a request carrying Content-Encoding may get the unsigned 404 at once, or fail later \"as a "
-                          "bad signature or a bad body\" (a signed 404): the suite accepts any refusal")
+            # Refused at once, before any signature check (core 3).
+            return "refused at once: " + self.unsigned_404(a)
+        self.check("G9", "core 3", "a request with a Content-Encoding gets the unsigned 404 at once", coded_request)
 
         def too_long():
             big = dumps(self.hello_body("paired", x="a" * 70000))
