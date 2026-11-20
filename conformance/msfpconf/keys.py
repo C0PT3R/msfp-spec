@@ -481,8 +481,8 @@ class KeyChecks:
                    loopback)
         self.note_unclear("core 3.3", "refused destinations can be seen from outside only when the suite shares the server's "
                           "machine (loopback); link-local, metadata, multicast and the NAT64 and 6to4 forms can't be")
-        self.note_unclear("core 13.2", "a failed confirmation is retried \"at most once an hour\"; whether a later hello naming "
-                          "the stored address again cancels that retry isn't said")
+        # Core 13.2 step 3: that hello also drops the pending move's
+        # retries; an hour apart, they can't be watched from here.
         self.address = a1
 
     # ---- the server's own key, pushed (core 9.3, 12.4) ----------------------------------------
