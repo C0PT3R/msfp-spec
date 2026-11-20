@@ -13,7 +13,8 @@ It pairs with the server from a pairing code, then checks the pairing,
 `hello` and the versions and parts it carries, signatures both ways,
 the strict forms of core section 2, replay and nonces, the catalog,
 playback and media, rotation and revocation of its own key, address
-changes, and what a server does toward a peer that can't be called.
+changes, what a server does toward a peer that can't be called, and,
+with `--watch-pause`, the server as a viewer of the suite's films.
 Every check names the file and section it tests (`core 6.4`,
 `media 2.1`), whether that section says *must* or *should*, whether it
 needs the server's operator, and why it passed, failed or was skipped.
