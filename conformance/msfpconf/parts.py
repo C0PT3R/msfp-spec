@@ -336,7 +336,11 @@ class PartChecks:
             pages = seen["pages"]
             new = [t["key"] for p in pages for t in (p.get("titles") or [])]
             gone = [k for p in pages for k in (p.get("gone") or [])]
-            now = {t["key"] for p in self.read_titles(libs) for t in (p.get("titles") or [])}
+            after = [t for p in self.read_titles(libs) for t in (p.get("titles") or []) if isinstance(t, dict)]
+            now = {t["key"] for t in after}
+            # The titles the checks after this one take (play among them):
+            # the list as it is now, not as it was before the change.
+            self.whole = after
             expect = (old - set(gone)) | set(new)
             if now != expect:
                 raise Fail("the changes don't add up to the new whole list: differ on %s" % sorted(expect ^ now)[:10])
