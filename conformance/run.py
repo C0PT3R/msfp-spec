@@ -48,6 +48,9 @@ def parser():
                     help="seconds to wait for the pairing to be accepted (default 600; 60 with --no-operator)")
     ap.add_argument("--watch-changes", type=int, default=0,
                     help="seconds to wait for the operator to add and remove a title (0: skip that check)")
+    ap.add_argument("--watch-pause", type=int, default=0,
+                    help="seconds the operator keeps one of this suite's films paused on the server, then stops it "
+                         "(checks the server as a viewer, VW1 to VW4; 0: skip them)")
     ap.add_argument("--uncallable-watch", type=int, default=20,
                     help="seconds the suite watches that nothing connects to it once it says it can't be called (default 20)")
     ap.add_argument("--load", action="store_true", help="also send a burst of calls to check the rate limits (core 8.3)")

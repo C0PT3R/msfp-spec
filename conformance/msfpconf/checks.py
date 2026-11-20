@@ -120,7 +120,7 @@ class Suite(PartChecks, KeyChecks):
         done() is true (polled every 2 s), the time is up, or Enter is
         pressed. Returns whether done() became true."""
         cid = cid or {"want": "Q1", "accept2": "UP2", "confirm": "K11", "rotate": "O1", "rotate2": "O3", "revoke": "O4",
-                      "change": "T9"}.get(action)
+                      "change": "T9", "watch": "VW1"}.get(action)
         if cid and self.skipped(cid):
             return False
         timeout = timeout or self.a.operator_timeout

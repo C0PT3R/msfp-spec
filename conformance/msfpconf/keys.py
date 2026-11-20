@@ -83,6 +83,84 @@ class KeyChecks:
                 raise Fail("the server didn't ask for the page after next = movie/tmdb/603")
             return "followed next (the suite sends next on a short page on purpose: a caller follows any next above its after)"
         self.check("Q3", "catalog 3.1", "the server follows next to the following page", follows, operator=True)
+        self.viewer_checks()
+
+    # ---- the server as a viewer of this suite's films (playback 2 to 4, 6.3) -------------
+
+    def viewer_checks(self):
+        """With --watch-pause: the operator plays one of this suite's films
+        on the server, pauses at once and stops after that many seconds.
+        This suite plays the owning server (a two-second clip for each
+        film) and ends a playback it hears nothing of for 2 minutes."""
+        Fail, Skip = _x()
+        s = self.peer
+        ids = ("VW1", "VW2", "VW3", "VW4")
+        sections = ("playback 2.1, 2.2; core 6.4", "playback 3, 6.3", "playback 3", "playback 4")
+        titles = ("the server's play of this suite's film is well signed and well formed",
+                  "while its viewer pauses, the server keeps the playback: never 2 minutes without progress or media",
+                  "the pause is reported (progress with paused true)",
+                  "the server sends stop when its viewer stops")
+        levels = ("MUST", "SHOULD", "SHOULD", "SHOULD")
+
+        def skip_all(why):
+            for cid, sec, title, level in zip(ids, sections, titles, levels):
+                self.skip(cid, sec, title, why, level=level, operator=True)
+        if not self.a.watch_pause:
+            skip_all("run with --watch-pause SECONDS to have the operator play one of this suite's films and pause it")
+            return
+        if "playback" not in self.parts_on():
+            skip_all("playback isn't on between the server and this suite")
+            return
+        t0 = time.time()
+
+        def mine():
+            with s.lock:
+                return [pb for pb in s.playbacks.values() if pb["opened"] >= t0]
+
+        def done():
+            return any(pb["stopped"] is not None for pb in mine())
+        self.ask_operator("watch", "on the server, play one of this peer's films (Fight Club, The Matrix or Heat), "
+                                   "pause it at once, keep it paused, and stop it after %d seconds" % self.a.watch_pause,
+                          done, self.a.watch_pause + 120)
+        pbs = mine()
+        if not pbs:
+            skip_all("the server played none of this suite's films")
+            return
+        pb = next((x for x in pbs if x["stopped"] is not None), pbs[-1])
+        end = pb["stopped"] or time.time()
+
+        def well():
+            plays = [r for r in s.since(t0 - 1, call="play")]
+            bad = sorted({f for r in plays for f in r["faults"]})
+            if bad:
+                raise Fail("\n".join(bad))
+            return "%d play request(s), well signed and formed; %s" % (len(plays), pb["title"])
+        self.check("VW1", sections[0], titles[0], well, operator=True)
+
+        def kept():
+            with s.lock:
+                heard = sorted([pb["opened"]] + [t for t, _, _ in pb["progress"]] + pb["media"])
+            times = [t for t in heard if t <= end] + [end]
+            gaps = [(b - a, a) for a, b in zip(times, times[1:])]
+            gap, since = max(gaps) if gaps else (0, pb["opened"])
+            if gap > s.EXPIRY:
+                raise Fail("%d s without progress or media from %d s after the play (a playback ends after %d s, "
+                           "playback 6.3)" % (gap, since - pb["opened"], s.EXPIRY))
+            return "%d progress reports and %d media requests over %d s; the longest gap %d s" % (
+                len(pb["progress"]), len(pb["media"]), end - pb["opened"], gap)
+        self.check("VW2", sections[1], titles[1], kept, level="SHOULD", operator=True)
+
+        def paused():
+            if not any(p for _, _, p in pb["progress"]):
+                raise Fail("no progress with paused true (%d progress reports)" % len(pb["progress"]))
+            return "reported paused"
+        self.check("VW3", sections[2], titles[2], paused, level="SHOULD", operator=True)
+
+        def stopped():
+            if pb["stopped"] is None:
+                raise Fail("no stop within %d s" % (self.a.watch_pause + 120))
+            return "stop %d s after the play" % (pb["stopped"] - pb["opened"])
+        self.check("VW4", sections[3], titles[3], stopped, level="SHOULD", operator=True)
 
     # ---- rate limits (core 8.3) ----------------------------------------------------------
 
