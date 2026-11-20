@@ -107,6 +107,16 @@ skips them all. The pairing must still be accepted: with
 then) for a test switch that accepts it by itself, and skips everything
 after the pairing if nothing does.
 
+The steps can also be played by a program, through the server's own
+administration API: build the suite in Python with
+`Suite(args, report, operator_hook=hook)` (from `msfpconf.checks`, with
+`run.parser()` for `args`), where `hook(step)` is called with the step's
+name (`accept`, `want`, `change`, `accept2`, `confirm`, `rotate`,
+`rotate2`, `revoke`) before the suite starts watching for it, exactly as
+an operator would be asked. The suite still checks the outcome itself
+and waits up to the step's timeout. `selftest.py` plays the operator of
+its own test server this way.
+
 ### Other options
 
 | Option | What it does |
