@@ -1,3 +1,5 @@
+<img src="logo.png" alt="" width="128" align="right">
+
 # MSFP: Media Server Federation Protocol
 
 MSFP lets media servers share their libraries with each other: one
