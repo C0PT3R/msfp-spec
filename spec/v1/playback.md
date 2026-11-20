@@ -362,7 +362,9 @@ anything.
   (Jellyfin starts as many transcodes as it is asked) makes one, an
   operator setting counting its own people's transcodes and its peers'
   together. A remux found to re-encode the video counts as a
-  transcode from then on. The bitrate is the lowest cap of section 2.2,
+  transcode from then on, when the owning server can tell (its media
+  server names the encoder of the job, for example); one that can't asks
+  for a remux only when its media server copies the video. The bitrate is the lowest cap of section 2.2,
   step 6.
 - **Defaults.** A reasonable start for a new pairing is 2 streams, 1
   transcode and no bitrate cap; the operator changes them.
