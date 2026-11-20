@@ -55,6 +55,7 @@ FAULTS = {
     "loopback": ["X1"],             # connects to a loopback address for a peer (core 3.3)
     "oldkey": ["O2"],               # still signs with the old key after the peer answered rotated (core 12.4)
     "quietpause": ["VW2", "VW3"],   # no progress while its viewer pauses (playback 3, 6.3; expiry 20 s in that run)
+    "badstop": ["VW1"],             # a stop with a negative position (playback 4)
 }
 
 

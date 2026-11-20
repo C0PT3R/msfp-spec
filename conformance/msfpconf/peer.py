@@ -17,6 +17,7 @@ from .wire import (FED, STREAM, H_SIG, MAX_INT, NotIJSON, answer_message, b64u, 
                    unb64u)
 
 NOT_FOUND = b'{"type":"not-found","title":"Not found","status":404}\n'
+MAX_POSITION = 8640000000       # playback 3 and 4: 100 days
 
 
 def problem(status, typ, title, **extra):
@@ -281,8 +282,10 @@ class PeerServer:
         if call == "play":
             return self._play(j)
         if call == "progress":
-            return self._progress(j)
+            return self._progress(j, rec)
         if call == "stop":
+            if self._malformed("stop", j, rec):
+                return 400, problem(400, "invalid-request", "Invalid request")
             pb = self.playbacks.get(j.get("id"))
             if pb is not None and pb["stopped"] is None:
                 pb["stopped"] = time.time()
@@ -326,7 +329,25 @@ class PeerServer:
             return False
         return True
 
-    def _progress(self, j):
+    @staticmethod
+    def _malformed(call, j, rec):
+        """Playback 3 and 4: a progress or stop body this suite refuses with
+        400, noted as the server's fault."""
+        bad = []
+        if not isinstance(j.get("id"), str) or not re.fullmatch(r"play_[a-z2-7]{26}", j["id"]):
+            bad.append("id %r isn't play_ and 26 base32 characters" % j.get("id"))
+        pos = j.get("positionMs")
+        if "positionMs" in j and not (isinstance(pos, int) and not isinstance(pos, bool) and 0 <= pos <= MAX_POSITION):
+            bad.append("positionMs %r isn't an integer from 0 to 8,640,000,000" % pos)
+        if call == "progress" and "paused" in j and not isinstance(j["paused"], bool):
+            bad.append("paused %r isn't a boolean" % j["paused"])
+        for b in bad:
+            rec["faults"].append("its %s would be refused with 400: %s (playback %s)" % (call, b, "3" if call == "progress" else "4"))
+        return bool(bad)
+
+    def _progress(self, j, rec):
+        if self._malformed("progress", j, rec):
+            return 400, problem(400, "invalid-request", "Invalid request")
         pb = self.playbacks.get(j.get("id"))
         if pb is None or not self.live(pb):
             return 410, problem(410, "playback-stopped", "Playback was stopped")

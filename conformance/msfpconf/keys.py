@@ -95,8 +95,8 @@ class KeyChecks:
         Fail, Skip = _x()
         s = self.peer
         ids = ("VW1", "VW2", "VW3", "VW4")
-        sections = ("playback 2.1, 2.2; core 6.4", "playback 3, 6.3", "playback 3", "playback 4")
-        titles = ("the server's play of this suite's film is well signed and well formed",
+        sections = ("playback 2 to 4; core 6.4", "playback 3, 6.3", "playback 3", "playback 4")
+        titles = ("the server's play, progress and stop for this suite's film are well signed and well formed",
                   "while its viewer pauses, the server keeps the playback: never 2 minutes without progress or media",
                   "the pause is reported (progress with paused true)",
                   "the server sends stop when its viewer stops")
@@ -118,7 +118,8 @@ class KeyChecks:
                 return [pb for pb in s.playbacks.values() if pb["opened"] >= t0]
 
         def done():
-            return any(pb["stopped"] is not None for pb in mine())
+            # Any stop ends the step: a malformed one too (VW1 and VW4 tell).
+            return any(pb["stopped"] is not None for pb in mine()) or bool(s.since(t0, call="stop"))
         self.ask_operator("watch", "on the server, play one of this peer's films (Fight Club, The Matrix or Heat), "
                                    "pause it at once, keep it paused, and stop it after %d seconds" % self.a.watch_pause,
                           done, self.a.watch_pause + 120)
@@ -130,11 +131,13 @@ class KeyChecks:
         end = pb["stopped"] or time.time()
 
         def well():
-            plays = [r for r in s.since(t0 - 1, call="play")]
-            bad = sorted({f for r in plays for f in r["faults"]})
+            calls = [r for r in s.since(t0 - 1) if r["call"] in ("play", "progress", "stop")]
+            bad = sorted({f for r in calls for f in r["faults"]})
             if bad:
                 raise Fail("\n".join(bad))
-            return "%d play request(s), well signed and formed; %s" % (len(plays), pb["title"])
+            n = {c: sum(1 for r in calls if r["call"] == c) for c in ("play", "progress", "stop")}
+            return "%(play)d play, %(progress)d progress and %(stop)d stop request(s), well signed and formed" % n + \
+                "; " + pb["title"]
         self.check("VW1", sections[0], titles[0], well, operator=True)
 
         def kept():

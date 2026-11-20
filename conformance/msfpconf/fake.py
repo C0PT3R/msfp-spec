@@ -178,7 +178,7 @@ class FakeServer:
                 while time.time() < end:
                     time.sleep(max(0, min(10, end - time.time())))
                     self.call(p, "progress", {"id": pid, "positionMs": 0, "paused": True})
-            self.call(p, "stop", {"id": pid, "positionMs": 0})
+            self.call(p, "stop", {"id": pid, "positionMs": -1 if "badstop" in self.faults else 0})
             return
 
     def op_confirm(self):
