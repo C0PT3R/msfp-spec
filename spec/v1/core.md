@@ -2603,3 +2603,14 @@ check of how Plex and Emby map onto MSFP
     player selects `audioTrack` itself
     ([media section 1](media.md#1-the-urls)); an implementation may run
     as a separate service, holding the narrowest credential (section 1).
+45. Six points stated, from the Jellyfin plugin, decided by the owner on
+    2026-11-20: a track's position is the owning server's own stable
+    number for it in the copy
+    ([playback section 2.3](playback.md#23-the-answer)); a server whose
+    media server has no transcode budget makes one, and a remux found to
+    re-encode counts as a transcode when the owning server can tell
+    (playback section 6.2), ending when none is left (playback section
+    6.3); a server under a base path has its discovery document served at
+    its address's root (section 11); a viewer's server sends `progress`
+    no more often than every 45 seconds but never lets 2 minutes pass
+    without one, paused too ([playback section 3](playback.md#3-progress)).
