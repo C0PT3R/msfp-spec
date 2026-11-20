@@ -1663,6 +1663,13 @@ an `application/json` document:
   example; empty by default). The media's stream root is
   `<address><prefix>/api/v1/stream/` ([media](media.md#1-the-urls)).
   A document whose `base` breaks this counts as no document.
+- **A server under a base path** (a media server reached at
+  `/jellyfin`, say) has a prefix, and its peers learn it only from this
+  document, at the address's root: an address has no path (section 5.2).
+  Such a server switches the document on, and has it served at the root
+  by whatever serves the root (its reverse proxy, when the media server
+  serves nothing there). Without it, its peers call the default base and
+  get nothing.
 - **It proves nothing.** The document is not signed. It lets a server
   find a peer's API and see, before pairing, whether they have a version
   in common. The versions used are always those of the signed `hello`
