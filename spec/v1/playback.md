@@ -438,6 +438,8 @@ A live playback ends, and its ticket stops working at once, when:
 - the pairing ends, the caller is no longer `paired`, or its key is
   suspended ([core section 12.6](core.md#126-revocation));
 - the library holding the copy is no longer offered to that peer;
+- it is a remux found to re-encode the video, and no transcode is left
+  for it, in the pairing or in the server's budget (section 6.2);
 - the owning server's operator stops it.
 
 When it ends, the owning server stops the work it started for it (the
