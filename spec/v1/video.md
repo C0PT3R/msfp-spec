@@ -678,27 +678,27 @@ Choices confirmed by the owner on 2026-11-17, moved here from
 [playback](playback.md#8-open-questions) and [media](media.md#6-open-questions)
 (they may still change as implementations show):
 
-5. **`startPositionMs` with several episodes in one copy** (section 5.2).
+6. **`startPositionMs` with several episodes in one copy** (section 5.2).
    Proposal 5 says where a playback of a later episode starts, but not how
    `startPositionMs` combines with it. This draft reads a non-zero
    `startPositionMs` as a position in the copy.
-6. **Timestamp tags in WebVTT** stay as escaped text (section 6.3), as
+7. **Timestamp tags in WebVTT** stay as escaped text (section 6.3), as
    Overfin does. Removing them would suit karaoke-style subtitles better.
-7. **Checks left to the player**: WebVTT timings out of range or order,
+8. **Checks left to the player**: WebVTT timings out of range or order,
    and PGS fields beyond sizes (sections 6.3 and 6.4). An open PGS object
    at the end of a part isn't refused.
 
 **Choices this draft made, confirmed by the owner on 2026-11-17** (when the video rules were moved
 out of `catalog`, `playback` and `media` on 2026-11-17):
 
-8. **The WebVTT and PGS vectors stay in
+9. **The WebVTT and PGS vectors stay in
    [vectors/v1/media.json](../../vectors/v1/media.json)**, a file named
    for the part that held these rules before, rather than in a new file
    for `video`.
 
 **Decided by the owner on 2026-11-18.**
 
-9. **What the picture looks like** (section 3.2). Films and episodes
+10. **What the picture looks like** (section 3.2). Films and episodes
    carry an optional `video`, the stepped height and HDR formats of the
    best copy, so that a viewer's server can describe a peer's title
    before it is played. A change of it is a change of the title
@@ -706,8 +706,8 @@ out of `catalog`, `playback` and `media` on 2026-11-17):
    Its test cases, with the rest of what a caller keeps of a video title
    (section 3.1), are in a file of their own,
    [vectors/v1/video.json](../../vectors/v1/video.json); the WebVTT and
-   PGS cases stay where point 8 says.
-10. **Platform neutrality** (sections 3, 4.1, 5.3, 5.4, 5.5 and 7): only
+   PGS cases stay where point 9 says.
+11. **Platform neutrality** (sections 3, 4.1, 5.3, 5.4, 5.5 and 7): only
     the subtitles the owning server can serve are listed; episodes keyed
     by their TMDB episode ID; credits, markers without an end, BIF
     previews. With the rest of the check of Plex and Emby,
