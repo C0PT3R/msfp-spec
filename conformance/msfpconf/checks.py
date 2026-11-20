@@ -873,8 +873,25 @@ class Suite(PartChecks, KeyChecks):
         self.check("V5", "core 10.3, 10.4", "media off turns playback off (a dependency): play gets not-supported",
                    part_off("media", [play]))
         self.check("V6", "catalog 5, core 10.3", "video off: titles holds no video title", part_off("video", [], no_video_titles))
-        self.note_unclear("core 10.2, 10.3", "a hello without core (or with no common core) leaves no common core, but what the "
-                          "receiver then answers to that peer's calls isn't said; the suite doesn't test it")
+
+        def no_core():
+            # A hello without core, then one with an empty core: no common
+            # core, so every call but hello gets the signed 404
+            # not-supported (core 10.2, 10.3, 10.4); a hello with core 1
+            # puts it back.
+            out = []
+            for label, over in (("no core", {"core": None}), ("core []", {"core": []})):
+                self.signed(self.hello("paired", **over), 200)
+                try:
+                    a = c.call("libraries", {})
+                    self.signed(a, 404, "not-supported")
+                    out.append(label)
+                finally:
+                    self.signed(self.hello("paired"), 200)
+            a = self.signed(c.call("libraries", {}), 200)
+            return "with %s: libraries answered 404 not-supported; with core 1 again, libraries %d" % (" and ".join(out), a.status)
+
+        self.check("V7", "core 10.2, 10.3, 10.4", "no common core: every call but hello gets the signed 404 not-supported", no_core)
 
     # ---- JSON (core 2.3) --------------------------------------------------------------------------------
 
