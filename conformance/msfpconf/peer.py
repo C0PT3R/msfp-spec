@@ -3,6 +3,7 @@ under --plain-http) that answers the server under test as a core 1 peer
 would, checks each of its requests as core 6.4 says, and records them."""
 
 import http.server
+import os
 import re
 import socket
 import ssl
@@ -10,12 +11,13 @@ import threading
 import time
 import urllib.parse
 
-from . import ed25519
-from .wire import (FED, H_SIG, MAX_INT, NotIJSON, answer_message, b64u, commitment, decimal, dumps, has_null,
+from . import clip, ed25519
+from .wire import (FED, STREAM, H_SIG, MAX_INT, NotIJSON, answer_message, b64u, commitment, decimal, dumps, has_null,
                    host_of, parse_ijson, read_revocation, read_rotation, request_message, split_hostport,
                    unb64u)
 
 NOT_FOUND = b'{"type":"not-found","title":"Not found","status":404}\n'
+MAX_POSITION = 8640000000       # playback 3 and 4: 100 days
 
 
 def problem(status, typ, title, **extra):
@@ -52,6 +54,8 @@ class PeerServer:
         self.pending_rotation = None    # a new key of the server waiting for this suite's "operator"
         self.auto_confirm = True
         self.server_prev = None         # (key bytes, until)
+        self.playbacks = {}             # the server playing this suite's films: id -> see _play
+        self.tickets = {}               # ticket -> playback id
 
     # ---- listeners --------------------------------------------------------------
 
@@ -193,6 +197,9 @@ class PeerServer:
         return kw
 
     def _get(self, h, label):
+        if h.path.startswith(STREAM) and h.command in ("GET", "HEAD"):
+            self._media(h, label)
+            return
         hdrs = {k.lower(): v for k, v in h.headers.items()}
         with self.lock:
             self._record(listener=label, method=h.command, path=h.path, call="discovery" if h.path == "/.well-known/msfp" else None,
@@ -273,12 +280,126 @@ class PeerServer:
             page = dict(page, titles=[t for t in page.get("titles", []) if t["library"] in libs and t["library"] in offered])
             return 200, dumps(page)
         if call == "play":
-            return 409, problem(409, "not-playable", "This item can't be played")
+            return self._play(j)
         if call == "progress":
-            return 410, problem(410, "playback-stopped", "Playback was stopped")
+            return self._progress(j, rec)
         if call == "stop":
+            if self._malformed("stop", j, rec):
+                return 400, problem(400, "invalid-request", "Invalid request")
+            pb = self.playbacks.get(j.get("id"))
+            if pb is not None and pb["stopped"] is None:
+                pb["stopped"] = time.time()
             return 200, b"{}"
         return 404, NOT_FOUND
+
+    # ---- this suite as the owning server: the server under test plays its films ----------
+
+    EXPIRY = 120    # playback 6.3: neither progress nor a media request for 2 minutes
+
+    def _play(self, j):
+        """Playback 2: a film of this suite's catalog, served as it is (the
+        same short clip for each), with a ticket under the stream root."""
+        keys = {t["key"] for page in self.pages.values() for t in page.get("titles", [])}
+        if not isinstance(j.get("title"), str) or j["title"] not in keys:
+            return 404, NOT_FOUND
+        alphabet = "abcdefghijklmnopqrstuvwxyz234567"
+        pid = "play_" + "".join(alphabet[b % 32] for b in os.urandom(26))
+        ticket = b64u(os.urandom(24))
+        now = time.time()
+        self.playbacks[pid] = {"title": j["title"], "ticket": ticket, "opened": now, "progress": [], "media": [],
+                               "stopped": None, "expired": None}
+        self.tickets[ticket] = pid
+        root = self.suite.address + STREAM + ticket + "/"
+        return 200, dumps({"id": pid, "method": "direct",
+                           "stream": {"url": root + "file", "protocol": "file", "mimeType": "video/mp4"},
+                           "positionMs": 0, "durationMs": clip.DURATION_MS,
+                           "audioTracks": [{"id": "a0", "label": "Silence", "language": "en", "channels": 1,
+                                            "default": True}],
+                           "audioTrack": "a0"})
+
+    def live(self, pb, now=None):
+        """Whether a playback is live: not stopped, and heard of (progress
+        or media) within the last 2 minutes; marks it expired otherwise."""
+        now = now or time.time()
+        if pb["stopped"] is not None or pb["expired"] is not None:
+            return False
+        last = max([pb["opened"]] + [t for t, _, _ in pb["progress"]] + pb["media"])
+        if now - last > self.EXPIRY:
+            pb["expired"] = last + self.EXPIRY
+            return False
+        return True
+
+    @staticmethod
+    def _malformed(call, j, rec):
+        """Playback 3 and 4: a progress or stop body this suite refuses with
+        400, noted as the server's fault."""
+        bad = []
+        if not isinstance(j.get("id"), str) or not re.fullmatch(r"play_[a-z2-7]{26}", j["id"]):
+            bad.append("id %r isn't play_ and 26 base32 characters" % j.get("id"))
+        pos = j.get("positionMs")
+        if "positionMs" in j and not (isinstance(pos, int) and not isinstance(pos, bool) and 0 <= pos <= MAX_POSITION):
+            bad.append("positionMs %r isn't an integer from 0 to 8,640,000,000" % pos)
+        if call == "progress" and "paused" in j and not isinstance(j["paused"], bool):
+            bad.append("paused %r isn't a boolean" % j["paused"])
+        for b in bad:
+            rec["faults"].append("its %s would be refused with 400: %s (playback %s)" % (call, b, "3" if call == "progress" else "4"))
+        return bool(bad)
+
+    def _progress(self, j, rec):
+        if self._malformed("progress", j, rec):
+            return 400, problem(400, "invalid-request", "Invalid request")
+        pb = self.playbacks.get(j.get("id"))
+        if pb is None or not self.live(pb):
+            return 410, problem(410, "playback-stopped", "Playback was stopped")
+        pos = j.get("positionMs")
+        pb["progress"].append((time.time(), pos if isinstance(pos, int) else None, j.get("paused") is True))
+        return 200, b"{}"
+
+    def _media(self, h, label):
+        """Media 1 and 2.1: the clip at <stream root><ticket>/file, with
+        ranges, for a live playback's ticket."""
+        rest = h.path[len(STREAM):].split("?")[0].split("/")
+        with self.lock:
+            pid = self.tickets.get(rest[0]) if len(rest) == 2 and rest[1] == "file" else None
+            pb = self.playbacks.get(pid) if pid else None
+            ok = pb is not None and self.live(pb)
+            if ok:
+                pb["media"].append(time.time())
+            self._record(listener=label, method=h.command, path=h.path, call="media", faults=[], notes=[], body=b"",
+                         host=None, json=None, status=200 if ok else 404)
+        data = clip.MP4
+        try:
+            if not ok:
+                h.send_response(404)
+                h.send_header("Content-Length", "0")
+                h.end_headers()
+                return
+            start, end, status = 0, len(data) - 1, 200
+            m = re.fullmatch(r"bytes=(\d*)-(\d*)", (h.headers.get("Range") or "").strip())
+            if m and (m.group(1) or m.group(2)):
+                if m.group(1):
+                    start = int(m.group(1))
+                    end = min(int(m.group(2)), len(data) - 1) if m.group(2) else len(data) - 1
+                else:
+                    start = max(len(data) - int(m.group(2)), 0)
+                if start >= len(data) or start > end:
+                    h.send_response(416)
+                    h.send_header("Content-Range", "bytes */%d" % len(data))
+                    h.send_header("Content-Length", "0")
+                    h.end_headers()
+                    return
+                status = 206
+            h.send_response(status)
+            h.send_header("Content-Type", "video/mp4")
+            h.send_header("Accept-Ranges", "bytes")
+            if status == 206:
+                h.send_header("Content-Range", "bytes %d-%d/%d" % (start, end, len(data)))
+            h.send_header("Content-Length", str(end - start + 1))
+            h.end_headers()
+            if h.command == "GET":
+                h.wfile.write(data[start:end + 1])
+        except OSError:
+            pass
 
     def _rotate(self, j, key, rec):
         """Core 12.3, as the receiver of the server's rotate."""

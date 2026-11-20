@@ -54,6 +54,8 @@ FAULTS = {
     "vtt": ["M6"],                  # a WebVTT part served as it is, not rebuilt (video 6.3)
     "loopback": ["X1"],             # connects to a loopback address for a peer (core 3.3)
     "oldkey": ["O2"],               # still signs with the old key after the peer answered rotated (core 12.4)
+    "quietpause": ["VW2", "VW3"],   # no progress while its viewer pauses (playback 3, 6.3; expiry 20 s in that run)
+    "badstop": ["VW1"],             # a stop with a negative position (playback 4)
 }
 
 
@@ -214,10 +216,14 @@ def end_to_end(verbose, faults=()):
         "--code", fake.make_code(), "--code2", fake.make_code(),
         "--address", "https://suite.example.org:%d" % port, "--listen", "127.0.0.1:%d" % port,
         "--connect", "127.0.0.1:%d" % fake.port, "--operator", "--operator-timeout", "20", "--accept-timeout", "20",
-        "--watch-changes", "20", "--load", "--load-count", "150", "--uncallable-watch", "3", "--end"])
+        "--watch-changes", "20", "--watch-pause", "30", "--load", "--load-count", "150", "--uncallable-watch", "3", "--end"])
     out = sys.stdout if verbose else io.StringIO()
     report = Report(out=out, verbose=verbose)
     t0 = time.time()
+    from msfpconf.peer import PeerServer
+    # The suite's 2-minute expiry, shorter than the 30-second watch when
+    # the fake says nothing while paused (VW2 must fail then).
+    PeerServer.EXPIRY = 20 if "quietpause" in faults else 120
     suite = Suite(args, report, operator_hook=fake.operator)
     try:
         suite.run()

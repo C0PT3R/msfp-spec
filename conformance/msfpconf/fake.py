@@ -155,6 +155,32 @@ class FakeServer:
                     break
                 after = nxt
 
+    watch_seconds = 30
+
+    def op_watch(self):
+        """A viewer of the suite's film Heat: play, paused at once, reported
+        paused every 10 seconds, stopped after watch_seconds."""
+        for p in list(self.peers.values()):
+            if p.state != "paired" or not p.inbound:
+                continue
+            a = self.call(p, "play", {"title": "movie/tmdb/949", "capabilities": {"containers": ["mp4"],
+                                                                                    "videoCodecs": ["h264"],
+                                                                                    "audioCodecs": ["aac"]}})
+            if not a or a.status != 200 or not isinstance(a.json.get("id"), str):
+                return
+            pid = a.json["id"]
+            if "quietpause" in self.faults:
+                # A viewer's server that says nothing while its viewer pauses.
+                time.sleep(self.watch_seconds)
+            else:
+                self.call(p, "progress", {"id": pid, "positionMs": 0, "paused": True})
+                end = time.time() + self.watch_seconds
+                while time.time() < end:
+                    time.sleep(max(0, min(10, end - time.time())))
+                    self.call(p, "progress", {"id": pid, "positionMs": 0, "paused": True})
+            self.call(p, "stop", {"id": pid, "positionMs": -1 if "badstop" in self.faults else 0})
+            return
+
     def op_confirm(self):
         with self.lock:
             for p in self.peers.values():

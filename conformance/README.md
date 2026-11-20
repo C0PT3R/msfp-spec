@@ -13,7 +13,8 @@ It pairs with the server from a pairing code, then checks the pairing,
 `hello` and the versions and parts it carries, signatures both ways,
 the strict forms of core section 2, replay and nonces, the catalog,
 playback and media, rotation and revocation of its own key, address
-changes, and what a server does toward a peer that can't be called.
+changes, what a server does toward a peer that can't be called, and,
+with `--watch-pause`, the server as a viewer of the suite's films.
 Every check names the file and section it tests (`core 6.4`,
 `media 2.1`), whether that section says *must* or *should*, whether it
 needs the server's operator, and why it passed, failed or was skipped.
@@ -94,6 +95,7 @@ They are marked `[operator]`:
 | accept the pairing | W4, and everything after it |
 | want the suite's library "Conformance films" | Q1 to Q3 |
 | add one title to an offered library and remove one (with `--watch-changes SECONDS`) | T9 |
+| play one of the suite's films, pause it at once, stop it after the given time (with `--watch-pause SECONDS`) | VW1 to VW4 |
 | accept the second pairing (with `--code2`) | UP2, UP3 |
 | confirm the suite's pending key rotation | K11 |
 | rotate the server's own key | O1, O2 |
@@ -107,12 +109,21 @@ skips them all. The pairing must still be accepted: with
 then) for a test switch that accepts it by itself, and skips everything
 after the pairing if nothing does.
 
+With `--watch-pause`, the suite is also the owning server of its three
+films: it answers `play` with a playback of a two-second clip (served as
+it is, with ranges, under its stream root) and ends a playback it hears
+nothing of for 2 minutes, as playback section 6.3 says. The checks VW1
+to VW4 look at the server as a viewer: its `play` well signed and
+formed, the playback kept while its viewer pauses (no 2 minutes without
+`progress` or a media request), the pause reported, and `stop` at the
+end. Give a pause longer than 2 minutes (150 s, say) for VW2 to tell.
+
 The steps can also be played by a program, through the server's own
 administration API: build the suite in Python with
 `Suite(args, report, operator_hook=hook)` (from `msfpconf.checks`, with
 `run.parser()` for `args`), where `hook(step)` is called with the step's
-name (`accept`, `want`, `change`, `accept2`, `confirm`, `rotate`,
-`rotate2`, `revoke`) before the suite starts watching for it, exactly as
+name (`accept`, `want`, `change`, `watch`, `accept2`, `confirm`,
+`rotate`, `rotate2`, `revoke`) before the suite starts watching for it, exactly as
 an operator would be asked. The suite still checks the outcome itself
 and waits up to the step's timeout. `selftest.py` plays the operator of
 its own test server this way.
