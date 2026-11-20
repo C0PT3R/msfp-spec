@@ -988,8 +988,6 @@ class PartChecks:
             try:
                 check_pgs(body)
             except Refused as e:
-                self.note_unclear("video 6.2, 6.4", "what a PGS part of a stretch with no subtitle in it holds: an empty part "
-                                  "fails 6.4 (\"at least one segment\"), and no status is given for it")
                 raise Fail("part 0 of %s fails video 6.4: %s" % (t["id"], e))
             return "%s part 0: %d bytes of valid PGS" % (t["id"], len(body))
         check_subs(prefix + "7", "video 6.2, 6.4", "a PGS part: 200, every segment and object checked", pgs, True)
