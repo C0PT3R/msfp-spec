@@ -234,8 +234,8 @@ address**.
 | `ID`, `Name`, `Settings` | |
 | `Role`, `Me` | this server's role (`owner`, `admin`, `member`) and member ID |
 | `Owner`, `Heir` | member IDs; `Heir` empty for none |
-| `Members` | `GroupMemberView{ID, Name, Fingerprint, Role, InvitedBy, Joined, Peer}`; `Peer` is the link with it (empty: none) |
-| `Banned` | `GroupBanView{ID, Reason}` |
+| `Members` | `GroupMemberView{ID, Name, Fingerprint, Role, InvitedBy, Joined, Peer, Refused, Asked}`; `Peer` is the link with it (empty: none); `Refused`: this server refused its requests (`LiftRefusal`); `Asked`: this server's request to it waits |
+| `Banned` | `GroupBanView{ID, Name, Fingerprint, Reason}`, the name and fingerprint as it was a member |
 | `Requests` | `GroupRequestView{Mail, From, Name, Fingerprint, Received, Waited}`, waiting for this server's operator; `Waited`: the requester has been in the group its days |
 | `Accept`, `Offers`, `Pool` | this server's answer setting, host library IDs offered, pool lent |
 | `Dissolved` | the owner dissolved it (kept until left) |
