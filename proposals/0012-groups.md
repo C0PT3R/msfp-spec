@@ -56,7 +56,8 @@ here was built or run.
   never learn each other's members.
 - **Owner**: the one member that names and removes admins, lifts bans,
   sets the group's name and settings, dissolves the group, names its
-  heir, gives the group away or steps down. Exactly one at a time. The
+  heir, gives the group away or steps down; it also invites and bans, as
+  admins do. It can't be banned. Exactly one at a time. The
   server that founds a group is its first owner; "creator" is not a role.
 - **Admin**: a member that may invite and ban members. Any number.
 - **Member**: any server in the group, the owner and admins included.
@@ -361,10 +362,10 @@ exchanges them with the members it is paired with in that group.
 
 - **Leaving**: the member signs `left` and passes it on. Its panel lists
   the links made through this group, nothing ticked; one click ticks them
-  all (decided). A link with other sources keeps them; a ticked link, or
-  one with no other source that the operator ticks, ends (core section
-  7.4). A link kept whose only source was this group becomes a pairing by
-  hand, keeping what the group gave it, its offers and limits now its own
+  all (decided). A ticked link ends (core section 7.4), whatever its other
+  sources. An unticked link loses this group as a source and keeps the
+  others; one whose only source was this group becomes a pairing by hand,
+  keeping what the group gave it, its offers and limits now its own
   (decided). The owner gives the group away before leaving.
 - **Blocking** is private and covers everything (decided): the member ends
   its link with that server (core section 7.4), whatever its sources, and
@@ -553,7 +554,8 @@ between linked servers; addresses too.
   from primitives).
 - **Overfin and the Jellyfin plugin**: groups in the panel (create, codes,
   members, requests, offers and pools per group, leave, block, ban,
-  dissolve), link sources, pools in playback.
+  dissolve), link sources, pools in playback. Overfin also sends codes by
+  email, when its email is set up (decided; not part of the protocol).
 - **Testing**: at least three servers.
 
 ## Compatibility
