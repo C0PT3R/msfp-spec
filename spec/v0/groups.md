@@ -383,6 +383,18 @@ exchanges them with the members it is paired with through that group.
 - **A ban or a dissolution** is passed on before anything else is done
   with it (section 7).
 
+**No way in.** A member whose links through a group have all ended has no
+way in: nothing it signs or sends leaves it, and nothing from the others
+reaches it, while the group has other members. A pairing by hand with a
+member doesn't change that, since it isn't a link through the group.
+
+- Before ending a link that is the server's last one through a group
+  with other members, the panel names that group and offers to leave it
+  instead (section 7). Without that offer, the group stops reaching the
+  server without warning.
+- While a member has no way in, its panel says so for that group, and
+  sending a mail is refused there with the reason, never kept as sent.
+
 ## 7. Leaving, blocking, banning, dissolving
 
 - **Leaving**: the member signs `left` and passes it on. Its panel lists
@@ -531,7 +543,7 @@ newcomer that used `pair`.
 ## 10. What members see
 
 Each member's name, fingerprint and role, whether they are linked, who
-invited it and when it joined. What a server offers stays between linked
+invited it and when it joined. Whether this server has a way in (section 6). What a server offers stays between linked
 servers; addresses too.
 
 ## 11. Security considerations
