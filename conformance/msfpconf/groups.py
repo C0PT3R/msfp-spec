@@ -284,8 +284,13 @@ class GroupChecks:
             p.update(extra)
             return p
 
-        def push(*envs):
-            self.peer.group_events.extend(envs)
+        def push(*envs, kept=True):
+            # Only what is meant to be kept is served on the server's
+            # group-sync: a probe meant to be refused, served later, could be
+            # kept then (the one dated ahead, once its date is near) and,
+            # with its seq taken since, make an equivocation.
+            if kept:
+                self.peer.group_events.extend(envs)
             a = self.group_call("group-push", {"group": gid, "events": list(envs)})
             self.signed(a, 200)
             if a.json != {}:
@@ -320,7 +325,7 @@ class GroupChecks:
             if env is None:
                 env, _ = self.sign_event(payload)
             before = kept_seq()
-            push(env)
+            push(env, kept=False)
             after = kept_seq()
             seq[0] = before   # the next probe reuses the seq
             if after != before:
