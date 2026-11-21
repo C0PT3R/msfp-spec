@@ -144,6 +144,8 @@ servers may use it), `group` (the group a group's code invites to).
 | `requests` | members' requests waiting for the operator: `{mail, from, name, address, nextCommitment, inbound, pins, received}` |
 | `refused`, `sent`, `used` | members whose requests were refused; requests and answers sent (`{id, to, kind, expires}`); mail IDs a `group-pair` used |
 | `synced` | the last sync with the members |
+| `joining` | when this server called `group-join` to join through `via`, a peer already (zero: it used `pair`) |
+| `joins` | `paired` peers that used this server's code for the group, waiting for its operator: `{peer, received}` |
 
 **`ForgottenKey`**: `keyHash`, `at`, `revoked` (the pairing ended with
 a revocation without next key: for 30 days its hellos get the

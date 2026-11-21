@@ -340,6 +340,9 @@ func verifyAll(read func(string) []byte) []error {
 		gc.address != str(gcode, "address") || b64.EncodeToString(gc.key) != keyB.text() {
 		bad("v0/groups.json: code: its group, name, address or key differ")
 	}
+	if jp := gf["joinProof"].(obj); str(jp, "redeemer") != "d" || str(jp, "value") != joinProof(mustHex(secretS), keyGD.pub) {
+		bad("v0/groups.json: joinProof isn't group-join's proof of the code by d")
+	}
 	m := gf["mail"].(obj)
 	mb, _ := b64.DecodeString(str(m, "mail"))
 	if string(mb) != str(m, "payload") {

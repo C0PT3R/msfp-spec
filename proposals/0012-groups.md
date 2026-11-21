@@ -517,6 +517,17 @@ between linked servers; addresses too.
 - **Encryption** is new to MSFP; its use here goes to the external review
   core section 18, item 3 asks for, before the protocol is called stable.
 
+### Amendment, 2026-11-20: joining when already paired
+
+Found while building Overfin's panel: a server already paired with a
+group code's maker can't use the code, since `pair` answers `409` to a
+known key. It now calls `group-join` on the maker through their pairing
+(groups section 8.4): the code's secret hash and a proof bound to its key
+(label `msfp-group-join-1\n`). The code's use counts, the maker's
+operator accepts as for any code, and the list follows through the
+pairing. Chosen by the owner over an "add to the group" action for paired
+servers, which would have been a second way in.
+
 ## Alternatives considered
 
 1. **Proposal 10, the mesh**: servers announce themselves along

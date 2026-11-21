@@ -9,6 +9,7 @@ import (
 	"crypto/cipher"
 	"crypto/ecdh"
 	"crypto/hkdf"
+	"crypto/hmac"
 	"crypto/hpke"
 	"crypto/sha256"
 	"encoding/binary"
@@ -537,6 +538,24 @@ type groupsFile struct {
 	Group  string            `json:"group"`
 	Name   string            `json:"groupName"`
 	Mail   gMail             `json:"mail"`
+	Join   gJoinProof        `json:"joinProof"`
+}
+
+// gJoinProof is group-join's proof (groups section 8.4) of the code above,
+// by a server already paired with its maker.
+type gJoinProof struct {
+	Redeemer string `json:"redeemer"`
+	Value    string `json:"value"`
+}
+
+// groupJoinLabel is group-join's proof label.
+const groupJoinLabel = "msfp-group-join-1\n"
+
+func joinProof(secret, redeemer []byte) string {
+	m := hmac.New(sha256.New, secret)
+	m.Write([]byte(groupJoinLabel))
+	m.Write(redeemer)
+	return b64.EncodeToString(m.Sum(nil))
 }
 
 func genV0Groups() []byte {
@@ -551,6 +570,7 @@ func genV0Groups() []byte {
 			"events: in order, as a copy meets them, with now as its clock. The valid ones build the group; each invalid one is judged on the state the valid ones before it built, and changes nothing, except the last: an equivocation, which excludes its signer. payload is the event's bytes as text; event is their base64url; id is base64url of SHA-256 of the payload.",
 			"state: what a copy computes once it kept the valid events and met the invalid ones (groups section 3.5): member IDs, sorted.",
 			"code: a pairing code for the group (core section 5.1, groups section 2), made by B, with the group's ID and name.",
+			"joinProof: group-join's proof of that code (groups section 8.4) by D, already paired with B: HMAC-SHA256 keyed with the code's secret over msfp-group-join-1 and a line feed, then D's 32 raw public-key bytes.",
 			"mail: N's request to C (groups section 5), sealed with HPKE base mode, DHKEM(X25519, HKDF-SHA256), HKDF-SHA256, AES-128-GCM, to C's encryption key; recipientX25519Private opens it. info and aad are hex. The generator seals with a fixed ephemeral key, and opens with Go's crypto/hpke.",
 		},
 		Keys: map[string]string{"a": keyA.text(), "b": keyB.text(), "c": keyGC.text(), "n": keyGN.text(), "d": keyGD.text()},
@@ -558,5 +578,6 @@ func genV0Groups() []byte {
 		Code: v0Code{"b", "https://b.example.org", secretS, expires,
 			makeGroupCode(core0.prefix, keyB.pub, secret, expires, gid, "Family", "https://b.example.org"), b64.EncodeToString(sha(secret))},
 		Mail: groupMail(g),
+		Join: gJoinProof{"d", joinProof(secret, keyGD.pub)},
 	})
 }

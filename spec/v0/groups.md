@@ -95,6 +95,16 @@ The newcomer is then paired with its inviter, a link whose sources are
 the pairing by hand and the group, and receives the list through it
 (section 6). Until it is accepted, it is nothing to the group.
 
+**A server already paired with the code's maker** doesn't call `pair`
+(it would get `409`): it calls `group-join` on the maker, through their
+pairing (section 8.4), with the code's secret hash and a proof. The code's
+use counts as for `pair`. The maker's operator accepts it as any server
+that used its code, the fingerprint there to check, or refuses it; then,
+as above, the maker signs `joined`, and the list follows through the
+pairing, which gains the group as a source. A refusal sends nothing: the
+caller's operator gives up on its side, and a caller still waiting drops
+the group 30 days after calling (a code works 30 days at most).
+
 ## 3. Events
 
 ### 3.1 The envelope
@@ -385,7 +395,8 @@ doesn't hear for that group, gets the `404` of core section 6.4.
 
 **Who is heard** (core section 6.5): on `group-sync` and `group-push`, a
 peer in state `paired` that is a member of the group in the receiver's
-copy; on `group-pair`, a member of the group in the receiver's copy, not
+copy, or that the receiver called `group-join` on for the group and is
+waiting for; on `group-join`, a peer in state `paired`; on `group-pair`, a member of the group in the receiver's copy, not
 banned, not blocked, holding a request or answer the receiver can match
 (section 8.3). Requests from members heard on `group-pair` only go in a
 nonce memory of their own (for example at most 1,000 entries), and count
@@ -443,6 +454,37 @@ Then it stores the caller as `paired` (or adds the group to an existing
 link's sources), and answers `200`, signed, with `name`,
 `nextCommitment` and `inbound`. Refusals: the `404` above; `409` when
 that request or answer was already used.
+
+### 8.4 group-join
+
+A server already paired with a group code's maker uses the code (section
+2). Request:
+
+| Field | Type | Required | Content |
+|-------|------|----------|---------|
+| `secretHash` | string | yes | as in `pair` (core section 9.1) |
+| `proof` | string | yes | the join proof, below |
+
+The proof is HMAC-SHA256, keyed with the code's 32-byte secret, over the
+ASCII label `msfp-group-join-1\n` (it ends with a line feed) followed by
+the caller's 32 raw public-key bytes, sent base64url (43 characters). The
+receiver compares it in constant time.
+
+The receiver checks, in this order: a live code with that hash, with a
+group attached; the proof; the receiver still holds the right to invite
+to that group (section 3.5). Then it spends one use of the code, as `pair`
+does, and keeps the caller waiting for its operator. Answer `200`,
+signed, with `{}`.
+
+Refusals: `404` (signed: the caller is a peer) when a check fails or the
+part is off with the caller; `409` when the caller is already a member of
+the group, banned from it, or already waiting to join it (the code's use
+isn't spent).
+
+The caller keeps the group as one it is joining, through the receiver,
+and hears the receiver's `group-push` for it (section 8). Accepted, the
+receiver signs `joined` and pushes the list (section 6), as for a
+newcomer that used `pair`.
 
 ## 9. Sharing and limits
 

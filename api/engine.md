@@ -79,7 +79,7 @@ Spec: [core 6](../spec/v0/core.md#6-signing-requests-and-answers),
 
 | Handler | Mount at | Serves |
 |---------|----------|--------|
-| `FederationHandler()` | `<Prefix>/api/v1/federation/` | `pair`, `hello`, `rotate`, `revoke`, `libraries`, `titles`, `play`, `progress`, `stop`, `group-sync`, `group-push`, `group-pair`; anything else is `Config.NotFound` |
+| `FederationHandler()` | `<Prefix>/api/v1/federation/` | `pair`, `hello`, `rotate`, `revoke`, `libraries`, `titles`, `play`, `progress`, `stop`, `group-sync`, `group-push`, `group-pair`, `group-join`; anything else is `Config.NotFound` |
 | `StreamHandler(fallback)` | `<Prefix>/api/v1/stream/` | peers' tickets. A ticket the engine doesn't know (the host's own people's, or one ended) goes to `fallback`; nil: `Config.NotFound` |
 | `DiscoveryHandler()` | `/.well-known/msfp` at the root, whatever the prefix | `GET` and `HEAD` while on; otherwise `Config.NotFound` |
 
@@ -111,8 +111,8 @@ background calls, only by a peer's signed `retryAfter`.
 | `MakeCodeWith(CodeOptions)` | as `MakeCode`, with `Note`, `Uses` (1 to 100; 0: 1), `Lifetime` (a minute to 30 days; 0: 24 hours) and `Group` (a group's ID: the code invites to it, [groups 2](../spec/v0/groups.md#2-codes-for-a-group)) | `NoCodes`, `CodeOptions`; for a group, `NotFound`, `NoRight` (not its owner nor an admin), `NoGroups` |
 | `Codes()` | live codes, soonest to expire first, without their text | |
 | `DeleteCode(id)` | | `NotFound` |
-| `ReadCode(text)` | `CodePreview`, to show before redeeming | `CodeInvalid`, `CodeExpired`, `OwnCode`, `AlreadyPeer`, `PlainHTTP` |
-| `RedeemCode(text)` | `PeerView` in state `theirs`: fetches the discovery document, calls `pair`. A group's code: this server joins the group once the inviter accepts, then gets the list and asks every member ([groups 4](../spec/v0/groups.md#4-joining)) | those of `ReadCode`, `RefusedDestination`, `Unreachable`, `CodeRefused` |
+| `ReadCode(text)` | `CodePreview`, to show before redeeming | `CodeInvalid`, `CodeExpired`, `OwnCode`, `AlreadyPeer` (not for a group's code from a `paired` peer), `PlainHTTP` |
+| `RedeemCode(text)` | `PeerView` in state `theirs`: fetches the discovery document, calls `pair`. A group's code: this server joins the group once the inviter accepts, then gets the list and asks every member ([groups 4](../spec/v0/groups.md#4-joining)). A group's code from a server already `paired`: `group-join` through the pairing instead of `pair`, and the peer's `PeerView` is returned, the group `Joining` until its operator accepts ([groups 8.4](../spec/v0/groups.md#84-group-join)) | those of `ReadCode`, `RefusedDestination`, `Unreachable`, `CodeRefused` |
 | `Accept(peer)` | `PeerView`, `paired`; the peer told at once, or at its next hello | `NotFound`, `NotWaiting` |
 | `Check(peer)` | `PeerView`: a `hello` now, its answer applied | `NotFound`, `Uncallable`, `Suspended`, `KeyLost`, `Unreachable`, `Unknown` (marked `gone`) |
 | `End(peer)` | ends or refuses a pairing in any state: deleted, its keys forgotten, then told | `NotFound` |
@@ -159,11 +159,13 @@ base64url, as the views give them). Each one may also fail with
 | `GiveGroup(id, member)` | the group goes to `member`; `""`: to the successor | `NoRight` (also when nobody is left to take it), `NotMember` |
 | `Ban(id, member, reason)` | the member is out, and told; its links through this group alone end on every member. `reason` optional | `NoRight` (an admin bans members only), `NotMember` |
 | `Unban(id, member)` | it may be invited again | `NoRight` (the owner only) |
-| `LeaveGroup(id, end)` | this server leaves; the peers in `end` (links made through it) end too, the others keep their pairing, by hand when it had no other source ([groups 7](../spec/v0/groups.md#7-leaving-blocking-banning-dissolving)) | |
+| `LeaveGroup(id, end)` | this server leaves (or, while `Joining` through `group-join`, gives up); the peers in `end` (links made through it) end too, the others keep their pairing, by hand when it had no other source ([groups 7](../spec/v0/groups.md#7-leaving-blocking-banning-dissolving)) | |
 | `DissolveGroup(id, keepPairings)` | every member removes the group; without `keepPairings`, the links it alone made end | `NoRight` (the owner only) |
 | `Block(id, member, invitees)` | ends the link with `member`, whatever its sources, and forgets its key, so its requests are dropped in every group; with `invitees`, those it invited too, and theirs | `NotMember` |
 | `SetGroupAnswer(id, accept)` | `true`: this server accepts a request itself once the requester has been in the group `WaitDays`; `false`: the operator answers each | |
 | `AcceptRequest(id, mail)` | `mail` from `GroupView.Requests`: the two pair through the group (`group-pair`, or an answer mailed when the requester calls instead), no fingerprint to compare | `NotFound` (no such request), the call's |
+| `AcceptJoin(id, peer)` | a `paired` peer that used this server's code for the group (`GroupView.Joins`): `joined` signed, the list sent, the link gains the group | `NotFound` (no such peer waiting), `NotPaired`, `NoRight` |
+| `RefuseJoin(id, peer)` | nothing is sent; the peer gives up on its side, or after 30 days | `NotFound` |
 | `RefuseRequest(id, mail)` | nothing is sent; the member's requests are dropped until `LiftRefusal`. An unknown `mail`: nothing done | |
 | `LiftRefusal(id, member)` | | |
 | `RequestMember(id, member)` | sends this server's request to one member (a newcomer sends it to all by itself). Skipped, without error: a member already linked, or one whose request from us is still live; a failed sending is logged | |
@@ -241,6 +243,7 @@ address**.
 | `Accept`, `Offers`, `Pool` | this server's answer setting, host library IDs offered, pool lent |
 | `Dissolved` | the owner dissolved it (kept until left) |
 | `Joining` | the list hasn't come from the inviter yet |
+| `Joins` | `GroupJoinView{Peer, Name, Fingerprint, Received}`: `paired` peers that used this server's code for the group, waiting for `AcceptJoin` or `RefuseJoin` |
 
 **`PlaybackView`**: `ID`, `Peer`, `PeerName`, `Title`, `Method`,
 `Handle` (the host's), `Since`, `State` (`started`, or `active` once
@@ -389,6 +392,7 @@ queries too, so a host that missed one loses nothing.
 | `PlaybackEnded` | `Playback`, `Title`, `Reason` | it ended, and why | [playback 6.3](../spec/v0/playback.md#63-how-a-playback-ends) |
 | `RemotePlaybackEnded` | `Playback`, `Reason` | our playback on a peer ended without `Stop`: `410` (`expired`), the pairing ended, the peer suspended or uncallable (`pairingEnded`) | playback 6.3 |
 | `GroupRequestWaiting` | `Group`, `GroupName`, `Mail`, `Member`, `Name`, `Fingerprint` | a member's request waits for the operator: `AcceptRequest` or `RefuseRequest` with `Mail`. Not for one the server accepts itself | [groups 4.1](../spec/v0/groups.md#41-answering) |
+| `GroupJoinWaiting` | `Group`, `GroupName`, `Peer`, `Name`, `Fingerprint` | a `paired` peer used this server's code for a group: `AcceptJoin` or `RefuseJoin`. Its `PeerID()` is the peer | [groups 8.4](../spec/v0/groups.md#84-group-join) |
 | `GroupJoined` | `Group`, `GroupName` | the list arrived and names this server; its requests are sent | [groups 4](../spec/v0/groups.md#4-joining) |
 | `GroupChanged` | `Group`, `GroupName`, `Types` | members' events changed a group; `Types`: their types, once each (`joined`, `admin`, `owner`, `banned`…). Not for this server's own actions | [groups 3.3](../spec/v0/groups.md#33-the-types) |
 | `GroupLeft` | `Group`, `GroupName`, `Why`, `Reason` | this server is out and removed the group: `left`, `dissolved` (by its owner, maybe this server), `banned` with the ban's reason | [groups 7](../spec/v0/groups.md#7-leaving-blocking-banning-dissolving) |
@@ -405,7 +409,7 @@ RunOnce()    everything due now, the hourly work included, waited for
 | our new address tried until it answers, then announced | expired codes deleted; forgotten keys over a year dropped |
 | the scheduled hellos of a server that can't be called | keys: our change of key ended after 30 days, `rotate` sent again daily, a revoked key's 30 days, peers suspended 30 days made `gone` |
 | peers' catalogs read when due: a minute after start, then every `SyncEvery`, at once when wants change | addresses: our move ended, late peers told again, peers' new addresses tried again |
-| groups synced with their members, every 30 seconds; requests accepted once waited (with `SetGroupAnswer(true)`) | |
+| groups synced with their members, every 30 seconds; requests accepted once waited (with `SetGroupAnswer(true)`) | `group-join`s unanswered for 30 days dropped, on both sides |
 | peers' playbacks here expired: no `progress` and no fetch for 2 minutes (looked at every 30 seconds), or over `LongestPlayback` | leftovers stopped (once; never a playback started since) |
 | `progress` due to peers for our viewers | the engine's own change log refreshed |
 
@@ -455,6 +459,7 @@ a secret, never sent). Match with `errors.Is`.
 | `InvalidLimits` | streams 0 to 50, transcodes 0 to streams, bitrate 0 to 1,000,000 |
 | `CodeOptions` | a code's uses or lifetime out of range; a group's name empty or too long |
 | `NoGroups`, `NoRight`, `NotMember` | the store keeps no groups; this server's role doesn't allow it; not a member (or the group is gone) |
+| `AlreadyMember` | a group's code from a peer: this server is already in the group, banned from it, or waiting to join it |
 | `InvalidReason` | `StopPlayback` with an ending that isn't the host's |
 | `RangeNotSatisfiable` | a malformed `Range`, or out of the file |
 | `Sealed` | a sealed value didn't open |

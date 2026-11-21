@@ -1578,7 +1578,7 @@ suspended, since its current key is the new one.
 | `media` | what the stream URLs serve: HLS, the file | plain `GET`s under the stream root | the core |
 | `video` | films and series by TMDB: title keys, episode order, subtitles, PGS, WebVTT, skip markers, previews | none: it adds to `titles`, `play` and the media | `catalog`, `playback` and `media` |
 | `music` | artists, albums and tracks by MusicBrainz: keys, descriptions, cover art, audio-only playback | none: it adds to `titles`, `play` and `limits` | `catalog`, `playback` and `media` |
-| `groups` | groups of servers: events, mail, pairing through a group | `group-sync`, `group-push`, `group-pair` | the core |
+| `groups` | groups of servers: events, mail, pairing through a group | `group-sync`, `group-push`, `group-pair`, `group-join` | the core |
 
 The core and each part have their own version, an integer. Version 0 of
 each is this document and [catalog.md](catalog.md),
