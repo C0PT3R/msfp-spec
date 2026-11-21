@@ -178,7 +178,7 @@ dropped.
 | `left` | the member itself | | not the owner: the owner gives the group away first |
 | `dissolved` | the owner | `keepPairings` (boolean), `ownerSeq` | the last event: nothing after it is kept |
 | `rotated` | the member, with its new key | `statement`: an object with `oldKey`, `newKey`, `nextCommitment` (optional), `date`, `oldSignature` and `newSignature`, as in `rotate` ([core section 9.3](core.md#93-rotate)) | the statement verifies as core section 12.2 says; `oldKey` is the member's current key; when its `profile` holds a commitment, SHA-256 of `newKey` matches it |
-| `revoked` | the member | `statement`: an object with `key`, `date` and `signature`, as in `revoke` ([core section 9.4](core.md#94-revoke)); `lastSeq` | the statement verifies as core section 12.6 says; the member's events signed with the revoked key after `lastSeq` don't count (those under its next key, from its `rotated` on, do); with two, the lower `lastSeq` holds |
+| `revoked` | the member | `statement`: an object with `key`, `date` and `signature`, as in `revoke` ([core section 9.4](core.md#94-revoke)); `lastSeq` | the statement verifies as core section 12.6 says, and its `key` is one of the member's keys (its member ID, or a key a kept `rotated` moved it to); the member's events signed with the revoked key after `lastSeq` don't count (those under its next key, from its `rotated` on, do); with two, the lower `lastSeq` holds |
 
 `name` is cleaned as core section 9.1 cleans names. `settings` is an
 object: `waitDays` (integer, 0 to 30; 3 when absent) and `capPerDay`

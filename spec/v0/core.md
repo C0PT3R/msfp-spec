@@ -578,7 +578,7 @@ these bytes, in order:
 | 1 | `0`: no group follows; `1`: a group follows |
 | 32 | with `1` only: the group's ID ([groups section 3.1](groups.md#31-the-envelope)) |
 | 1 | with `1` only: the group name's length in bytes, 1 to 255 |
-| that many | with `1` only: the group's name, UTF-8, cleaned as section 9.1 cleans names |
+| that many | with `1` only: the group's name, UTF-8, cleaned as section 9.1 cleans names; a name of 80 code points over 255 bytes is cut, one whole code point at a time from its end, until it fits |
 | 1 or more | the maker's address, as ASCII bytes (section 5.2) |
 
 The maker sets the expiry, cut to the whole second: 24 hours after it
