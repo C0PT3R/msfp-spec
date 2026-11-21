@@ -214,7 +214,7 @@ They read storage and never call a peer.
 | `ID`, `Name`, `Address`, `Fingerprint` | the current key's fingerprint, for the operators to compare |
 | `State` | `ours`, `theirs`, `paired`, `gone` |
 | `Created`, `Paired`, `Seen`, `Suspended` | times; `Suspended` when it revoked its key (zero: it didn't) |
-| `Core`, `Parts` | the versions on with it; `Core` 0: none in common |
+| `Core`, `Parts` | the versions on with it; `Core` -1: none in common |
 | `Inbound`, `CallsFailed` | `yes`, `no`, `confirming`; its last hello answer said our calls fail (suggest "this server can't be called") |
 | `NotMoved`, `MoveLate`, `Moving` | it still calls our former address; 3 days after we announced; its own new address being checked (`MoveView{Address, Since, FailingSince, Warn}`, `Warn` after a day) |
 | `CommitmentFrom` | `pair`, `rotation`, or empty (its next rotation waits for the operator) |
