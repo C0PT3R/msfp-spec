@@ -350,7 +350,7 @@ Which check each request needs:
 | Request | Accepted |
 |---------|----------|
 | `pair`, `hello`, and `GET /.well-known/msfp` (section 11) | *trusted*, *named* or *any* |
-| every other federation call (`rotate`, `revoke`, and the parts' calls) | *trusted* or *named* |
+| every other federation call (`rotate`, `revoke`, and the parts' calls, `group-pair` included: its pins come in the group's mail) | *trusted* or *named* |
 | the media (the stream root) | *trusted* or *named* |
 
 `pair` and `hello` may take any certificate because their answers are

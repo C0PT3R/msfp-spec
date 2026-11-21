@@ -314,7 +314,9 @@ The payload:
 | `sealed` | string | base64url of the HPKE encapsulated key (32 bytes) followed by the ciphertext |
 
 Once opened, `sealed` holds a JSON object: `address` (core section 5.2),
-`name`, `nextCommitment` and `inbound` (core section 7.5).
+`name`, `nextCommitment`, `inbound` (core section 7.5) and
+`certificates`, the pins of the certificates the sender's address serves
+(core section 3.2; optional, as in `hello`).
 
 **Encryption**: HPKE (RFC 9180), mode base, with the KEM
 DHKEM(X25519, HKDF-SHA256) (`0x0020`), the KDF HKDF-SHA256 (`0x0001`) and
@@ -428,6 +430,11 @@ Request:
 | `name` | string | no | the caller's name |
 | `nextCommitment` | string | yes | as in `pair` (core section 9.1) |
 | `inbound` | boolean | no | as in `pair` |
+
+The caller checks the receiver's certificate as *trusted*, or *named* by
+the pins of the mail it answers or received ([core section 3.2](core.md#32-https-certificates)),
+never *any*: `group-pair` carries the caller's address, which the mail
+keeps from everyone else.
 
 The receiver checks that the caller's key is the current key of a member
 of the group, and that `answers` names a request it sent to that member,
