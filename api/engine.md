@@ -168,6 +168,7 @@ base64url, as the views give them). Each one may also fail with
 | `LiftRefusal(id, member)` | | |
 | `RequestMember(id, member)` | sends this server's request to one member (a newcomer sends it to all by itself). Skipped, without error: a member already linked, or one whose request from us is still live; a failed sending is logged | |
 | `SetGroupOffers(id, hostLibraries)` | what every link through the group is offered, added to what each link offers by hand; playbacks from libraries no longer offered end ([groups 9](../spec/v0/groups.md#9-sharing-and-limits)) | |
+| `GroupOffers(id)` | `[]Library`, the host's, those offered to the group marked `Offered` (as `Offers` for a peer) | |
 | `SetGroupPool(id, Limits)` | the pool this server lends the group: streams, transcodes and a bitrate cap shared by all its members; a playback counts against the first pool with room (the link's own limits first) | `InvalidLimits` |
 
 **Catalog and playbacks here.**
