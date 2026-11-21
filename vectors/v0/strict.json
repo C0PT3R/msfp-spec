@@ -143,47 +143,47 @@
   "codes": [
     {
       "name": "the code of core section 5.3",
-      "text": "msfp-pair-0.A6EHv_POEL4dcN0Y50vAmWfk1jCbpQ1fHdyGZBJVMbhAQUJDREVGR0hJSktMTU5PUFFSU1RVVldYWVpbXF1eXwAAAABrSyOAaHR0cHM6Ly9hLmV4YW1wbGUub3Jn",
+      "text": "msfp-pair-0.A6EHv_POEL4dcN0Y50vAmWfk1jCbpQ1fHdyGZBJVMbhAQUJDREVGR0hJSktMTU5PUFFSU1RVVldYWVpbXF1eXwAAAABrSyOAAGh0dHBzOi8vYS5leGFtcGxlLm9yZw",
       "valid": true
     },
     {
       "name": "wrapped, with white space",
-      "text": "msfp-pair-0.A6EHv_POEL4dcN0Y50vAmWfk1jCb\r\n  pQ1fHdyGZBJVMbhAQUJDREVGR0hJSktMTU5PUFFSU1RVVldYWV\n\tpbXF1eXwAAAABrSyOAaHR0cHM6Ly9hLmV4YW1wbGUub3Jn ",
+      "text": "msfp-pair-0.A6EHv_POEL4dcN0Y50vAmWfk1jCb\r\n  pQ1fHdyGZBJVMbhAQUJDREVGR0hJSktMTU5PUFFSU1RVVldYWV\n\tpbXF1eXwAAAABrSyOAAGh0dHBzOi8vYS5leGFtcGxlLm9yZw ",
       "valid": true
     },
     {
       "name": "the prefix in capitals",
-      "text": "Msfp-pair-0.A6EHv_POEL4dcN0Y50vAmWfk1jCbpQ1fHdyGZBJVMbhAQUJDREVGR0hJSktMTU5PUFFSU1RVVldYWVpbXF1eXwAAAABrSyOAaHR0cHM6Ly9hLmV4YW1wbGUub3Jn",
+      "text": "Msfp-pair-0.A6EHv_POEL4dcN0Y50vAmWfk1jCbpQ1fHdyGZBJVMbhAQUJDREVGR0hJSktMTU5PUFFSU1RVVldYWVpbXF1eXwAAAABrSyOAAGh0dHBzOi8vYS5leGFtcGxlLm9yZw",
       "valid": false,
       "reason": "not the exact prefix"
     },
     {
       "name": "an address with a trailing slash",
-      "text": "msfp-pair-0.A6EHv_POEL4dcN0Y50vAmWfk1jCbpQ1fHdyGZBJVMbhAQUJDREVGR0hJSktMTU5PUFFSU1RVVldYWVpbXF1eXwAAAABrSyOAaHR0cHM6Ly9hLmV4YW1wbGUub3JnLw",
+      "text": "msfp-pair-0.A6EHv_POEL4dcN0Y50vAmWfk1jCbpQ1fHdyGZBJVMbhAQUJDREVGR0hJSktMTU5PUFFSU1RVVldYWVpbXF1eXwAAAABrSyOAAGh0dHBzOi8vYS5leGFtcGxlLm9yZy8",
       "valid": false,
       "reason": "address: a path, query, fragment or user info"
     },
     {
       "name": "an expiry of 2^53",
-      "text": "msfp-pair-0.A6EHv_POEL4dcN0Y50vAmWfk1jCbpQ1fHdyGZBJVMbhAQUJDREVGR0hJSktMTU5PUFFSU1RVVldYWVpbXF1eXwAgAAAAAAAAaHR0cHM6Ly9hLmV4YW1wbGUub3Jn",
+      "text": "msfp-pair-0.A6EHv_POEL4dcN0Y50vAmWfk1jCbpQ1fHdyGZBJVMbhAQUJDREVGR0hJSktMTU5PUFFSU1RVVldYWVpbXF1eXwAgAAAAAAAAAGh0dHBzOi8vYS5leGFtcGxlLm9yZw",
       "valid": false,
       "reason": "an expiry above 2^53 - 1"
     },
     {
       "name": "the identity as key",
-      "text": "msfp-pair-0.AQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABAQUJDREVGR0hJSktMTU5PUFFSU1RVVldYWVpbXF1eXwAAAABrSyOAaHR0cHM6Ly9hLmV4YW1wbGUub3Jn",
+      "text": "msfp-pair-0.AQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABAQUJDREVGR0hJSktMTU5PUFFSU1RVVldYWVpbXF1eXwAAAABrSyOAAGh0dHBzOi8vYS5leGFtcGxlLm9yZw",
       "valid": false,
       "reason": "key: a point of small order"
     },
     {
       "name": "no address",
-      "text": "msfp-pair-0.A6EHv_POEL4dcN0Y50vAmWfk1jCbpQ1fHdyGZBJVMbhAQUJDREVGR0hJSktMTU5PUFFSU1RVVldYWVpbXF1eXwAAAABrSyOA",
+      "text": "msfp-pair-0.A6EHv_POEL4dcN0Y50vAmWfk1jCbpQ1fHdyGZBJVMbhAQUJDREVGR0hJSktMTU5PUFFSU1RVVldYWVpbXF1eXwAAAABrSyOAAA",
       "valid": false,
-      "reason": "72 bytes or fewer"
+      "reason": "no address"
     },
     {
       "name": "an http address",
-      "text": "msfp-pair-0.A6EHv_POEL4dcN0Y50vAmWfk1jCbpQ1fHdyGZBJVMbhAQUJDREVGR0hJSktMTU5PUFFSU1RVVldYWVpbXF1eXwAAAABrSyOAaHR0cDovLzE5Mi4wLjIuMTA6ODA5Ng",
+      "text": "msfp-pair-0.A6EHv_POEL4dcN0Y50vAmWfk1jCbpQ1fHdyGZBJVMbhAQUJDREVGR0hJSktMTU5PUFFSU1RVVldYWVpbXF1eXwAAAABrSyOAAGh0dHA6Ly8xOTIuMC4yLjEwOjgwOTY",
       "valid": false,
       "reason": "address: scheme http is not allowed"
     },
@@ -192,6 +192,52 @@
       "text": "overfin-pair-1.A6EHv_POEL4dcN0Y50vAmWfk1jCbpQ1fHdyGZBJVMbhAQUJDREVGR0hJSktMTU5PUFFSU1RVVldYWVpbXF1eXwAAAABrSyOAaHR0cHM6Ly9hLmV4YW1wbGUub3Jn",
       "valid": false,
       "reason": "not the exact prefix"
+    },
+    {
+      "name": "a code with a group",
+      "text": "msfp-pair-0.A6EHv_POEL4dcN0Y50vAmWfk1jCbpQ1fHdyGZBJVMbhAQUJDREVGR0hJSktMTU5PUFFSU1RVVldYWVpbXF1eXwAAAABrSyOAAZ-kej9K2gTCbXXRNgo-Z1efs1J7RDTlHJHVmH4ImTMkBkZhbWlseWh0dHBzOi8vYS5leGFtcGxlLm9yZw",
+      "valid": true
+    },
+    {
+      "name": "a group name of 80 code points",
+      "text": "msfp-pair-0.A6EHv_POEL4dcN0Y50vAmWfk1jCbpQ1fHdyGZBJVMbhAQUJDREVGR0hJSktMTU5PUFFSU1RVVldYWVpbXF1eXwAAAABrSyOAAZ-kej9K2gTCbXXRNgo-Z1efs1J7RDTlHJHVmH4ImTMkoMOpw6nDqcOpw6nDqcOpw6nDqcOpw6nDqcOpw6nDqcOpw6nDqcOpw6nDqcOpw6nDqcOpw6nDqcOpw6nDqcOpw6nDqcOpw6nDqcOpw6nDqcOpw6nDqcOpw6nDqcOpw6nDqcOpw6nDqcOpw6nDqcOpw6nDqcOpw6nDqcOpw6nDqcOpw6nDqcOpw6nDqcOpw6nDqcOpw6nDqcOpw6nDqcOpw6lodHRwczovL2EuZXhhbXBsZS5vcmc",
+      "valid": true
+    },
+    {
+      "name": "a group name of 81 code points",
+      "text": "msfp-pair-0.A6EHv_POEL4dcN0Y50vAmWfk1jCbpQ1fHdyGZBJVMbhAQUJDREVGR0hJSktMTU5PUFFSU1RVVldYWVpbXF1eXwAAAABrSyOAAZ-kej9K2gTCbXXRNgo-Z1efs1J7RDTlHJHVmH4ImTMkosOpw6nDqcOpw6nDqcOpw6nDqcOpw6nDqcOpw6nDqcOpw6nDqcOpw6nDqcOpw6nDqcOpw6nDqcOpw6nDqcOpw6nDqcOpw6nDqcOpw6nDqcOpw6nDqcOpw6nDqcOpw6nDqcOpw6nDqcOpw6nDqcOpw6nDqcOpw6nDqcOpw6nDqcOpw6nDqcOpw6nDqcOpw6nDqcOpw6nDqcOpw6nDqcOpw6nDqWh0dHBzOi8vYS5leGFtcGxlLm9yZw",
+      "valid": false,
+      "reason": "a group name over 80 code points once cleaned"
+    },
+    {
+      "name": "a flag byte of 2",
+      "text": "msfp-pair-0.A6EHv_POEL4dcN0Y50vAmWfk1jCbpQ1fHdyGZBJVMbhAQUJDREVGR0hJSktMTU5PUFFSU1RVVldYWVpbXF1eXwAAAABrSyOAAmh0dHBzOi8vYS5leGFtcGxlLm9yZw",
+      "valid": false,
+      "reason": "a flag byte other than 0 and 1"
+    },
+    {
+      "name": "a group name of 0 bytes",
+      "text": "msfp-pair-0.A6EHv_POEL4dcN0Y50vAmWfk1jCbpQ1fHdyGZBJVMbhAQUJDREVGR0hJSktMTU5PUFFSU1RVVldYWVpbXF1eXwAAAABrSyOAAZ-kej9K2gTCbXXRNgo-Z1efs1J7RDTlHJHVmH4ImTMkAGh0dHBzOi8vYS5leGFtcGxlLm9yZw",
+      "valid": false,
+      "reason": "a group name of 0 bytes"
+    },
+    {
+      "name": "a group name that isn't UTF-8",
+      "text": "msfp-pair-0.A6EHv_POEL4dcN0Y50vAmWfk1jCbpQ1fHdyGZBJVMbhAQUJDREVGR0hJSktMTU5PUFFSU1RVVldYWVpbXF1eXwAAAABrSyOAAZ-kej9K2gTCbXXRNgo-Z1efs1J7RDTlHJHVmH4ImTMkAv_-aHR0cHM6Ly9hLmV4YW1wbGUub3Jn",
+      "valid": false,
+      "reason": "a group name that isn't UTF-8"
+    },
+    {
+      "name": "a flag of 1 with the group cut short",
+      "text": "msfp-pair-0.A6EHv_POEL4dcN0Y50vAmWfk1jCbpQ1fHdyGZBJVMbhAQUJDREVGR0hJSktMTU5PUFFSU1RVVldYWVpbXF1eXwAAAABrSyOAAZ-kej9K2gTCbXXRNgo-Z1efs1J7",
+      "valid": false,
+      "reason": "too short for the group its flag announces"
+    },
+    {
+      "name": "a flag of 0 and no address",
+      "text": "msfp-pair-0.A6EHv_POEL4dcN0Y50vAmWfk1jCbpQ1fHdyGZBJVMbhAQUJDREVGR0hJSktMTU5PUFFSU1RVVldYWVpbXF1eXwAAAABrSyOAAA",
+      "valid": false,
+      "reason": "no address"
     }
   ],
   "mediaNames": [

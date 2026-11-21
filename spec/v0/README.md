@@ -6,10 +6,11 @@ compatibility between two drafts; version 1 will be the first stable
 version. Before it, MSFP had [a test draft](../history/test-draft.md)
 ([history](#history)).
 
-Version 0 is made of a core and five parts, each with its own version:
+Version 0 is made of a core and six parts, each with its own version:
 three that hold the shared mechanics (`catalog`, `playback`, `media`),
-and two content parts (`video`, `music`), each optional, that say what
-the titles are and how they play. This lets an implementation build the
+two content parts (`video`, `music`), each optional, that say what the
+titles are and how they play, and `groups`, optional too, for servers
+that federate as a group. This lets an implementation build the
 parts at different times, and lets the parts change at different speeds:
 the trust part (keys, signatures, pairing) rarely and carefully, the
 media formats more often.
@@ -22,6 +23,7 @@ media formats more often.
 | [catalog.md](catalog.md) | `catalog` 0 | `libraries` and `titles`, opaque library IDs, the general rules of title keys |
 | [playback.md](playback.md) | `playback` 0 | `play`, `progress`, `stop`, limits, what the owning server enforces |
 | [media.md](media.md) | `media` 0 | what the stream URLs serve: HLS, the file; how long a ticket works |
+| [groups.md](groups.md) | `groups` 0 | groups of servers: owner, admins and members, the signed list every member keeps, codes for a group, requests and answers encrypted for each member, pairing through a group, offers and limits per group |
 | [video.md](video.md) | `video` 0 | films and series by TMDB: title keys and their identity rules (TMDB's numbering, several episodes in one copy, other identifiers), subtitles, PGS, WebVTT, skip markers, seek-bar previews |
 | [music.md](music.md) | `music` 0 | artists, albums and tracks by MusicBrainz: keys, descriptions, cover art, audio-only playback |
 
@@ -39,8 +41,9 @@ one place, with where each is defined.
 | Address | where a server's API answers: `https://host[:port]`, no path | [core 5.2](core.md#52-addresses) |
 | Base path | the path of the federation calls, `/api/v1/federation/` unless the discovery document says otherwise | [core 11](core.md#11-the-discovery-document) |
 | Peer | another server this one knows by its public key | [core 7.3](core.md#73-states) |
-| Pairing | two operators making their servers peers, by hand | [core 7](core.md#7-pairing-step-by-step) |
-| Pairing code | one line holding the maker's address, key, a one-time secret and an expiry | [core 5](core.md#5-the-pairing-code) |
+| Pairing | two servers becoming peers: by hand, from a code, or through a group | [core 7](core.md#7-pairing-step-by-step) |
+| Pairing code | one line holding the maker's address, key, a secret, an expiry and, for a group, the group | [core 5](core.md#5-the-pairing-code) |
+| Group | servers whose operators chose each other, with an owner, admins and members, as a signed list each member keeps | [groups](groups.md#1-terms) |
 | Fingerprint | a short form of a public key, which operators compare when pairing | [core 4.2](core.md#42-the-fingerprint) |
 | Current key | the key a peer knows a server by now | [core 12](core.md#12-key-rotation-and-revocation) |
 | Next key commitment | SHA-256 of a key made for a later rotation | [core 12.5](core.md#125-the-next-key-commitment) |

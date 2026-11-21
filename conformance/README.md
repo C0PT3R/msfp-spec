@@ -5,7 +5,7 @@ server against [version 0](../spec/v0/README.md): the
 [core](../spec/v0/core.md) and the parts
 [catalog](../spec/v0/catalog.md), [playback](../spec/v0/playback.md),
 [media](../spec/v0/media.md), [video](../spec/v0/video.md) and, when the
-server lists it, [music](../spec/v0/music.md). It tests version 0 only.
+server lists it, [music](../spec/v0/music.md). It tests version 0 only. It has no checks yet for the part [groups](../spec/v0/groups.md): its readers check the codes with a group, and the group vectors are checked by tools/vectors.
 The test draft's suite is in this repository's git history (up to commit
 `8cb79af`).
 

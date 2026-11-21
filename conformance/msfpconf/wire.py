@@ -334,19 +334,48 @@ def is_ip(h):
 # ---- The pairing code (core 5.1, 9.1) ------------------------------------------
 
 def parse_code(text, allow_http=False):
-    """(key, secret, expiry, address), or raises ValueError, as core 5.1 reads it."""
+    """(key, secret, expiry, address), or raises ValueError, as core 5.1 reads it.
+    A group the code carries is checked too; parse_code_group returns it."""
+    return parse_code_group(text, allow_http)[:4]
+
+
+def parse_code_group(text, allow_http=False):
+    """(key, secret, expiry, address, group or None, group name or None)."""
     clean = "".join(ch for ch in text if ch not in WHITE_SPACE)
     if not clean.startswith(CODE_PREFIX):
         raise ValueError("not the exact prefix msfp-pair-0.")
     rest = clean[len(CODE_PREFIX):]
-    if len(rest) > 779:
-        raise ValueError("over 779 characters")
+    if len(rest) > 1164:
+        raise ValueError("over 1,164 characters")
     b = unb64u(rest)
     if b is None:
         raise ValueError("not base64url in its one form")
     if len(b) <= 72:
         raise ValueError("72 bytes or fewer")
-    key, secret, expiry, addr = b[:32], b[32:64], struct.unpack(">Q", b[64:72])[0], b[72:]
+    key, secret, expiry = b[:32], b[32:64], struct.unpack(">Q", b[64:72])[0]
+    group = name = None
+    if b[72] == 0:
+        at = 73
+    elif b[72] == 1:
+        if len(b) < 73 + 33:
+            raise ValueError("too short for the group its flag announces")
+        group, n = b[73:105], b[105]
+        if n == 0:
+            raise ValueError("a group name of 0 bytes")
+        if len(b) < 106 + n:
+            raise ValueError("too short for the group name's length")
+        try:
+            name = clean_name(b[106:106 + n].decode("utf-8"), 10**6)
+        except UnicodeDecodeError:
+            raise ValueError("a group name that isn't UTF-8")
+        if len(name) > 80:
+            raise ValueError("a group name over 80 code points once cleaned")
+        at = 106 + n
+    else:
+        raise ValueError("a flag byte other than 0 and 1")
+    addr = b[at:]
+    if not addr:
+        raise ValueError("no address")
     if not ed25519.valid_point(key):
         raise ValueError("the key breaks core 2.1")
     if expiry > MAX_INT:
@@ -358,11 +387,11 @@ def parse_code(text, allow_http=False):
     why = check_address(address, allow_http)
     if why:
         raise ValueError("address: " + why)
-    return key, secret, expiry, address
+    return key, secret, expiry, address, group, name
 
 
 def make_code(key_pub, secret, expiry, address):
-    return CODE_PREFIX + b64u(key_pub + secret + struct.pack(">Q", expiry) + address.encode())
+    return CODE_PREFIX + b64u(key_pub + secret + struct.pack(">Q", expiry) + b"\x00" + address.encode())
 
 
 def proof(secret, caller_key, address):

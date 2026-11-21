@@ -350,6 +350,13 @@ owning server would refuse. The owning server enforces them itself
 (section 6). A caller ignores limits out of range. A server that doesn't
 enforce limits sends none.
 
+**Shared limits.** Limits may be shared with other peers: a group's pool
+is shared by all its members ([groups section 9](groups.md#9-sharing-and-limits)).
+A peer linked through a group is sent the most generous of its sources'
+limits, and may be refused (`409` `stream-limit-reached`) before reaching
+them, its pool being in use by others. A playback counts against exactly
+one pool: the first with room, a pairing by hand's own limits first.
+
 ## 6. What the owning server enforces
 
 The owning server decides alone. The viewer's server can't widen
@@ -426,7 +433,8 @@ can come between. So two `play`s that arrive together can never both
 take the last stream. A `play` that loses this race is refused as if it
 had come later (`409` or `503`, section 2.6). A server may check the
 caps earlier too, to refuse before doing any work, but the check that
-counts is the atomic one.
+counts is the atomic one. With shared limits (section 5), choosing the
+pool and counting the playback in it is that same one step.
 
 ### 6.3 How a playback ends
 

@@ -443,6 +443,20 @@ func codeVerdicts(c core, allowHTTP bool) []verdict {
 	}
 	if c.signsType {
 		out = append(out, one("a test draft code", makeCode(draftCore.prefix, keyA.pub, secret, expires, addrA)))
+		// Codes with a group (core section 5.1, groups section 2).
+		_, g := groupEvents()
+		gid, _ := b64.DecodeString(g)
+		long := strings.Repeat("é", 81)
+		out = append(out,
+			one("a code with a group", makeGroupCode(c.prefix, keyA.pub, secret, expires, gid, "Family", addrA)),
+			one("a group name of 80 code points", makeGroupCode(c.prefix, keyA.pub, secret, expires, gid, long[:160], addrA)),
+			one("a group name of 81 code points", makeGroupCode(c.prefix, keyA.pub, secret, expires, gid, long, addrA)),
+			one("a flag byte of 2", rawCode(c.prefix, keyA.pub, secret, expires, append([]byte{2}, addrA...))),
+			one("a group name of 0 bytes", rawCode(c.prefix, keyA.pub, secret, expires, append(append(append([]byte{1}, gid...), 0), addrA...))),
+			one("a group name that isn't UTF-8", rawCode(c.prefix, keyA.pub, secret, expires, append(append(append([]byte{1}, gid...), 2, 0xff, 0xfe), addrA...))),
+			one("a flag of 1 with the group cut short", rawCode(c.prefix, keyA.pub, secret, expires, append([]byte{1}, gid[:20]...))),
+			one("a flag of 0 and no address", rawCode(c.prefix, keyA.pub, secret, expires, []byte{0})),
+		)
 	}
 	return out
 }

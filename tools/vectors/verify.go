@@ -303,6 +303,66 @@ func verifyAll(read func(string) []byte) []error {
 		str(vb, "signature") != str(v, "signature") || str(ve, "signer") != str(v, "key") {
 		bad("v0/revocation.json: the revoke request doesn't carry the statement")
 	}
+
+	// vectors/v0/groups.json: each event judged again from its envelope,
+	// the state compared, the code read, the mail checked and opened with
+	// Go's crypto/hpke.
+	gf := load("v0/groups.json")
+	gs := newState()
+	var gstate gState
+	for _, v := range gf["events"].([]any) {
+		e := v.(obj)
+		ge := gEvent{Name: str(e, "name"), Event: str(e, "event"), Signature: str(e, "signature")}
+		pb, _ := b64.DecodeString(ge.Event)
+		if string(pb) != str(e, "payload") || b64.EncodeToString(sha(pb)) != str(e, "id") {
+			bad("v0/groups.json: %s: payload or id isn't the event's", ge.Name)
+		}
+		ge.ID = str(e, "id")
+		err := gs.apply(ge, num(gf, "now"))
+		if (err == nil) != (e["valid"] == true) {
+			bad("v0/groups.json: %s: valid is %v, the rules say %v (%v)", ge.Name, e["valid"], err == nil, err)
+		}
+	}
+	gstate = gs.out()
+	want, _ := json.Marshal(gf["state"])
+	got, _ := json.Marshal(gstate)
+	var w, g2 any
+	_ = json.Unmarshal(want, &w)
+	_ = json.Unmarshal(got, &g2)
+	if wb, _ := json.Marshal(w); string(wb) != func() string { b, _ := json.Marshal(g2); return string(b) }() {
+		bad("v0/groups.json: state isn't what the events give")
+	}
+	gcode := gf["code"].(obj)
+	gc, err := readCode(str(gcode, "text"), core0.prefix, false)
+	if err != nil {
+		bad("v0/groups.json: code: %v", err)
+	} else if b64.EncodeToString(gc.group) != str(gf, "group") || gc.groupName != str(gf, "groupName") ||
+		gc.address != str(gcode, "address") || b64.EncodeToString(gc.key) != keyB.text() {
+		bad("v0/groups.json: code: its group, name, address or key differ")
+	}
+	m := gf["mail"].(obj)
+	mb, _ := b64.DecodeString(str(m, "mail"))
+	if string(mb) != str(m, "payload") {
+		bad("v0/groups.json: mail isn't its payload")
+	}
+	pubs["group n"] = keyGN.pub
+	checkSig("v0/groups.json mail", "group n", groupMailLabel+string(mb), str(m, "signature"))
+	var mp obj
+	_ = json.Unmarshal(mb, &mp)
+	sealed, _ := b64.DecodeString(str(mp, "sealed"))
+	priv, _ := hex.DecodeString(str(m, "recipientX25519Private"))
+	info, _ := hex.DecodeString(str(m, "info"))
+	aad, _ := hex.DecodeString(str(m, "aad"))
+	gid, _ := b64.DecodeString(str(mp, "group"))
+	mid, _ := b64.DecodeString(str(mp, "id"))
+	from, _ := b64.DecodeString(str(mp, "from"))
+	to, _ := b64.DecodeString(str(mp, "to"))
+	if hex.EncodeToString(mailInfo(gid, mid)) != str(m, "info") || hex.EncodeToString(append(from, to...)) != str(m, "aad") {
+		bad("v0/groups.json: mail info or aad aren't the payload's")
+	}
+	if opened, err := openMail(mustX25519(priv), sealed, info, aad); err != nil || string(opened) != str(m, "opened") {
+		bad("v0/groups.json: the mail doesn't open to opened with crypto/hpke: %v", err)
+	}
 	return errs
 }
 

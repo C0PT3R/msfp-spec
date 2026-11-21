@@ -45,9 +45,10 @@ addresses. The test vectors are in [vectors/v0/](../../vectors/v0/)
 ## 1. Overview and terms
 
 MSFP lets media servers share their libraries: one server's people browse
-and play titles another server holds, through their own server. Version 0
-covers manual pairing only: two operators pair their servers by hand, and
-each trusts only the servers it paired with.
+and play titles another server holds, through their own server. Servers
+pair by hand, two operators at a time (section 7), or through a group of
+servers whose operators chose each other ([groups](groups.md)). Each
+trusts only the servers it paired with, by hand or through a group.
 
 - **Server**: one installation of an implementation of this protocol. It
   has one address and one current Ed25519 key pair.
@@ -574,10 +575,18 @@ these bytes, in order:
 | 32 | the maker's public key |
 | 32 | the secret: 32 random bytes |
 | 8 | when the code expires: Unix seconds, unsigned, big-endian |
+| 1 | `0`: no group follows; `1`: a group follows |
+| 32 | with `1` only: the group's ID ([groups section 3.1](groups.md#31-the-envelope)) |
+| 1 | with `1` only: the group name's length in bytes, 1 to 255 |
+| that many | with `1` only: the group's name, UTF-8, cleaned as section 9.1 cleans names |
 | 1 or more | the maker's address, as ASCII bytes (section 5.2) |
 
-The maker sets the expiry to 24 hours after it made the code, cut to the
-whole second. The code works once.
+The maker sets the expiry, cut to the whole second: 24 hours after it
+made the code by default, at most 30 days. It also sets how many servers
+may use the code: once by default. The code doesn't carry that number:
+the maker counts the uses, and refuses a `pair` once they are spent, as
+for an expired code (section 9.1). A code with a group invites to that
+group ([groups section 2](groups.md#2-codes-for-a-group)).
 
 A reader must:
 
@@ -585,9 +594,13 @@ A reader must:
   anywhere in the text (codes get wrapped in emails). A valid code is
   ASCII, so this can't change one;
 - refuse text without the exact prefix, case included;
-- refuse a remainder that isn't base64url (section 2.2), or is over 779
-  characters (584 bytes: 72 plus a 512-byte address);
-- refuse a decoded value of 72 bytes or fewer (the address can't be
+- refuse a remainder that isn't base64url (section 2.2), or is over
+  1,164 characters (873 bytes: 73, a group's 288 at most, and a 512-byte
+  address);
+- refuse a flag byte other than `0` and `1`; with `1`, a name length of
+  0, or a name that isn't valid UTF-8 or is over 80 code points once
+  cleaned;
+- refuse a decoded value with no address bytes left (the address can't be
   empty);
 - refuse a key that breaks section 2.1;
 - refuse an expiry above 2^53 − 1;
@@ -804,8 +817,11 @@ only the server itself can produce that answer.
   - a suspended peer's current key, on `rotate` and `revoke` only; on any
     other call it gets the signed `404` of section 6.4 (section 12.6);
   - on `pair` only, every key while at least one of its pairing codes is
-    live (made and neither used nor expired), forgotten keys included;
-    otherwise a new code could never restart an ended pairing.
+    live (made, with uses left, and not expired), forgotten keys
+    included; otherwise a new code could never restart an ended pairing;
+  - on the calls of the part `groups`, the members of its groups, as
+    [groups section 8](groups.md#8-the-calls) says: on `group-pair`,
+    members it isn't paired with yet, with their own nonce memory.
 
   On every other call, and on `pair` without a live code, a forgotten key
   gets the signed `404` of section 6.4. Any other key is refused before
@@ -937,7 +953,9 @@ For each peer:
 - its pins (section 3.2);
 - whether it can be called: its `inbound` (section 7.5);
 - what the parts keep: offers, wants and catalogs
-  ([catalog](catalog.md)), limits ([playback](playback.md)).
+  ([catalog](catalog.md)), limits ([playback](playback.md)), and the
+  link's sources: a pairing by hand, and each group it was made or kept
+  through ([groups](groups.md#1-terms)).
 
 A stores B's address as B gave it in the pair request. B stores A's
 address as the code gave it.
@@ -1097,6 +1115,16 @@ and the peer ending its playbacks at once when the pairing ends
 ([playback section 6.3](playback.md#63-how-a-playback-ends)): its player
 then gets `404` on the next fetch, and treats the playback as ended
 (section 8.4).
+
+### 7.6 Pairing through a group
+
+Two members of a group pair without a code: one asks, through the group,
+and the other accepts, by hand or by its own rule; then `group-pair`
+makes them `paired` at once, and `hello` follows as in section 7.1, step
+6 ([groups section 4](groups.md#4-joining)). A pairing made so is a
+pairing like any other: everything in this core holds for it. A request
+refused through a group sends nothing: no pairing existed, so there is
+no `ended` (section 7.4).
 
 ## 8. Common rules for every call
 
@@ -1348,7 +1376,8 @@ operator that the pairing failed.
 Refusals:
 
 - `404`, unsigned (signed when the key is already a peer): the key isn't
-  heard, there's no live code with that hash, the code expired, the proof
+  heard, there's no live code with that hash, the code expired or its
+  uses are spent, the proof
   is wrong, the body isn't valid JSON, the address is invalid, the hash
   isn't 32 bytes, `nextCommitment` is missing or isn't 32 bytes of
   base64url, `inbound`
@@ -1549,11 +1578,12 @@ suspended, since its current key is the new one.
 | `media` | what the stream URLs serve: HLS, the file | plain `GET`s under the stream root | the core |
 | `video` | films and series by TMDB: title keys, episode order, subtitles, PGS, WebVTT, skip markers, previews | none: it adds to `titles`, `play` and the media | `catalog`, `playback` and `media` |
 | `music` | artists, albums and tracks by MusicBrainz: keys, descriptions, cover art, audio-only playback | none: it adds to `titles`, `play` and `limits` | `catalog`, `playback` and `media` |
+| `groups` | groups of servers: events, mail, pairing through a group | `group-sync`, `group-push`, `group-pair` | the core |
 
 The core and each part have their own version, an integer. Version 0 of
 each is this document and [catalog.md](catalog.md),
-[playback.md](playback.md), [media.md](media.md), [video.md](video.md)
-and [music.md](music.md).
+[playback.md](playback.md), [media.md](media.md), [video.md](video.md),
+[music.md](music.md) and [groups.md](groups.md).
 
 Rotation and revocation (`rotate`, `revoke`, section 12) are part of
 the core, not a part: a server without them doesn't speak core 0. Every
@@ -1697,6 +1727,11 @@ an `application/json` document:
 specification reaches a stable version.
 
 ## 12. Key rotation and revocation
+
+A server's rotation and revocation statements also travel in the lists
+of the groups it is in ([groups section 3.3](groups.md#33-the-types),
+`rotated` and `revoked`), so that members it isn't paired with follow its
+key.
 
 ### 12.1 Why
 
@@ -2055,13 +2090,18 @@ an address of that form keeps no former address (section 13.1).
   key, under which one signature verifies every message, and make every
   implementation agree on every signature. That matters for statements
   that more than one server checks (section 12).
-- **The code is a secret.** Whoever holds a live code can pair with its
-  maker, until the maker's operator refuses them. It works once, for 24
-  hours. The secret never travels: only its hash and an HMAC bound to the
+- **The code is a secret.** Whoever holds a live code can ask to pair
+  with its maker, until the maker's operator refuses them. It works for
+  the number of uses and the time its maker set (once, for 24 hours, by
+  default). The secret never travels: only its hash and an HMAC bound to the
   redeemer's key and address.
 - **Consent on both sides.** The redeemer's operator consents by pasting
   the code. The maker's operator accepts after the fingerprint check.
   Neither server can move the other to `paired`.
+- **Through a group**, the inviter's and the owner's signatures stand in
+  for the fingerprint check between members that pair through it, and
+  consent is a request and its acceptance
+  ([groups section 11](groups.md#11-security-considerations)).
 - **Replay.** The nonce, the 5-minute window and the restart rule
   (section 6.5) stop replays. A request names its receiver's host, so it
   can't be sent to another server. Answers name the request's nonce, so an
@@ -2196,6 +2236,7 @@ generator also checks them.
 | `media.json` | WebVTT parts and what rebuilding them gives, HLS playlists and PGS parts, with their verdicts ([media section 3](media.md#3-what-is-fetched), [video section 6](video.md#6-media)) |
 | `music.json` | music title keys and music titles, with their verdicts and what the caller keeps of each title ([music sections 2 and 3](music.md#2-title-keys)) |
 | `video.json` | video titles, with their verdicts and what the caller keeps of each, `video` included ([video section 3](video.md#3-titles)) |
+| `groups.json` | a group's events, valid and not, with their reasons and the state a copy computes; a code with a group; a request mail sealed with HPKE, with the recipient's key to open it ([groups](groups.md)) |
 
 The cases of [vectors/history/test-draft-strict.json](../../vectors/history/test-draft-strict.json)
 (keys, signatures, base64url, dates, integers, JSON) hold for core 0 too.

@@ -1,8 +1,11 @@
 # Proposal 12: Groups
 
-Status: Proposed (2026-11-20). Designed with the owner on 2026-11-20; every
-choice marked "decided" below is the owner's. Ships with proposal 13
-(version 0), in one release of every implementation.
+Status: Adopted (2026-11-20). Designed with the owner on 2026-11-20; every
+choice marked "decided" below is the owner's; the details the proposal
+added were confirmed the same day. Written into [spec/v0/groups.md](../spec/v0/groups.md)
+and the core, catalog and playback on 2026-11-20, with proposal 13.
+Ships with proposal 13 (version 0), in one release of every
+implementation.
 Touches: sections 1, 5, 6.5, 7, 9.1, 10.1, 12 and 14 of
 [spec/v0/core.md](../spec/v0/core.md); sections 1 and 5 of
 [catalog.md](../spec/v0/catalog.md); sections 5 and 6 of

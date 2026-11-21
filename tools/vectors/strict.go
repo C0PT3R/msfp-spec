@@ -15,6 +15,7 @@ import (
 	"strconv"
 	"strings"
 	"unicode"
+	"unicode/utf8"
 
 	"filippo.io/edwards25519"
 )
@@ -300,10 +301,12 @@ func checkHost(host string) error {
 
 // code is a pairing code's content.
 type code struct {
-	key     []byte
-	secret  []byte
-	expires int64
-	address string
+	key       []byte
+	secret    []byte
+	expires   int64
+	group     []byte // core 0: the group's ID, when the code has one
+	groupName string
+	address   string
 }
 
 // readCode applies the reader's rules for a pairing code.
@@ -319,8 +322,15 @@ func readCode(text, prefix string, allowHTTP bool) (code, error) {
 		return code{}, errors.New("not the exact prefix")
 	}
 	rest := t[len(prefix):]
-	if len(rest) > 779 {
-		return code{}, errors.New("over 779 characters")
+	// Core 0's codes carry a flag byte, and a group with 1 (core section
+	// 5.1); the test draft's don't.
+	withFlag := prefix == core0.prefix
+	most := 779
+	if withFlag {
+		most = 1164
+	}
+	if len(rest) > most {
+		return code{}, fmt.Errorf("over %d characters", most)
 	}
 	b, err := checkB64(rest, 0)
 	if err != nil {
@@ -329,7 +339,41 @@ func readCode(text, prefix string, allowHTTP bool) (code, error) {
 	if len(b) <= 72 {
 		return code{}, errors.New("72 bytes or fewer")
 	}
-	c := code{key: b[:32], secret: b[32:64], address: string(b[72:])}
+	c := code{key: b[:32], secret: b[32:64]}
+	at := 72
+	if withFlag {
+		switch b[72] {
+		case 0:
+			at = 73
+		case 1:
+			if len(b) < 73+33 {
+				return code{}, errors.New("too short for the group its flag announces")
+			}
+			c.group = b[73:105]
+			n := int(b[105])
+			if n == 0 {
+				return code{}, errors.New("a group name of 0 bytes")
+			}
+			if len(b) < 106+n {
+				return code{}, errors.New("too short for the group name's length")
+			}
+			name := b[106 : 106+n]
+			if !utf8.Valid(name) {
+				return code{}, errors.New("a group name that isn't UTF-8")
+			}
+			c.groupName = cleanName(string(name), 1<<20)
+			if utf8.RuneCountInString(c.groupName) > 80 {
+				return code{}, errors.New("a group name over 80 code points once cleaned")
+			}
+			at = 106 + n
+		default:
+			return code{}, errors.New("a flag byte other than 0 and 1")
+		}
+	}
+	if len(b) <= at {
+		return code{}, errors.New("no address")
+	}
+	c.address = string(b[at:])
 	var exp uint64
 	for _, x := range b[64:72] {
 		exp = exp<<8 | uint64(x)
@@ -349,12 +393,34 @@ func readCode(text, prefix string, allowHTTP bool) (code, error) {
 
 // makeCode writes a pairing code.
 func makeCode(prefix string, key, secret []byte, expires uint64, address string) string {
+	b := codeHead(key, secret, expires)
+	if prefix == core0.prefix {
+		b = append(b, 0)
+	}
+	b = append(b, address...)
+	return prefix + b64.EncodeToString(b)
+}
+
+// makeGroupCode writes a core 0 code with a group (core section 5.1).
+func makeGroupCode(prefix string, key, secret []byte, expires uint64, group []byte, name, address string) string {
+	b := append(codeHead(key, secret, expires), 1)
+	b = append(append(b, group...), byte(len(name)))
+	b = append(append(b, name...), address...)
+	return prefix + b64.EncodeToString(b)
+}
+
+// rawCode writes a core 0 code from its bytes after the expiry, for cases
+// a writer wouldn't make.
+func rawCode(prefix string, key, secret []byte, expires uint64, tail []byte) string {
+	return prefix + b64.EncodeToString(append(codeHead(key, secret, expires), tail...))
+}
+
+func codeHead(key, secret []byte, expires uint64) []byte {
 	b := append(bytes.Clone(key), secret...)
 	for i := 7; i >= 0; i-- {
 		b = append(b, byte(expires>>(8*i)))
 	}
-	b = append(b, address...)
-	return prefix + b64.EncodeToString(b)
+	return b
 }
 
 // checkMediaName applies the rule for a file or track name in a media URL

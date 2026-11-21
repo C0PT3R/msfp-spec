@@ -1,6 +1,6 @@
 # Proposal 13: Version 0, until MSFP is stable
 
-Status: Decided in principle by the owner (2026-11-20): "MSFP v1 should
+Status: Adopted and done (2026-11-20), with proposal 12.
 not exist yet… we should still be on v0". To be done with the next
 protocol changes (proposal 12), every implementation released at once.
 Touches: every document of spec/v1, which moves to spec/v0; the vectors;
