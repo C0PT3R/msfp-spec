@@ -315,7 +315,8 @@ class FakeServer:
             try:
                 raw = unb64u(m["mail"])
                 mp = json.loads(raw)
-                ok = ed25519.verify_strict(unb64u(mp["from"], 32), MAIL_LABEL + raw, unb64u(m["signature"], 64) or b"")
+                ok = ed25519.verify_strict(unb64u(mp["from"], 32), MAIL_LABEL + raw, unb64u(m["signature"], 64) or b"") \
+                    or "mailforged" in self.faults
             except (TypeError, ValueError, KeyError):
                 continue
             if ok and mp["from"] in g["members"] and mp.get("to") in g["members"] and mp.get("expires", 0) > time.time():

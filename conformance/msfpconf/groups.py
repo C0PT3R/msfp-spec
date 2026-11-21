@@ -473,6 +473,33 @@ class GroupChecks:
                           "through the suite: kept", request):
             return
 
+        def not_kept(label, mp, signer, flip=False):
+            raw3 = dumps(mp)
+            sig = bytearray(signer.sign(MAIL_LABEL + raw3))
+            if flip:
+                sig[0] ^= 1
+            env = {"mail": b64u(raw3), "signature": b64u(bytes(sig))}
+            self.signed(self.group_call("group-push", {"group": gid, "events": [], "mail": [env]}), 200)
+            s3 = self.group_call("group-sync", {"group": gid, "have": {}, "mail": []})
+            self.signed(s3, 200)
+            for m in s3.json.get("mail") or []:
+                try:
+                    if json.loads(unb64u(m["mail"]))["id"] == mp["id"]:
+                        raise Fail("%s was kept: group-sync lists it" % label)
+                except (TypeError, ValueError, KeyError):
+                    pass
+            return "not kept"
+
+        def other(**over):
+            mp = dict(payload, id=b64u(os.urandom(16)))
+            mp.update(over)
+            return mp
+
+        self.check("GM3", "groups 5", "a mail whose signature doesn't verify: not kept",
+                   lambda: not_kept("a mail with a forged signature", other(), n, flip=True))
+        self.check("GM4", "groups 5", "a mail already expired: not kept",
+                   lambda: not_kept("an expired mail", other(expires=int(time.time()) - 60), n))
+
         def answer():
             out = []
             for r in self.peer.since(t0, call="group-push"):
@@ -493,7 +520,7 @@ class GroupChecks:
                     return m, p
             return None
         self.ask_operator("request-accept", "accept the request of 'MSFP conformance suite, second' in the group %r"
-                          % st["name"], lambda: answer() is not None, cid="GM3")
+                          % st["name"], lambda: answer() is not None, cid="GM5")
 
         def answered():
             got = answer()
@@ -518,7 +545,7 @@ class GroupChecks:
                 raise Fail("the sealed answer lacks address or nextCommitment: %r" % inside)
             st["answer"] = (p, inside)
             return "opened: address %s, %d pin(s)" % (inside["address"], len(inside.get("certificates") or []))
-        if not self.check("GM3", "groups 4.2, 5", "accepted, the server answers N with a mail signed by it, sealed to "
+        if not self.check("GM5", "groups 4.2, 5", "accepted, the server answers N with a mail signed by it, sealed to "
                           "N's encryptionKey, carrying its address", answered, operator=True):
             return
 
@@ -535,7 +562,7 @@ class GroupChecks:
             if not isinstance(a.json.get("name"), str) or unb64u(a.json.get("nextCommitment") or "", 32) is None:
                 raise Fail("the 200 lacks name or nextCommitment (groups 8.3): %r" % a.body[:120])
             return "paired: %r" % a.json.get("name")
-        if not self.check("GM4", "groups 8.3", "N calls group-pair with the answer: a signed 200 with name and "
+        if not self.check("GM6", "groups 8.3", "N calls group-pair with the answer: a signed 200 with name and "
                           "nextCommitment; N and the server paired", group_pair):
             return
 
@@ -544,7 +571,7 @@ class GroupChecks:
             if a.status != 409 or not a.signed:
                 raise Fail("got %s; expected a signed 409 (the answer was used)" % a.short())
             return "signed 409"
-        self.check("GM5", "groups 8.3", "group-pair with the same answer again: a signed 409", used)
+        self.check("GM7", "groups 8.3", "group-pair with the same answer again: a signed 409", used)
 
         def n_hello():
             a = st["n_client"].call("hello", {"state": "paired", "core": [0], "parts": self.suite_parts(),
@@ -556,5 +583,5 @@ class GroupChecks:
             e = st["n_client"].call("hello", {"state": "ended"})
             self.signed(e, 200)
             return "paired; then ended by N"
-        self.check("GM6", "groups 4.2, core 9.2, 7.4", "N's hello: the server answers paired; N then ends the pairing",
+        self.check("GM8", "groups 4.2, core 9.2, 7.4", "N's hello: the server answers paired; N then ends the pairing",
                    n_hello)

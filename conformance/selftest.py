@@ -57,6 +57,7 @@ FAULTS = {
     "quietpause": ["VW2", "VW3"],   # no progress while its viewer pauses (playback 3, 6.3; expiry 20 s in that run)
     "badstop": ["VW1"],             # a stop with a negative position (playback 4)
     "groupforged": ["GR13"],        # a group event whose signature doesn't verify kept (groups 3.2)
+    "mailforged": ["GM3"],          # a mail whose signature doesn't verify kept (groups 5)
 }
 
 

@@ -103,8 +103,8 @@ They are marked `[operator]`:
 | play one of the suite's films, pause it at once, stop it after the given time (with `--watch-pause SECONDS`) | VW1 to VW4 |
 | accept the second pairing (with `--code2`) | UP2, UP3 |
 | accept the suite's join of the group (with `--group-code`) | GR8 to GR17, GM |
-| name the suite an admin of that group | GM1 to GM6 |
-| accept the request of "MSFP conformance suite, second" in that group | GM3 to GM6 |
+| name the suite an admin of that group | GM1 to GM8 |
+| accept the request of "MSFP conformance suite, second" in that group | GM5 to GM8 |
 | confirm the suite's pending key rotation | K11 |
 | rotate the server's own key | O1, O2 |
 | rotate it again, while the suite can't be called | O3 |
@@ -176,7 +176,7 @@ The run goes in this order; the counts are the checks in each group.
 | Q | 3 | catalog 2, 3; core 6.4 | the server as a reader of the suite's catalog: its calls well signed, its `titles` requests, following `next` |
 | R | 2 | core 8.3 | (`--load`) a signed `429` or `503` with `retryAfter`, then calls passing again |
 | GR | 17 | groups 2, 3, 6 to 8 | (`--group-code`) groups: the group code; `group-sync` from a non-member and about an unknown group (a `404`, plain or signed: see the notes); `group-join` with a wrong proof, an unknown code (signed `404`s), the code (`200` `{}`), again (`409`); accepted, the list pushed (`founded`, the suite's `joined`, every envelope well signed); `group-sync` (every event, `seq` order, `have`; nothing more with a full `have`); the suite's `profile` and an unknown type kept; a forged signature, a date 10 minutes ahead, another group's event and a payload over 4,096 bytes not kept; `left`, then a `404` |
-| GM | 6 | groups 4, 5, 8.3 | (`--group-code`) the mail: named admin, the suite signs `joined` for a second identity N of its own that can't be called, and N its `profile`; N's request, sealed with HPKE to the server's `encryptionKey`, kept; accepted, the server's answer, signed, sealed to N, opened, with its address; N's `group-pair` with it (signed `200`), the same again (`409`), N's `hello` |
+| GM | 8 | groups 4, 5, 8.3 | (`--group-code`) the mail: named admin, the suite signs `joined` for a second identity N of its own that can't be called, and N its `profile`; N's request, sealed with HPKE to the server's `encryptionKey`, kept; accepted, the server's answer, signed, sealed to N, opened, with its address; N's `group-pair` with it (signed `200`), the same again (`409`), N's `hello`; a mail with a forged signature and an expired one not kept |
 | UP | 4 | core 7.5, 9.1, 7.4 | (`--code2`) a pairing as a server that can't be called |
 | K | 11 | core 9.3, 9.4, 12 | the suite's own key: a rotation not matching the commitment (`409`), bad `rotate` and `revoke` bodies (`400`), revocation and suspension (only `rotate` and `revoke` answered), a rotation to the committed key lifting it, a statement with `-`, the previous key heard for 10 minutes, a repeated rotation, `202` `pending` without a commitment, the operator's confirmation |
 | AD | 3 | core 13.2 | address changes: a new address the suite serves, confirmed by a `hello` there before any other call; moving back; an address nothing serves, the old one staying |
@@ -186,7 +186,7 @@ The run goes in this order; the counts are the checks in each group.
 | E | 2 | core 7.4 | (`--end`) `hello` `ended`, then the unsigned `404` |
 | A | 2 | core 6.6, 8.2 | every answer that had to be signed was, and every signed refusal is a problem document |
 
-That is 144 checks in all, with `--code2`, `--group-code`, `--load` and
+That is 146 checks in all, with `--code2`, `--group-code`, `--load` and
 `--end`.
 
 Every signed answer is also read as I-JSON and checked for `null`; a
