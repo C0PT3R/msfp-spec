@@ -152,8 +152,8 @@ base64url, as the views give them). Each one may also fail with
 
 | Method | Result | Errors |
 |--------|--------|--------|
-| `CreateGroup(name, GroupSettings)` | `GroupView`: a new group, this server its owner. `GroupSettings{WaitDays, CapPerDay}`, zero: 3 days, 5 joins a day ([groups 4.1](../spec/v0/groups.md#41-answering)). Invite with `MakeCodeWith` | `CodeOptions` (a name empty or over 80 characters) |
-| `SetGroupSettings(id, name, settings)` | the name and settings | `NoRight` (the owner only) |
+| `CreateGroup(name, GroupSettings)` | `GroupView`: a new group, this server its owner. `GroupSettings{WaitDays, CapPerDay}`, zero: 3 days, 5 joins a day ([groups 4.1](../spec/v0/groups.md#41-answering)). Invite with `MakeCodeWith` | `CodeOptions` (an empty name; days or invitations out of range) |
+| `SetGroupSettings(id, name, settings)` | the name (`""`: kept) and settings | `NoRight` (the owner only), `CodeOptions` (days 0 to 30, invitations 1 to 100 a day) |
 | `SetAdmin(id, member, on)` | names an admin, or removes one | `NoRight` (the owner only), `NotMember` |
 | `SetHeir(id, member)` | who takes the group when the owner steps down; `""`: none (the oldest admin, else the oldest member) | `NoRight`, `NotMember` |
 | `GiveGroup(id, member)` | the group goes to `member`; `""`: to the successor | `NoRight` (also when nobody is left to take it), `NotMember` |
