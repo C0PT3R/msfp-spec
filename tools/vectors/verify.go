@@ -10,6 +10,8 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"reflect"
+	"slices"
 	"strconv"
 )
 
@@ -308,22 +310,28 @@ func verifyAll(read func(string) []byte) []error {
 	// the state compared, the code read, the mail checked and opened with
 	// Go's crypto/hpke.
 	gf := load("v0/groups.json")
-	gs := newState()
-	var gstate gState
+	var gevents []gEvent
 	for _, v := range gf["events"].([]any) {
 		e := v.(obj)
-		ge := gEvent{Name: str(e, "name"), Event: str(e, "event"), Signature: str(e, "signature")}
+		ge := gEvent{Name: str(e, "name"), Event: str(e, "event"), Signature: str(e, "signature"), ID: str(e, "id"), Valid: e["valid"] == true}
 		pb, _ := b64.DecodeString(ge.Event)
-		if string(pb) != str(e, "payload") || b64.EncodeToString(sha(pb)) != str(e, "id") {
+		if string(pb) != str(e, "payload") || b64.EncodeToString(sha(pb)) != ge.ID {
 			bad("v0/groups.json: %s: payload or id isn't the event's", ge.Name)
 		}
-		ge.ID = str(e, "id")
-		err := gs.apply(ge, num(gf, "now"))
-		if (err == nil) != (e["valid"] == true) {
-			bad("v0/groups.json: %s: valid is %v, the rules say %v (%v)", ge.Name, e["valid"], err == nil, err)
+		gevents = append(gevents, ge)
+	}
+	// Judged as a set, in the file's order and reversed: the same.
+	judged, gstate := judgeGroupEvents(gevents, str(gf, "group"))
+	reversed := slices.Clone(gevents)
+	slices.Reverse(reversed)
+	if _, again := judgeGroupEvents(reversed, str(gf, "group")); !reflect.DeepEqual(again, gstate) {
+		bad("v0/groups.json: the state depends on the events' order")
+	}
+	for i, e := range judged {
+		if e.Valid != gevents[i].Valid {
+			bad("v0/groups.json: %s: valid is %v, the rules say %v (%s)", e.Name, gevents[i].Valid, e.Valid, e.Reason)
 		}
 	}
-	gstate = gs.out()
 	want, _ := json.Marshal(gf["state"])
 	got, _ := json.Marshal(gstate)
 	var w, g2 any

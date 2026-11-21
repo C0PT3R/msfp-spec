@@ -5,6 +5,7 @@ package main
 // groups section 3, written from the specification alone.
 
 import (
+	"cmp"
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/ecdh"
@@ -16,8 +17,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"slices"
 	"sort"
+	"strings"
 	"time"
 	"unicode/utf8"
 )
@@ -92,8 +95,10 @@ type gState struct {
 	adminLog  []adminChange
 	bans      map[string]string // banned event ID -> target
 	joinedAt  map[string]int64
-	capCount  map[string]int   // inviter + day -> count
+	capRank   map[string]int   // joined event ID -> its rank in its inviter's UTC day
 	removedAt map[string]int64 // admin -> lastSeq that counts
+	bannedAt  map[string]int64 // banned -> lastSeq that counts
+	ever      map[string]bool  // named by a counted founded or joined
 }
 
 type adminChange struct {
@@ -105,7 +110,7 @@ type adminChange struct {
 func newState() *gState {
 	return &gState{Settings: map[string]int64{"waitDays": 3, "capPerDay": 5}, Keys: map[string]string{},
 		lastSeq: map[string]int64{}, payloads: map[string]map[int64]string{}, bans: map[string]string{},
-		joinedAt: map[string]int64{}, capCount: map[string]int{}, removedAt: map[string]int64{},
+		joinedAt: map[string]int64{}, capRank: map[string]int{}, removedAt: map[string]int64{}, bannedAt: map[string]int64{}, ever: map[string]bool{},
 		Admins: []string{}, Members: []string{}, Banned: []string{}, Excluded: []string{}}
 }
 
@@ -133,114 +138,264 @@ func strOf(p map[string]any, k string) string { s, _ := p[k].(string); return s 
 
 // apply keeps an event, or says why not (groups sections 3.2 to 3.5). now
 // is the copy's clock.
-func (s *gState) apply(e gEvent, now int64) error {
+// gKept is an event that passed the checks a member makes before keeping
+// it (groups section 3.2).
+type gKept struct {
+	e      gEvent
+	p      map[string]any
+	b      []byte
+	typ    string
+	signer string
+	member string
+	seq    int64
+	date   int64
+	done   bool
+}
+
+// check is what a member checks before keeping an event: a well-formed
+// payload, its signature under signer, the group's ID, the date. Whether it
+// counts is computeGroup's.
+func check(e gEvent, group string, now int64) (*gKept, error) {
 	b, err := b64.DecodeString(e.Event)
 	if err != nil || len(b) > 4096 || checkIJSON(b) != nil {
-		return errors.New("not a payload of at most 4,096 bytes of I-JSON")
+		return nil, errors.New("not a payload of at most 4,096 bytes of I-JSON")
 	}
 	var p map[string]any
 	if json.Unmarshal(b, &p) != nil {
-		return errors.New("not a JSON object")
+		return nil, errors.New("not a JSON object")
 	}
-	typ, signer, member := strOf(p, "type"), strOf(p, "signer"), strOf(p, "member")
-	seq, ok := num64(p, "seq")
-	date, okd := num64(p, "date")
-	if typ == "" || signer == "" || member == "" || !ok || seq < 1 || !okd {
-		return errors.New("a common member is missing")
+	k := &gKept{e: e, p: p, b: b, typ: strOf(p, "type"), signer: strOf(p, "signer"), member: strOf(p, "member")}
+	var ok, okd bool
+	k.seq, ok = num64(p, "seq")
+	k.date, okd = num64(p, "date")
+	if k.typ == "" || k.signer == "" || k.member == "" || !ok || k.seq < 1 || !okd {
+		return nil, errors.New("a common member is missing")
 	}
-	sigKey, err := b64.DecodeString(signer)
+	sigKey, err := b64.DecodeString(k.signer)
 	if err != nil || checkKey(sigKey) != nil {
-		return errors.New("signer isn't a valid key")
+		return nil, errors.New("signer isn't a valid key")
 	}
 	sig, err := checkB64(e.Signature, 64)
 	if err != nil || verifyStrict(sigKey, []byte(groupEventLabel+string(b)), sig) != nil {
-		return errors.New("the signature doesn't verify under signer")
+		return nil, errors.New("the signature doesn't verify under signer")
 	}
-	if date > now+300 {
-		return errors.New("dated more than 5 minutes in the future")
+	if k.date > now+300 {
+		return nil, errors.New("dated more than 5 minutes in the future")
+	}
+	if k.typ == "founded" {
+		if e.ID != group {
+			return nil, errors.New("another group's founded event")
+		}
+	} else if strOf(p, "group") != group {
+		return nil, errors.New("another group's event")
+	}
+	return k, nil
+}
+
+// computeGroup is the state the kept events give (groups section 3.5),
+// whatever their order: replayed by lowest ID among the ready ones, again
+// from the start while bans and removals of admins cut events that counted.
+// It gives each event's verdict: counted, refused, pending or forged.
+func computeGroup(kept []*gKept) (gState, map[string]string, map[string]string) {
+	slices.SortFunc(kept, func(a, b *gKept) int { return strings.Compare(a.e.ID, b.e.ID) })
+	rank := map[string]int{}
+	days := map[string][]*gKept{}
+	for _, k := range kept {
+		if k.typ == "joined" {
+			day := fmt.Sprintf("%s %s", k.member, time.Unix(k.date, 0).UTC().Format("2006-01-02"))
+			days[day] = append(days[day], k)
+		}
+	}
+	for _, l := range days {
+		slices.SortStableFunc(l, func(a, b *gKept) int { return cmp.Compare(a.date, b.date) })
+		for i, k := range l {
+			rank[k.e.ID] = i
+		}
+	}
+	banCut, removeCut := map[string]int64{}, map[string]int64{}
+	var s *gState
+	var verdict, reason map[string]string
+	for range 8 {
+		s = newState()
+		s.capRank = rank
+		maps.Copy(s.bannedAt, banCut)
+		maps.Copy(s.removedAt, removeCut)
+		verdict, reason = map[string]string{}, map[string]string{}
+		nextBan, nextRemove := map[string]int64{}, map[string]int64{}
+		for _, k := range kept {
+			k.done = false
+		}
+		for final := false; ; {
+			progressed := false
+			for _, k := range kept {
+				if k.done {
+					continue
+				}
+				v, why := s.step(k, kept, final)
+				if v == "pending" || v == "failing" {
+					continue
+				}
+				k.done, progressed, final = true, true, false
+				verdict[k.e.ID], reason[k.e.ID] = v, why
+				if v == "counted" {
+					ls, _ := num64(k.p, "lastSeq")
+					switch on, _ := k.p["on"].(bool); {
+					case k.typ == "banned":
+						if old, ok := nextBan[strOf(k.p, "target")]; !ok || ls < old {
+							nextBan[strOf(k.p, "target")] = ls
+						}
+					case k.typ == "admin" && !on:
+						if old, ok := nextRemove[strOf(k.p, "target")]; !ok || ls < old {
+							nextRemove[strOf(k.p, "target")] = ls
+						}
+					}
+				}
+				break
+			}
+			if !progressed {
+				if final {
+					break
+				}
+				final = true // none can count: the lowest ready one is refused
+			}
+		}
+		for _, k := range kept {
+			if !k.done {
+				verdict[k.e.ID], reason[k.e.ID] = "pending", "waiting for events it needs"
+			}
+		}
+		if maps.Equal(nextBan, banCut) && maps.Equal(nextRemove, removeCut) {
+			break
+		}
+		banCut, removeCut = nextBan, nextRemove
+	}
+	return s.out(), verdict, reason
+}
+
+// step replays one event: "pending" when it isn't ready yet.
+func (s *gState) step(k *gKept, all []*gKept, final bool) (string, string) {
+	p, typ, signer, member, seq, date := k.p, k.typ, k.signer, k.member, k.seq, k.date
+	keep := func() {
+		s.lastSeq[member] = seq
+		if s.payloads[member] == nil {
+			s.payloads[member] = map[int64]string{}
+		}
+		s.payloads[member][seq] = string(k.b)
+	}
+	refuse := func(why string) (string, string) {
+		keep()
+		return "refused", why
+	}
+	// What may hold later: the event waits while others can count, and is
+	// refused only when none can.
+	fail := func(why string) (string, string) {
+		if final {
+			return refuse(why)
+		}
+		return "failing", why
 	}
 	if typ == "founded" {
 		if s.ID != "" {
-			return errors.New("a second founded event")
+			return "refused", "a second founded event"
 		}
 		if seq != 1 || member != signer {
-			return errors.New("founded: seq 1, signed by the founder's own key")
+			return "forged", "founded: seq 1, signed by the founder's own key"
 		}
-		s.ID, s.Owner, s.ownerSeq = b64.EncodeToString(sha(b)), member, 1
+		s.ID, s.Owner, s.ownerSeq = k.e.ID, member, 1
 		s.Name = cleanName(strOf(p, "name"), 80)
 		s.applySettings(p)
 		s.Members = append(s.Members, member)
+		s.ever[member] = true
 		s.Keys[member] = signer
-		s.lastSeq[member] = 1
-		s.payloads[member] = map[int64]string{1: string(b)}
-		return nil
+		keep()
+		return "counted", ""
 	}
-	if strOf(p, "group") != s.ID {
-		return errors.New("another group's event")
+	if s.ID == "" || seq > s.lastSeq[member]+1 {
+		return "pending", ""
+	}
+	// These vectors don't rotate keys: a member's key is its member ID.
+	if signer != member {
+		return "forged", "signer isn't the member's key in force"
+	}
+	if seq <= s.lastSeq[member] {
+		return "refused", "equivocation: another event with this seq"
+	}
+	if !s.ever[member] {
+		return "pending", "" // its joined hasn't counted yet
+	}
+	for _, o := range all {
+		if o != k && o.member == member && o.seq == seq && o.signer == member {
+			if !slices.Contains(s.Excluded, member) {
+				s.Excluded = append(s.Excluded, member)
+				s.Members = slices.DeleteFunc(s.Members, func(x string) bool { return x == member })
+				s.Admins = slices.DeleteFunc(s.Admins, func(x string) bool { return x == member })
+			}
+			return refuse("equivocation: another event with this seq: the signer is excluded")
+		}
 	}
 	if slices.Contains(s.Excluded, member) {
-		return errors.New("its signer was excluded for equivocation")
+		return refuse("its signer was excluded for equivocation")
 	}
-	if prev, ok := s.payloads[member][seq]; ok {
-		if prev == string(b) {
-			return errors.New("already kept")
-		}
-		s.Excluded = append(s.Excluded, member)
-		s.Members = slices.DeleteFunc(s.Members, func(x string) bool { return x == member })
-		s.Admins = slices.DeleteFunc(s.Admins, func(x string) bool { return x == member })
-		return errors.New("equivocation: another event with this seq: the signer is excluded")
+	if !s.isMember(member) && typ != "left" {
+		return fail("its signer isn't a member")
 	}
-	if !s.isMember(member) {
-		return errors.New("its signer isn't a member")
+	if r, ok := s.removedAt[member]; ok && seq > r && (typ == "joined" || typ == "banned") {
+		return refuse("signed after the removal of its signer's role")
 	}
-	if s.Keys[member] != signer {
-		return errors.New("signer isn't the member's current key")
-	}
-	if seq != s.lastSeq[member]+1 {
-		return errors.New("seq doesn't follow the member's last kept event")
-	}
-	if r, ok := s.removedAt[member]; ok && seq > r && typ != "left" && typ != "profile" {
-		return errors.New("signed after the removal of its signer's role")
+	if r, ok := s.bannedAt[member]; ok && seq > r {
+		return refuse("signed after its signer was banned")
 	}
 	owner := member == s.Owner
 	var oSeq int64
-	if owner && typ != "profile" && typ != "rotated" && typ != "revoked" {
-		o, ok := num64(p, "ownerSeq")
-		if !ok || o != s.ownerSeq+1 {
-			return errors.New("an owner event whose ownerSeq doesn't follow the last one")
+	if owner && typ != "profile" && typ != "rotated" && typ != "revoked" && typ != "left" {
+		o, _ := num64(p, "ownerSeq")
+		if o > s.ownerSeq+1 {
+			return "pending", ""
+		}
+		if o != s.ownerSeq+1 {
+			return refuse("an owner event whose ownerSeq doesn't follow the last one")
 		}
 		oSeq = o
 	}
 	asOf, hasAsOf := num64(p, "asOf")
-	admin := !owner && hasAsOf && asOf <= s.ownerSeq && s.adminAsOf(member, asOf)
+	if !owner && hasAsOf && asOf > s.ownerSeq {
+		return "pending", ""
+	}
 	target := strOf(p, "target")
+	// A ban and the removal of an admin wait for their target's events up
+	// to their lastSeq.
+	if on, _ := p["on"].(bool); typ == "banned" || (typ == "admin" && !on) {
+		if ls, ok := num64(p, "lastSeq"); ok && s.lastSeq[target] < ls {
+			return "pending", ""
+		}
+	}
+	admin := !owner && hasAsOf && asOf <= s.ownerSeq && s.adminAsOf(member, asOf)
 	switch typ {
 	case "profile":
 	case "joined":
 		if !owner && !admin {
-			return errors.New("joined by a member without the right to invite")
+			return fail("joined by a member without the right to invite")
 		}
 		nm := strOf(p, "newMember")
-		if slices.Contains(s.Banned, nm) {
-			return errors.New("the newcomer is banned")
+		if slices.Contains(s.Banned, nm) || slices.Contains(s.Excluded, nm) {
+			return fail("the newcomer is banned, or excluded")
 		}
 		if s.isMember(nm) {
-			return errors.New("the newcomer is a member already")
+			return fail("the newcomer is a member already")
 		}
-		day := fmt.Sprintf("%s %s", member, time.Unix(date, 0).UTC().Format("2006-01-02"))
-		if int64(s.capCount[day]) >= s.Settings["capPerDay"] {
-			return errors.New("over the inviter's daily cap")
+		if int64(s.capRank[k.e.ID]) >= s.Settings["capPerDay"] {
+			return fail("over the inviter's daily cap")
 		}
-		s.capCount[day]++
 		s.Members = append(s.Members, nm)
+		s.ever[nm] = true
 		s.Keys[nm] = nm
 		s.joinedAt[nm] = date
 	case "admin":
 		if !owner {
-			return errors.New("admin events are the owner's")
+			return fail("admin events are the owner's")
 		}
 		if !s.isMember(target) {
-			return errors.New("the target isn't a member")
+			return fail("the target isn't a member")
 		}
 		on, _ := p["on"].(bool)
 		s.adminLog = append(s.adminLog, adminChange{oSeq, target, on})
@@ -254,70 +409,70 @@ func (s *gState) apply(e gEvent, now int64) error {
 		}
 	case "heir":
 		if !owner {
-			return errors.New("heir events are the owner's")
+			return fail("heir events are the owner's")
 		}
 		s.Heir = target
 	case "owner":
 		if !owner {
-			return errors.New("owner events are the owner's")
+			return fail("owner events are the owner's")
 		}
 		if !s.isMember(target) {
-			return errors.New("the target isn't a member")
+			return fail("the target isn't a member")
 		}
 		s.Owner = target
 	case "settings":
 		if !owner {
-			return errors.New("settings are the owner's")
+			return fail("settings are the owner's")
 		}
 		s.Name = cleanName(strOf(p, "name"), 80)
 		s.applySettings(p)
 	case "banned":
 		if !owner && !admin {
-			return errors.New("banned by a member without the right to ban")
+			return fail("banned by a member without the right to ban")
 		}
 		if target == s.Owner {
-			return errors.New("the owner can't be banned")
+			return fail("the owner can't be banned")
 		}
 		if !owner && (s.adminAsOf(target, asOf) || slices.Contains(s.Admins, target)) {
-			return errors.New("an admin can't ban an admin: the owner removes its role first")
+			return fail("an admin can't ban an admin: the owner removes its role first")
 		}
 		if !s.isMember(target) {
-			return errors.New("the target isn't a member")
+			return fail("the target isn't a member")
 		}
 		if r := strOf(p, "reason"); utf8.RuneCountInString(r) > 280 {
-			return errors.New("a reason over 280 code points")
+			return fail("a reason over 280 code points")
 		}
-		s.bans[e.ID] = target
+		ls, _ := num64(p, "lastSeq")
+		if old, ok := s.bannedAt[target]; !ok || ls < old {
+			s.bannedAt[target] = ls
+		}
+		s.bans[k.e.ID] = target
 		s.Banned = append(s.Banned, target)
 		s.Members = slices.DeleteFunc(s.Members, func(x string) bool { return x == target })
 		s.Admins = slices.DeleteFunc(s.Admins, func(x string) bool { return x == target })
 	case "unbanned":
 		if !owner {
-			return errors.New("unbanned is the owner's")
+			return fail("unbanned is the owner's")
 		}
 		t, ok := s.bans[strOf(p, "ban")]
 		if !ok {
-			return errors.New("no such ban")
+			return fail("no such ban")
 		}
 		s.Banned = slices.DeleteFunc(s.Banned, func(x string) bool { return x == t })
 	case "left":
 		if owner {
-			return errors.New("the owner gives the group away before leaving")
+			return fail("the owner gives the group away before leaving")
 		}
 		s.Members = slices.DeleteFunc(s.Members, func(x string) bool { return x == member })
 		s.Admins = slices.DeleteFunc(s.Admins, func(x string) bool { return x == member })
 	default:
-		return errors.New("a type these vectors don't use")
+		return fail("a type these vectors don't use")
 	}
 	if oSeq > 0 {
 		s.ownerSeq = oSeq
 	}
-	s.lastSeq[member] = seq
-	if s.payloads[member] == nil {
-		s.payloads[member] = map[int64]string{}
-	}
-	s.payloads[member][seq] = string(b)
-	return nil
+	keep()
+	return "counted", ""
 }
 
 func (s *gState) applySettings(p map[string]any) {
@@ -383,12 +538,13 @@ func groupEvents() ([]gEvent, string) {
 	bad := []gEvent{
 		ev("C, a member, invites", keyGC, c, 2, map[string]any{"type": "joined", "newMember": keyB2.text(), "name": "X", "asOf": 5}),
 		ev("B, an admin, bans the owner", keyB, b, 6, map[string]any{"type": "banned", "target": a, "lastSeq": 5, "asOf": 5}),
-		ev("B names an admin", keyB, b, 6, map[string]any{"type": "admin", "target": c, "on": true, "asOf": 5}),
-		ev("an owner event that skips an ownerSeq", keyA, a, 6, map[string]any{"type": "heir", "target": b, "ownerSeq": 7}),
-		ev("a seq that skips one", keyGN, n, 3, map[string]any{"type": "profile", "name": "N"}),
-		ev("the owner leaves without giving the group away", keyA, a, 6, map[string]any{"type": "left", "ownerSeq": 6}),
+		ev("B names an admin", keyB, b, 7, map[string]any{"type": "admin", "target": c, "on": true, "asOf": 5}),
+		ev("the owner leaves without giving the group away", keyA, a, 6, map[string]any{"type": "left"}),
+		ev("an owner event that skips an ownerSeq: pending", keyA, a, 7, map[string]any{"type": "heir", "target": b, "ownerSeq": 7}),
+		ev("a seq that skips one: pending", keyGN, n, 3, map[string]any{"type": "profile", "name": "N"}),
+		ev("D's profile, signed after its ban's lastSeq: cut, whichever comes first", keyGD, d, 1, map[string]any{"type": "profile", "name": "D"}),
 		func() gEvent {
-			e := ev("signed by another key than the member's", keyGN, c, 2, map[string]any{"type": "profile", "name": "C"})
+			e := ev("signed by another key than the member's: forged", keyGN, c, 3, map[string]any{"type": "profile", "name": "C"})
 			return e
 		}(),
 		func() gEvent {
@@ -404,7 +560,7 @@ func groupEvents() ([]gEvent, string) {
 			return e
 		}(),
 		ev("dated an hour ahead of the copy's clock", keyGC, c, 2, map[string]any{"type": "profile", "name": "C", "date": groupDate + 4000}),
-		ev("N again, with another seq 1: equivocation", keyGN, n, 1, map[string]any{"type": "profile", "name": "N, again"}),
+		ev("N again, with another seq 1: equivocation, both dropped", keyGN, n, 1, map[string]any{"type": "profile", "name": "N, again"}),
 	}
 	return append(valid, bad...), g
 }
@@ -412,22 +568,30 @@ func groupEvents() ([]gEvent, string) {
 // groupNow is the copy's clock when it judges the examples.
 const groupNow = groupDate + 600
 
-func judgeGroupEvents(events []gEvent) ([]gEvent, gState) {
-	s := newState()
-	var out []gEvent
-	var final gState
+// judgeGroupEvents judges the events as one set, as every copy that kept
+// them all does, whatever their order (groups section 3.5): valid means
+// the event counts in the state they give.
+func judgeGroupEvents(events []gEvent, group string) ([]gEvent, gState) {
+	var kept []*gKept
+	why := map[string]string{}
 	for _, e := range events {
-		// Each invalid case is judged on the valid list alone: a copy
-		// keeps the valid ones in order, then meets the case.
-		err := s.apply(e, groupNow)
-		e.Valid, e.Reason = err == nil, ""
+		k, err := check(e, group, groupNow)
 		if err != nil {
-			e.Reason = err.Error()
+			why[e.ID] = "not kept: " + err.Error()
+			continue
+		}
+		kept = append(kept, k)
+	}
+	state, verdict, reason := computeGroup(kept)
+	var out []gEvent
+	for _, e := range events {
+		e.Valid, e.Reason = verdict[e.ID] == "counted", why[e.ID]
+		if v, ok := verdict[e.ID]; ok && v != "counted" {
+			e.Reason = v + ": " + reason[e.ID]
 		}
 		out = append(out, e)
 	}
-	final = s.out()
-	return out, final
+	return out, state
 }
 
 // ---- the mail (groups section 5), sealed as RFC 9180 says ------------------
@@ -560,14 +724,14 @@ func joinProof(secret, redeemer []byte) string {
 
 func genV0Groups() []byte {
 	events, g := groupEvents()
-	judged, state := judgeGroupEvents(events)
+	judged, state := judgeGroupEvents(events, g)
 	secret := mustHex(secretS)
 	gid, _ := b64.DecodeString(g)
 	return encode(groupsFile{
 		About: []string{
 			"The groups part (spec/v0/groups.md). Generated by tools/vectors; no implementation has produced them yet.",
 			"keys: the members' Ed25519 keys by name (a and b are keys.json's; seeds are SHA-256 of an ASCII text, see tools/vectors/groups.go). Member IDs are these keys, base64url.",
-			"events: in order, as a copy meets them, with now as its clock. The valid ones build the group; each invalid one is judged on the state the valid ones before it built, and changes nothing, except the last: an equivocation, which excludes its signer. payload is the event's bytes as text; event is their base64url; id is base64url of SHA-256 of the payload.",
+			"events: one set, with now as the copy's clock. A copy keeps those that pass section 3.2's checks, and the state is what they give in section 3.5's replay, whatever order they arrived in. valid means the event counts in that state; reason says why another doesn't (not kept, refused, pending or forged). The equivocation drops both of N's profiles and excludes N; D's profile, after its ban's lastSeq, never counts, whichever arrives first. payload is the event's bytes as text; event is their base64url; id is base64url of SHA-256 of the payload.",
 			"state: what a copy computes once it kept the valid events and met the invalid ones (groups section 3.5): member IDs, sorted.",
 			"code: a pairing code for the group (core section 5.1, groups section 2), made by B, with the group's ID and name.",
 			"joinProof: group-join's proof of that code (groups section 8.4) by D, already paired with B: HMAC-SHA256 keyed with the code's secret over msfp-group-join-1 and a line feed, then D's 32 raw public-key bytes.",

@@ -528,6 +528,16 @@ operator accepts as for any code, and the list follows through the
 pairing. Chosen by the owner over an "add to the group" action for paired
 servers, which would have been a second way in.
 
+### Amendment, 2026-11-20: one state from the same events
+
+Found by msfp-dotnet's port: both engines applied events in the order
+they arrived, so two copies could disagree. A member now keeps every
+well-formed, signed event of the group and passes it on; the state is a
+replay of all of them in one order (section 3.5: ready events, those that
+can count first, the lowest ID first, cuts applied from the start). The
+same events give the same state, whatever order they came in. The
+vectors judge their events as one set.
+
 ## Alternatives considered
 
 1. **Proposal 10, the mesh**: servers announce themselves along

@@ -140,27 +140,28 @@ it signed.
 
 ### 3.2 Keeping an event
 
-A member keeps an event when:
+A member keeps an event, and passes it on, when:
 
-1. the envelope and the payload are well formed, its signature verifies
-   under `signer` by core section 2.1's rules, and `signer` is `member`'s
-   key in force at that `seq`: its member ID until its first `rotated`
-   event, then each rotation's new key from the `seq` of that `rotated`
-   event on (section 3.4);
-2. its `group` is the group's ID;
-3. its `seq` is one more than the last kept event of that member. An
-   event whose predecessors are missing is held, and kept once they
-   arrive; one held more than 30 days is dropped;
-4. its `date` is at most 5 minutes in the future of the member's clock;
-5. its type's rules hold (section 3.3), on the state computed from the
-   events kept before it, and section 3.5 counts it.
+1. the envelope and the payload are well formed, and its signature
+   verifies under `signer` by core section 2.1's rules;
+2. its `group` is the group's ID (for `founded`, its ID is);
+3. its `date` is at most 5 minutes in the future of the member's clock.
 
-**Equivocation.** Two different payloads from one member with the same
-`seq` prove misbehaviour: a member that sees both drops both, refuses
-every later event of that member as if it were banned, passes both on so
-that every copy sees the proof, and its panel says so. Two owner events
-with the same `ownerSeq`: the one with the lowest ID counts, the other is
-dropped.
+It keeps it whether it counts or not: whether an event counts is the
+state's to say (section 3.5), from all the events kept, whatever order
+they came in. Copies that kept the same events have the same state. An
+event that the replay finds not signed with `member`'s key in force at
+its `seq` (its member ID until its first `rotated` event, then each
+rotation's new key from the `seq` of that `rotated` event on, section
+3.4) is dropped. One that never becomes ready (section 3.5) is dropped
+after 30 days.
+
+**Equivocation.** Two different payloads, each signed with the member's
+key in force, from one member with the same `seq` prove misbehaviour:
+neither counts, nor does any later event of that member, which is out of
+the group as if banned (a `joined` naming it doesn't count). A member
+passes both on, so that every copy sees the proof, and its panel says
+so.
 
 ### 3.3 The types
 
@@ -204,7 +205,27 @@ key. Two members pair with their current keys, as
 
 ### 3.5 Rights
 
-The state is computed from the kept events by these rules:
+The state is computed from the kept events, replayed in one order that
+doesn't depend on how they arrived:
+
+1. **Ready.** An event is ready when its member's events of lower `seq`
+   have been replayed; for an owner event, the owner event before its
+   `ownerSeq`; for an admin event, the owner event its `asOf` names; its
+   member was named by a replayed `founded` or `joined`; and, for a
+   `banned` or an `admin` with `on` false, the target's events up to its
+   `lastSeq` have been replayed.
+2. **Counting first.** At each step, the ready event with the lowest ID
+   whose rules hold (section 3.3 and those below) is replayed, and counts.
+   When no ready event's rules hold, the ready one with the lowest ID is
+   replayed without counting. A replayed event takes its `seq` either
+   way. An event never ready doesn't count.
+3. **Cuts.** A ban, the removal of an admin and a revocation take away
+   events of their target after their `lastSeq` whenever they are
+   replayed: the replay starts again with the cuts its counted events made
+   applied from the start, until they no longer change.
+
+By these rules, two owner events with the same `ownerSeq`: the first
+replayed counts, the other doesn't. The rules:
 
 - **The owner** at `ownerSeq` k is the founder, changed by each `owner`
   event below k. An owner event whose signer isn't the owner at its
@@ -220,9 +241,9 @@ The state is computed from the kept events by these rules:
   as of its `asOf` nor an admin in the current state: the owner removes
   an admin's role before that admin can be banned. The owner's bans count
   always, except on itself.
-- **Conflicts**: the owner's event wins over an admin's (an `unbanned`
-  lifts the ban it names, whatever their dates); between equals, a
-  removal wins; anything else, the lowest event ID.
+- **Conflicts** are settled by the replay's order: an event counts when
+  its rules hold at its turn. An `unbanned` lifts the ban it names,
+  whatever their dates.
 - **The daily cap**: an inviter's `joined` events are counted per UTC day
   of their `date`; beyond the `capPerDay` in force, the extra ones (latest
   `date`, then highest ID) don't count.
