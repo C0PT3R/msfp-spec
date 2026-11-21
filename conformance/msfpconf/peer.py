@@ -55,6 +55,7 @@ class PeerServer:
         self.auto_confirm = True
         self.server_prev = None         # (key bytes, until)
         self.playbacks = {}             # the server playing this suite's films: id -> see _play
+        self.group_events = []          # envelopes this suite signed, for the server's group-sync
         self.tickets = {}               # ticket -> playback id
 
     # ---- listeners --------------------------------------------------------------
@@ -223,7 +224,8 @@ class PeerServer:
                                host=vals.get("host"), json=vals.get("json"), key=vals.get("key"), status=None,
                                uncallable=not self.suite.inbound)
             j = vals.get("json") if isinstance(vals.get("json"), dict) else None
-            known = call in ("pair", "hello", "rotate", "revoke", "libraries", "titles", "play", "progress", "stop")
+            known = call in ("pair", "hello", "rotate", "revoke", "libraries", "titles", "play", "progress", "stop") \
+                or (call in ("group-push", "group-sync") and self.suite.group_on())
             if not known or vals["refuse"] or call == "pair":
                 rec["status"] = 404
                 self._send(h, 404, b"", None, None)
@@ -279,6 +281,10 @@ class PeerServer:
             offered = {x["id"] for x in self.offer}
             page = dict(page, titles=[t for t in page.get("titles", []) if t["library"] in libs and t["library"] in offered])
             return 200, dumps(page)
+        if call == "group-push":
+            return 200, b"{}"
+        if call == "group-sync":
+            return self._group_sync(j)
         if call == "play":
             return self._play(j)
         if call == "progress":
@@ -291,6 +297,23 @@ class PeerServer:
                 pb["stopped"] = time.time()
             return 200, b"{}"
         return 404, NOT_FOUND
+
+    def _group_sync(self, j):
+        """Groups 8.1: the events this suite signed that the caller lacks."""
+        import base64
+        import json as _json
+        have = j.get("have") if isinstance(j.get("have"), dict) else {}
+        out = []
+        for env in self.group_events:
+            p = _json.loads(base64.urlsafe_b64decode(env["event"] + "=" * (-len(env["event"]) % 4)))
+            if p.get("group") == j.get("group") and p.get("seq", 0) > have.get(p.get("member"), 0):
+                out.append(env)
+        mine = {}
+        for env in self.group_events:
+            p = _json.loads(base64.urlsafe_b64decode(env["event"] + "=" * (-len(env["event"]) % 4)))
+            if p.get("group") == j.get("group"):
+                mine[p["member"]] = max(mine.get(p["member"], 0), p["seq"])
+        return 200, dumps({"events": out, "mail": [], "have": mine, "more": False})
 
     # ---- this suite as the owning server: the server under test plays its films ----------
 

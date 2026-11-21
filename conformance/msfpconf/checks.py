@@ -10,6 +10,7 @@ import select
 import sys
 import time
 
+from .groups import GroupChecks
 from .keys import KeyChecks
 from .parts import PartChecks
 from .peer import PeerServer
@@ -48,7 +49,7 @@ def derive_address(address, delta):
     return "%s://%s:%d" % (scheme, host, new)
 
 
-class Suite(PartChecks, KeyChecks):
+class Suite(PartChecks, KeyChecks, GroupChecks):
     def __init__(self, args, report, operator_hook=None):
         self.a = args
         self.r = report
@@ -181,7 +182,10 @@ class Suite(PartChecks, KeyChecks):
             self.client.key = k
 
     def suite_parts(self):
-        return {p: [VERSION] for p in PARTS}
+        parts = {p: [VERSION] for p in PARTS}
+        if self.group_on():
+            parts["groups"] = [VERSION]
+        return parts
 
     def hello_body(self, state="paired", answer=False, parts=None, **over):
         """The suite's hello (core 9.2): its versions, its pins, its address."""
@@ -319,6 +323,7 @@ class Suite(PartChecks, KeyChecks):
         self.playback_checks()
         self.reader_checks()
         self.load_checks()
+        self.group_checks()
         self.uncallable_pairing()
         self.key_checks()
         self.address_checks()
@@ -1159,6 +1164,9 @@ class Suite(PartChecks, KeyChecks):
                 if not a.signed or a.status in (200, 202):
                     continue
                 if a.status == 409 and a.path.endswith("/pair"):
+                    continue
+                # group-join's and group-pair's 409: no row in core 8.2 (GR7 notes it); no body taken, as pair's.
+                if a.status == 409 and a.path.endswith(("/group-join", "/group-pair")) and not a.body:
                     continue
                 j = a.json
                 if a.media_type != "application/problem+json":

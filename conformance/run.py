@@ -22,6 +22,9 @@ def parser():
     ap = argparse.ArgumentParser(description="MSFP version 0 conformance suite (spec/v0/: core 0, catalog, playback, "
                                              "media, video and music 1)")
     ap.add_argument("--code", help="a pairing code the server's operator made (msfp-pair-0.…); it is used: one code per run")
+    ap.add_argument("--group-code", help="a code of a group the server's operator made (groups 2), of the same server as "
+                    "--code: the suite joins it through group-join (groups 8.4), its operator accepts, and the group "
+                    "checks run")
     ap.add_argument("--code2", help="a second code of the same server: checks the signed 409, then pairs again as a server "
                                     "that can't be called")
     ap.add_argument("--target", help="the server's address, https://host[:port]; taken from --code when given")

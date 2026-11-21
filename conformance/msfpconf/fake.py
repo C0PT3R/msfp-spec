@@ -12,6 +12,7 @@ import json
 import os
 import re
 import socket
+import struct
 import ssl
 import threading
 import time
@@ -19,7 +20,7 @@ import urllib.parse
 
 from . import ed25519
 from .tls import Certificate
-from .wire import (VERSION, FED, H_DATE, H_KEY, H_NONCE, H_SIG, Answer, Key, NotIJSON, answer_message, b64u,
+from .wire import (CODE_PREFIX, VERSION, FED, H_DATE, H_KEY, H_NONCE, H_SIG, Answer, Key, NotIJSON, answer_message, b64u,
                    check_address, check_destination, check_uncallable_address, clean_name, commitment, decimal,
                    dumps, has_null, host_of, is_int, make_code, make_revocation, make_rotation,
                    parse_ijson, proof, read_pins, read_revocation, read_rotation, request_message,
@@ -28,8 +29,9 @@ from .content import video_key
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 VEC = os.path.join(HERE, "..", "..", "vectors", "v0")
-PARTS = {"catalog": [VERSION], "playback": [VERSION], "media": [VERSION], "video": [VERSION], "music": [VERSION]}
-NEEDS = {"catalog": (), "media": (), "playback": ("catalog", "media"),
+PARTS = {"catalog": [VERSION], "playback": [VERSION], "media": [VERSION], "video": [VERSION], "music": [VERSION],
+         "groups": [VERSION]}
+NEEDS = {"catalog": (), "media": (), "groups": (), "playback": ("catalog", "media"),
          "video": ("catalog", "playback", "media"), "music": ("catalog", "playback", "media")}
 JPEG = (b"\xff\xd8\xff\xe0\x00\x10JFIF\x00\x01\x01\x00\x00\x01\x00\x01\x00\x00"
         b"\xff\xc0\x00\x11\x08\x00\x5a\x00\xa0\x03\x01\x22\x00\x02\x11\x01\x03\x11\x01\xff\xd9")
@@ -113,6 +115,7 @@ class FakeServer:
         self.changes = {k: 1 for k in self.titles}
         self.limits = {"streams": 2, "transcodes": 1, "bitrateKbps": 0}
         self.peer_rate = (200.0, 400)   # calls a second, burst
+        self.group = None               # the one group this server founded (make_group_code)
         self.httpd = self._serve()
 
     # ---- codes and operator actions ---------------------------------------------
@@ -124,7 +127,203 @@ class FakeServer:
             self.codes[hashlib.sha256(secret).digest()] = (secret, expiry)
         return make_code(self.key.pub, secret, expiry, self.address)
 
+    # ---- the group (groups 2, 3, 8): one, founded by this server -----------------------
+
+    def make_group_code(self, name="Fake group"):
+        """Founds the group (once) and gives a code for it."""
+        from .groups import EVENT_LABEL
+        with self.lock:
+            if self.group is None:
+                p = {"type": "founded", "signer": self.key.text, "member": self.key.text, "seq": 1,
+                     "date": int(time.time()), "name": name, "settings": {"waitDays": 3, "capPerDay": 5},
+                     "nonce": b64u(os.urandom(16)), "ownerSeq": 1}
+                raw = dumps(p)
+                gid = b64u(hashlib.sha256(raw).digest())
+                self.group = {"id": gid, "name": name, "events": {gid: (p, {"event": b64u(raw), "signature": b64u(
+                    self.key.sign(EVENT_LABEL + raw))})}, "members": {self.key.text}, "joining": {}, "seq": 1,
+                    "codes": {}, "ownerSeq": 1, "admins": set(), "x": os.urandom(32), "profiles": {}, "mail": {},
+                    "answers": {}, "answered": set()}
+                from . import hpke
+                self._group_sign("profile", name="Fake server", encryptionKey=b64u(hpke.x25519_public(self.group["x"])),
+                                 nextCommitment=self.next[0].commitment)
+            g = self.group
+            secret = os.urandom(32)
+            expiry = int(time.time()) + 86400
+            h = hashlib.sha256(secret).digest()
+            self.codes[h] = (secret, expiry)
+            g["codes"][h] = 2           # uses (groups 2)
+            nb = name.encode()
+            return CODE_PREFIX + b64u(self.key.pub + secret + struct.pack(">Q", expiry) + b"\x01" + unb64u(g["id"])
+                                      + bytes([len(nb)]) + nb + self.address.encode())
+
+    def _group_sign(self, typ, **extra):
+        from .groups import EVENT_LABEL
+        g = self.group
+        g["seq"] += 1
+        p = {"group": g["id"], "type": typ, "signer": self.key.text, "member": self.key.text, "seq": g["seq"],
+             "date": int(time.time())}
+        p.update(extra)
+        raw = dumps(p)
+        eid = b64u(hashlib.sha256(raw).digest())
+        g["events"][eid] = (p, {"event": b64u(raw), "signature": b64u(self.key.sign(EVENT_LABEL + raw))})
+
+    def op_join_accept(self):
+        with self.lock:
+            g = self.group
+            waiting = [] if g is None else list(g["joining"].items())
+            for key, peer in waiting:
+                del g["joining"][key]
+                self._group_sign("joined", newMember=b64u(key), name=peer.name or "a member")
+                g["members"].add(b64u(key))
+            envs = [e for _, e in g["events"].values()] if g else []
+        for key, peer in waiting:
+            self.call(peer, "group-push", {"group": g["id"], "events": envs, "mail": []})
+
+    def _paired_members(self):
+        return [p for p in self.peers.values() if p.state == "paired" and b64u(p.key) in self.group["members"]]
+
+    def op_admin(self):
+        with self.lock:
+            g = self.group
+            names = [m for m in g["members"] if m != self.key.text and m not in g["admins"]]
+            for m in names:
+                g["ownerSeq"] += 1
+                self._group_sign("admin", target=m, on=True, ownerSeq=g["ownerSeq"])
+                g["admins"].add(m)
+            envs = [e for _, e in g["events"].values()]
+            peers = self._paired_members()
+        for p in peers:
+            self.call(p, "group-push", {"group": g["id"], "events": envs, "mail": []})
+
+    def op_request_accept(self):
+        """Accepts the requests to this server: to one that can't be called, a
+        sealed answer with this server's address (groups 4.2, 5)."""
+        from . import hpke
+        from .groups import MAIL_LABEL
+        with self.lock:
+            g = self.group
+            out = []
+            for i, (mp, _) in list(g["mail"].items()):
+                if mp.get("kind") != "request" or mp.get("to") != self.key.text or i in g["answered"]:
+                    continue
+                g["answered"].add(i)
+                try:
+                    inside = json.loads(hpke.open_(g["x"], b"msfp-group-mail-1" + unb64u(g["id"]) + unb64u(i),
+                                                   unb64u(mp["from"]) + self.key.pub, unb64u(mp["sealed"])))
+                except (ValueError, TypeError, KeyError):
+                    continue
+                to_x = unb64u(g["profiles"].get(mp["from"]) or "", 32)
+                if inside.get("inbound") is not False or to_x is None:
+                    continue
+                aid = os.urandom(16)
+                body = {"address": self.address, "name": "Fake server", "nextCommitment": self.next[0].commitment,
+                        "inbound": True}
+                if self.cert:
+                    body["certificates"] = [self.cert.pin]
+                sealed = hpke.seal(to_x, b"msfp-group-mail-1" + unb64u(g["id"]) + aid,
+                                   self.key.pub + unb64u(mp["from"]), dumps(body))
+                ap = {"group": g["id"], "id": b64u(aid), "kind": "answer", "from": self.key.text, "to": mp["from"],
+                      "answers": i, "expires": int(time.time()) + 86400, "sealed": b64u(sealed)}
+                raw = dumps(ap)
+                env = {"mail": b64u(raw), "signature": b64u(self.key.sign(MAIL_LABEL + raw))}
+                g["mail"][ap["id"]] = (ap, env)
+                g["answers"][ap["id"]] = [mp["from"], False]
+                out.append(env)
+            peers = self._paired_members()
+        for p in peers:
+            self.call(p, "group-push", {"group": g["id"], "events": [], "mail": out})
+
+    def group_pair(self, key, j):
+        """Groups 8.3, from a member this server isn't paired with yet."""
+        g = self.group
+        if not isinstance(j, dict) or has_null(j) or g is None or j.get("group") != g["id"]:
+            return None, b"", None
+        a = g["answers"].get(j.get("answers"))
+        if a is None or a[0] != b64u(key) or not isinstance(j.get("address"), str) \
+                or unb64u(j.get("nextCommitment") or "", 32) is None:
+            return None, b"", None
+        if a[1]:
+            return 409, b"", self.key
+        a[1] = True
+        p = Peer(key, j["address"], j.get("name") or "a member")
+        p.state, p.was_paired = "paired", True
+        p.commitment = j["nextCommitment"]
+        p.inbound = j.get("inbound") is not False
+        p.confirmed_inbound = p.inbound
+        self.peers[key] = p
+        return 200, dumps({"name": "Fake server", "nextCommitment": self.next[0].commitment, "inbound": True}), self.key
+
+    def _have(self):
+        have = {}
+        for p, _ in self.group["events"].values():
+            have[p["member"]] = max(have.get(p["member"], 0), p["seq"])
+        return have
+
+    def group_call(self, call, key, peer, j, sk):
+        """group-join, group-sync, group-push (groups 8)."""
+        from .groups import GroupFault, join_proof, read_envelope
+        g = self.group
+        if not isinstance(j, dict) or has_null(j):
+            return None, b"", None
+        if call == "group-join":
+            h = unb64u(j.get("secretHash") or "", 32)
+            if g is None or h is None or h not in g["codes"] or h not in self.codes \
+                    or self.codes[h][1] < time.time():
+                return 404, NF, sk
+            if not hmac.compare_digest(j.get("proof") or "", join_proof(self.codes[h][0], key)):
+                return 404, NF, sk
+            if b64u(key) in g["members"] or key in g["joining"]:
+                return 409, b"", sk
+            g["codes"][h] -= 1
+            if not g["codes"][h]:
+                del self.codes[h], g["codes"][h]
+            g["joining"][key] = peer
+            return 200, b"{}", sk
+        # Heard on group-sync and group-push: a member, in this copy (groups 8).
+        if g is None or j.get("group") != g["id"] or b64u(key) not in g["members"]:
+            return None, b"", None
+        if call == "group-sync":
+            have = j.get("have") if isinstance(j.get("have"), dict) else {}
+            out = sorted((((p["member"], p["seq"]), e) for p, e in g["events"].values()
+                          if p["seq"] > (have.get(p["member"]) if is_int(have.get(p["member"])) else 0)),
+                         key=lambda x: x[0])     # an equivocation has two of one (member, seq)
+            known = set(j.get("mail") or []) if isinstance(j.get("mail"), list) else set()
+            mail = [m for i, (_, m) in g["mail"].items() if i not in known]
+            return 200, dumps({"events": [e for _, e in out], "mail": mail, "have": self._have(), "more": False}), sk
+        for env in (j.get("events") or [])[:500]:
+            try:
+                eid, p, _ = read_envelope(env, g["id"])
+            except GroupFault:
+                if "groupforged" not in self.faults:
+                    continue
+                eid, p = b64u(os.urandom(32)), {}
+                try:
+                    p = json.loads(unb64u(env["event"]))
+                except (ValueError, TypeError, KeyError):
+                    continue
+            if p.get("date", 0) > time.time() + 300 or p.get("signer") != p.get("member"):
+                continue
+            g["events"][eid] = (p, env)
+            if p.get("type") == "left":
+                g["members"].discard(p["member"])
+            if p.get("type") == "joined" and p["member"] in g["admins"] and isinstance(p.get("newMember"), str):
+                g["members"].add(p["newMember"])
+            if p.get("type") == "profile" and isinstance(p.get("encryptionKey"), str):
+                g["profiles"][p["member"]] = p["encryptionKey"]
+        from .groups import MAIL_LABEL
+        for m in (j.get("mail") or [])[:100]:
+            try:
+                raw = unb64u(m["mail"])
+                mp = json.loads(raw)
+                ok = ed25519.verify_strict(unb64u(mp["from"], 32), MAIL_LABEL + raw, unb64u(m["signature"], 64) or b"")
+            except (TypeError, ValueError, KeyError):
+                continue
+            if ok and mp["from"] in g["members"] and mp.get("to") in g["members"] and mp.get("expires", 0) > time.time():
+                g["mail"][mp["id"]] = (mp, m)
+        return 200, b"{}", sk
+
     def operator(self, action):
+        action = action.replace("-", "_")
         getattr(self, "op_" + action.replace("2", "_again") if action.endswith("2") else "op_" + action)()
 
     def op_accept(self, want_inbound=True):
@@ -400,6 +599,9 @@ class FakeServer:
             return None
         peer = self.peer_of(key)
         if peer is None:
+            if call == "group-pair" and self.group and b64u(key) in self.group["members"]:
+                self.seen.add((key, nonce))
+                return key, nonce, None, False
             if call == "pair" and any(e > time.time() for _, e in self.codes.values()):
                 self.seen.add((key, nonce))
                 return key, nonce, None, False
@@ -426,7 +628,7 @@ class FakeServer:
             return set()
         theirs = parts if isinstance(parts, dict) else {}
         on = set()
-        for p in ("catalog", "media", "playback", "video", "music"):
+        for p in ("catalog", "media", "playback", "video", "music", "groups"):
             v = theirs.get(p)
             if isinstance(v, list) and VERSION in [x for x in v[:8] if is_int(x)] and all(n in on for n in NEEDS[p]):
                 on.add(p)
@@ -438,6 +640,8 @@ class FakeServer:
         sk = self.sign_key(peer)
         if call == "pair":
             return self.pair(key, peer, j)
+        if call == "group-pair":
+            return self.group_pair(key, j)
         if peer is None:
             return None, b"", None
         if call == "hello":
@@ -456,6 +660,10 @@ class FakeServer:
         if peer.state != "paired":
             return 404, NF, sk
         on = self.parts_on(peer)
+        if call in ("group-join", "group-sync", "group-push"):
+            if "groups" not in on:
+                return (404, NS, sk) if call == "group-join" else (None, b"", None)
+            return self.group_call(call, key, peer, j, sk)
         if call in ("libraries", "titles"):
             if "catalog" not in on:
                 return 404, NS, sk

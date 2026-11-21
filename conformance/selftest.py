@@ -35,7 +35,7 @@ from msfpconf.media import Refused, check_pgs, check_playlist, rebuild_vtt  # no
 from msfpconf.wire import (Answer, Key, NotIJSON, answer_message, b64u, check_address, check_base,  # noqa: E402
                            check_destination, check_media_name, check_uncallable_address, commitment, decimal,
                            fingerprint, is_int, make_rotation, parse_code, parse_ijson, proof, read_revocation,
-                           read_rotation, request_message, unb64u)
+                           parse_code_group, read_rotation, request_message, unb64u)
 
 VEC = os.path.join(HERE, "..", "vectors")
 
@@ -56,6 +56,7 @@ FAULTS = {
     "oldkey": ["O2"],               # still signs with the old key after the peer answered rotated (core 12.4)
     "quietpause": ["VW2", "VW3"],   # no progress while its viewer pauses (playback 3, 6.3; expiry 20 s in that run)
     "badstop": ["VW1"],             # a stop with a negative position (playback 4)
+    "groupforged": ["GR13"],        # a group event whose signature doesn't verify kept (groups 3.2)
 }
 
 
@@ -182,6 +183,32 @@ def vectors():
             ok = False
         expect("pgs", c["name"], c["valid"], ok)
     bad += music_vectors_ok(os.path.join(VEC, "v0", "music.json"))
+
+    # Groups: envelopes kept or not (section 3.2), the code's group, the
+    # join proof, and the mail opened with HPKE (section 5).
+    from msfpconf import hpke
+    from msfpconf.groups import GroupFault, join_proof, read_envelope
+    gv = load("v0", "groups.json")
+    gid = gv["events"][0]["id"]
+    for c in gv["events"]:
+        try:
+            eid, p, _ = read_envelope({"event": c["event"], "signature": c["signature"]}, gid)
+            kept = eid == c["id"] and p["date"] <= gv["now"] + 300
+        except GroupFault:
+            kept = False
+        expect("groups events", c["name"], not c.get("reason", "").startswith("not kept"), kept)
+    _, secret, _, _, group, name = parse_code_group(gv["code"]["text"])
+    expect("groups code", "group", gid, b64u(group or b""))
+    expect("groups joinProof", "value", gv["joinProof"]["value"],
+           join_proof(secret, unb64u(gv["keys"][gv["joinProof"]["redeemer"]], 32)))
+    m = gv["mail"]
+    sealed = unb64u(json.loads(m["payload"])["sealed"])
+    try:
+        opened = hpke.open_(bytes.fromhex(m["recipientX25519Private"]), bytes.fromhex(m["info"]), bytes.fromhex(m["aad"]),
+                            sealed).decode()
+    except ValueError as e:
+        opened = "not opened: %s" % e
+    expect("groups mail", m["name"], m["opened"], opened)
     return bad
 
 
@@ -213,7 +240,7 @@ def end_to_end(verbose, faults=()):
     fake = FakeServer({"suite.example.org": "127.0.0.1"}, faults=faults)
     port = free_ports(3)
     args = run.parser().parse_args([
-        "--code", fake.make_code(), "--code2", fake.make_code(),
+        "--code", fake.make_code(), "--code2", fake.make_code(), "--group-code", fake.make_group_code(),
         "--address", "https://suite.example.org:%d" % port, "--listen", "127.0.0.1:%d" % port,
         "--connect", "127.0.0.1:%d" % fake.port, "--operator", "--operator-timeout", "20", "--accept-timeout", "20",
         "--watch-changes", "20", "--watch-pause", "30", "--load", "--load-count", "150", "--uncallable-watch", "3", "--end"])

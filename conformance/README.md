@@ -5,7 +5,12 @@ server against [version 0](../spec/v0/README.md): the
 [core](../spec/v0/core.md) and the parts
 [catalog](../spec/v0/catalog.md), [playback](../spec/v0/playback.md),
 [media](../spec/v0/media.md), [video](../spec/v0/video.md) and, when the
-server lists it, [music](../spec/v0/music.md). It tests version 0 only. It has no checks yet for the part [groups](../spec/v0/groups.md): its readers check the codes with a group, and the group vectors are checked by tools/vectors.
+server lists it, [music](../spec/v0/music.md). It tests version 0 only. For the part [groups](../spec/v0/groups.md),
+with `--group-code`, it checks joining a group of the server's, its
+list, `group-sync`, `group-push`, the mail both ways (sealed with HPKE,
+in plain Python in `msfpconf/hpke.py`), `group-pair` as the caller, and
+leaving; not the server calling `group-pair`, nor the state's replay
+beyond what a refusal shows (tools/vectors checks the group vectors).
 The test draft's suite is in this repository's git history (up to commit
 `8cb79af`).
 
@@ -97,6 +102,9 @@ They are marked `[operator]`:
 | add one title to an offered library and remove one (with `--watch-changes SECONDS`) | T9 |
 | play one of the suite's films, pause it at once, stop it after the given time (with `--watch-pause SECONDS`) | VW1 to VW4 |
 | accept the second pairing (with `--code2`) | UP2, UP3 |
+| accept the suite's join of the group (with `--group-code`) | GR8 to GR17, GM |
+| name the suite an admin of that group | GM1 to GM6 |
+| accept the request of "MSFP conformance suite, second" in that group | GM3 to GM6 |
 | confirm the suite's pending key rotation | K11 |
 | rotate the server's own key | O1, O2 |
 | rotate it again, while the suite can't be called | O3 |
@@ -122,8 +130,8 @@ The steps can also be played by a program, through the server's own
 administration API: build the suite in Python with
 `Suite(args, report, operator_hook=hook)` (from `msfpconf.checks`, with
 `run.parser()` for `args`), where `hook(step)` is called with the step's
-name (`accept`, `want`, `change`, `watch`, `accept2`, `confirm`,
-`rotate`, `rotate2`, `revoke`) before the suite starts watching for it, exactly as
+name (`accept`, `want`, `change`, `watch`, `accept2`, `join-accept`,
+`admin`, `request-accept`, `confirm`, `rotate`, `rotate2`, `revoke`) before the suite starts watching for it, exactly as
 an operator would be asked. The suite still checks the outcome itself
 and waits up to the step's timeout. `selftest.py` plays the operator of
 its own test server this way.
@@ -133,6 +141,7 @@ its own test server this way.
 | Option | What it does |
 |--------|--------------|
 | `--code2 CODE` | P11: a second live code from the known key gets the signed `409` with no body; then UP1 to UP4: a second pairing, as a server that can't be called (`inbound: false`, an address `https://msfp-<26>.invalid`), accepted by the operator, ended with `hello` `ended` |
+| `--group-code CODE` | GR1 to GR17: a code of a group the server's operator made, of the same server as `--code`, with 2 uses or more (GR7 needs one left). The suite, already paired, joins through `group-join`; the operator accepts; then the list, `group-sync`, `group-push` and leaving are checked |
 | `--load` | R1 and R2: a burst of `--load-count` (1,000) calls over 32 connections, expecting a signed `429` `rate-limited` (or `503` `server-busy`) with `retryAfter`, then calls passing again. A burst that meets no limit is a SKIP unless it was big and fast (1,000 calls at 300 a second or more) |
 | `--end` | E1 and E2: ends the pairing with `hello` `ended`. Without it, the pairing stays: remove the peer on the server afterwards |
 | `--skip IDS` | skips checks by ID or prefix: `--skip AD,X1,U` |
@@ -166,6 +175,8 @@ The run goes in this order; the counts are the checks in each group.
 | M | 9 | media 1 to 4, video 5.5, 6 | the media: the HLS subset in master and media playlists, segments, ranges (`206` and `416`), refusals (a query, browser headers, an unknown ticket, other methods), WebVTT parts in their rebuilt form, PGS parts, preview sheets |
 | Q | 3 | catalog 2, 3; core 6.4 | the server as a reader of the suite's catalog: its calls well signed, its `titles` requests, following `next` |
 | R | 2 | core 8.3 | (`--load`) a signed `429` or `503` with `retryAfter`, then calls passing again |
+| GR | 17 | groups 2, 3, 6 to 8 | (`--group-code`) groups: the group code; `group-sync` from a non-member and about an unknown group (a `404`, plain or signed: see the notes); `group-join` with a wrong proof, an unknown code (signed `404`s), the code (`200` `{}`), again (`409`); accepted, the list pushed (`founded`, the suite's `joined`, every envelope well signed); `group-sync` (every event, `seq` order, `have`; nothing more with a full `have`); the suite's `profile` and an unknown type kept; a forged signature, a date 10 minutes ahead, another group's event and a payload over 4,096 bytes not kept; `left`, then a `404` |
+| GM | 6 | groups 4, 5, 8.3 | (`--group-code`) the mail: named admin, the suite signs `joined` for a second identity N of its own that can't be called, and N its `profile`; N's request, sealed with HPKE to the server's `encryptionKey`, kept; accepted, the server's answer, signed, sealed to N, opened, with its address; N's `group-pair` with it (signed `200`), the same again (`409`), N's `hello` |
 | UP | 4 | core 7.5, 9.1, 7.4 | (`--code2`) a pairing as a server that can't be called |
 | K | 11 | core 9.3, 9.4, 12 | the suite's own key: a rotation not matching the commitment (`409`), bad `rotate` and `revoke` bodies (`400`), revocation and suspension (only `rotate` and `revoke` answered), a rotation to the committed key lifting it, a statement with `-`, the previous key heard for 10 minutes, a repeated rotation, `202` `pending` without a commitment, the operator's confirmation |
 | AD | 3 | core 13.2 | address changes: a new address the suite serves, confirmed by a `hello` there before any other call; moving back; an address nothing serves, the old one staying |
@@ -175,7 +186,8 @@ The run goes in this order; the counts are the checks in each group.
 | E | 2 | core 7.4 | (`--end`) `hello` `ended`, then the unsigned `404` |
 | A | 2 | core 6.6, 8.2 | every answer that had to be signed was, and every signed refusal is a problem document |
 
-That is 121 checks in all, with `--code2`, `--load` and `--end`.
+That is 144 checks in all, with `--code2`, `--group-code`, `--load` and
+`--end`.
 
 Every signed answer is also read as I-JSON and checked for `null`; a
 signed `200` or `202` must be `application/json`, and the answer's media
@@ -237,8 +249,10 @@ specification and the vectors, with the self-test as its operator):
 every check must pass. Then it runs again with deliberate faults in the
 fake (replays accepted, `null` accepted, wrong changes, a bad `with`, no
 stream limit, a query served, several ranges served, WebVTT not
-rebuilt, loopback connected to, the old key kept after a rotation), and
-the checks aimed at each fault must fail.
+rebuilt, loopback connected to, the old key kept after a rotation, a
+group event with a forged signature kept), and the checks aimed at each
+fault must fail. The fake founds a group and makes its code, for the
+group checks.
 
 ## License
 
