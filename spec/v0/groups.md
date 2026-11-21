@@ -221,7 +221,8 @@ doesn't depend on how they arrived:
    it is ready, whatever else could count: an event of an excluded member
    or of a dissolved group, one a cut takes away, an owner event whose
    `ownerSeq` was taken, the other payload of an equivocation. A replayed
-   event takes its `seq` either way. An event never ready doesn't count.
+   event takes its `seq` either way, and an owner event its `ownerSeq`.
+   An event never ready doesn't count.
 3. **Cuts.** A ban, the removal of an admin and a revocation take away
    events of their target after their `lastSeq` whenever they are
    replayed: the replay starts again with the cuts its counted events made
