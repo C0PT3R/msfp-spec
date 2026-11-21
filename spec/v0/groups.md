@@ -105,6 +105,17 @@ pairing, which gains the group as a source. A refusal sends nothing: the
 caller's operator gives up on its side, and a caller still waiting drops
 the group 30 days after calling (a code works 30 days at most).
 
+**A member back in.** A member with no link through the group to the
+code's maker (section 6, "No way in") may use the group's code too: by
+`pair` when the two aren't paired, by `group-join` when they are paired
+some other way. Nobody signs `joined`: the server is a member already.
+Once the maker's operator accepts, their link gains the group as a
+source, and the list follows through it, as for a newcomer. The member
+adds the group to the link when it is made (`pair`), or when the maker's
+first `group-push` arrives (`group-join`). A member that can't be called
+gets no push: it uses `pair`, ending the other pairing first. Through a
+link that already has the group, the code is refused as for any member.
+
 ## 3. Events
 
 ### 3.1 The envelope
@@ -395,6 +406,8 @@ member doesn't change that, since it isn't a link through the group.
   server without warning.
 - While a member has no way in, its panel says so for that group, and
   sending a mail is refused there with the reason, never kept as sent.
+- The way back is a new code for the group from a member: a member back
+  in (section 2).
 
 ## 7. Leaving, blocking, banning, dissolving
 
@@ -515,8 +528,10 @@ signed, with `{}`.
 
 Refusals: `404` (signed: the caller is a peer) when a check fails or the
 part is off with the caller; `409` when the caller is already a member of
-the group, banned from it, or already waiting to join it (the code's use
-isn't spent).
+the group linked with the receiver through it, or a member that can't be
+called, banned from it, or already waiting to join it (the code's use
+isn't spent). A member linked some other way is heard: a member back in
+(section 2).
 
 The caller keeps the group as one it is joining, through the receiver,
 and hears the receiver's `group-push` for it (section 8). Accepted, the
