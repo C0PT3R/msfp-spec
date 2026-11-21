@@ -137,7 +137,7 @@ servers may use it), `group` (the group a group's code invites to).
 |-------|---------|
 | `id`, `me` | the group's ID; this server's member ID in it |
 | `via` | the inviter, until the list arrives from it |
-| `events`, `held` | signed events kept (`{event, signature, received}`), in the order kept; those held until what they follow arrives |
+| `events`, `held` | signed events kept (`{event, signature, received}`), counted or not: the state is their replay ([groups 3.5](../spec/v0/groups.md#35-rights)); `held` is no longer written (read as kept events) |
 | `mail` | sealed requests and answers passed on, until they expire (`{id, mail, signature, expires}`) |
 | `mailKey` | this server's X25519 key for the group's mail, sealed (`msfp group mail key`) |
 | `accept`, `offers`, `pool` | how this server answers requests; host library IDs it offers the group; the pool it lends |
