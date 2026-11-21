@@ -217,8 +217,11 @@ doesn't depend on how they arrived:
 2. **Counting first.** At each step, the ready event with the lowest ID
    whose rules hold (section 3.3 and those below) is replayed, and counts.
    When no ready event's rules hold, the ready one with the lowest ID is
-   replayed without counting. A replayed event takes its `seq` either
-   way. An event never ready doesn't count.
+   replayed without counting. What can never count is refused as soon as
+   it is ready, whatever else could count: an event of an excluded member
+   or of a dissolved group, one a cut takes away, an owner event whose
+   `ownerSeq` was taken, the other payload of an equivocation. A replayed
+   event takes its `seq` either way. An event never ready doesn't count.
 3. **Cuts.** A ban, the removal of an admin and a revocation take away
    events of their target after their `lastSeq` whenever they are
    replayed: the replay starts again with the cuts its counted events made
