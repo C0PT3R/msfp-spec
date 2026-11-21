@@ -1,9 +1,9 @@
 // Command vectors makes and checks MSFP's test vectors.
 //
 //	go run .          checks every vector file against the specification's rules
-//	go run . -write   writes vectors/v0-strict.json and vectors/v1/*.json, then checks
+//	go run . -write   writes vectors/history/test-draft-strict.json and vectors/v0/*.json, then checks
 //
-// vectors/v0.json is never written: it came from Overfin's code, and
+// vectors/history/test-draft.json is never written: it came from Overfin's code, and
 // implementations keep copies of it. The check regenerates it and
 // insists on the same bytes.
 package main
@@ -25,16 +25,16 @@ func main() {
 		path string
 		make func() []byte
 	}{
-		{"v0-strict.json", genV0Strict},
-		{"v1/keys.json", genV1Keys},
-		{"v1/code.json", genV1Code},
-		{"v1/exchanges.json", genV1Exchanges},
-		{"v1/rotation.json", genV1Rotation},
-		{"v1/revocation.json", genV1Revocation},
-		{"v1/strict.json", genV1Strict},
-		{"v1/media.json", genV1Media},
-		{"v1/music.json", genV1Music},
-		{"v1/video.json", genV1Video},
+		{"history/test-draft-strict.json", genDraftStrict},
+		{"v0/keys.json", genV0Keys},
+		{"v0/code.json", genV0Code},
+		{"v0/exchanges.json", genV0Exchanges},
+		{"v0/rotation.json", genV0Rotation},
+		{"v0/revocation.json", genV0Revocation},
+		{"v0/strict.json", genV0Strict},
+		{"v0/media.json", genV0Media},
+		{"v0/music.json", genV0Music},
+		{"v0/video.json", genV0Video},
 	}
 
 	failed := false
@@ -64,8 +64,8 @@ func main() {
 		}
 		return b
 	}
-	if !bytes.Equal(read("v0.json"), genV0()) {
-		fail("v0.json: not what the version 0 rules give")
+	if !bytes.Equal(read("history/test-draft.json"), genDraft()) {
+		fail("history/test-draft.json: not what the test draft's rules give")
 	}
 	for _, g := range generated {
 		if !bytes.Equal(read(g.path), g.make()) {

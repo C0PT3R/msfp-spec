@@ -1,7 +1,7 @@
 package main
 
-// The strict rules of MSFP: version 0's "Canonical forms" section (the
-// corrections of 2026-11-16) and core version 1's section 2. Each check
+// The strict rules of MSFP: the test draft's "Canonical forms" section (the
+// corrections of 2026-11-16) and core version 0's section 2. Each check
 // returns nil for a valid value, or an error that says why it isn't.
 
 import (
@@ -185,7 +185,7 @@ func checkInteger(text string) error {
 	return nil
 }
 
-// checkAddress applies the address rules. Core version 1 allows https
+// checkAddress applies the address rules. Core version 0 allows https
 // only; version 0 allows http too.
 func checkAddress(addr string, allowHTTP bool) error {
 	if len(addr) > 512 {
@@ -358,7 +358,7 @@ func makeCode(prefix string, key, secret []byte, expires uint64, address string)
 }
 
 // checkMediaName applies the rule for a file or track name in a media URL
-// (spec/v1/media.md section 1): 1 to 64 characters of A-Z a-z 0-9 . _ -,
+// (spec/v0/media.md section 1): 1 to 64 characters of A-Z a-z 0-9 . _ -,
 // and never "." or "..", which a URL resolves as folders.
 func checkMediaName(s string) error {
 	if s == "." || s == ".." {
@@ -376,7 +376,7 @@ func checkMediaName(s string) error {
 }
 
 // checkBase applies the rule for the discovery document's base
-// (spec/v1/core.md, the discovery document): at most 256 bytes, an
+// (spec/v0/core.md, the discovery document): at most 256 bytes, an
 // absolute path of segments of A-Z a-z 0-9 . _ ~ -, no empty segment
 // before the end, no "." or ".." segment, ending in /api/v1/federation/.
 func checkBase(s string) error {
@@ -411,7 +411,7 @@ func checkBase(s string) error {
 var b32 = base32.NewEncoding("abcdefghijklmnopqrstuvwxyz234567").WithPadding(base32.NoPadding)
 
 // uncallableAddress is the address a server that can't be called must
-// have (spec/v1/core.md section 5.2): https://msfp-<26>.invalid, the 26
+// have (spec/v0/core.md section 5.2): https://msfp-<26>.invalid, the 26
 // characters being 16 bytes in lowercase base32.
 func uncallableAddress(b []byte) string { return "https://msfp-" + b32.EncodeToString(b) + ".invalid" }
 

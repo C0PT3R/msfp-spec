@@ -2,7 +2,7 @@
 
 Status: All 34 accepted (2026-11-16).
 
-Small fixes to [spec/v0.md](../spec/v0.md) that need no design decision
+Small fixes to [spec/history/test-draft.md](../spec/history/test-draft.md) that need no design decision
 beyond "yes". Most come from the plugin's SPEC-GAPS.md (cited by its
 headings) and state what the plugin assumed; where Overfin does
 something else, the item says so, from reading Overfin's code. Gaps that

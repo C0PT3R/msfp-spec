@@ -1,13 +1,16 @@
 # Change proposals for MSFP
 
-Proposals to change [MSFP version 0](../spec/v0.md), the test draft,
-written while it was the only version. Those adopted made
-[version 1](../spec/v1/README.md). Each one stands alone and is decided
-on its own. Each has the same sections: Problem (with evidence),
-Proposal, Alternatives considered, Cost (specification, Overfin, the
-plugin), Compatibility, Open points. Since 2026-11-17, version 1 doesn't
-work with version 0: what the Compatibility sections say about moving
-version 0 pairings, or `http` ones, no longer applies.
+Proposals 1 to 11 change [the test draft](../spec/history/test-draft.md)
+of November 2026, which they call "version 0", written while it was the
+only version. Those adopted made the version they call "version 1",
+renumbered [version 0](../spec/v0/README.md) by proposal 13 (2026-11-20):
+a draft until it is stable. They are kept as written, in that old
+numbering. Each one stands alone and is decided on its own. Each has the
+same sections: Problem (with evidence), Proposal, Alternatives
+considered, Cost (specification, Overfin, the plugin), Compatibility,
+Open points. Since 2026-11-17, that version doesn't work with the test
+draft: what the Compatibility sections say about moving test-draft
+pairings, or `http` ones, no longer applies.
 
 The evidence comes from the specification, from the second, independent
 implementation (the Jellyfin plugin's SPEC-GAPS.md and DESIGN-NOTES.md),
@@ -29,7 +32,7 @@ read or assumed, it says so.
 | 10 | [The mesh](0010-mesh.md): servers learn that others exist (signed, expiring announcements: key, name, address or "can't be called", versions), never catalogs; knowing is not trusting; spread through pairings (option a), open gossip (b) or a DHT (c); asks that end in an ordinary pairing; optional vouching; the optional part `mesh` | Replaced by proposal 12 (2026-11-20): global discoverability won't be added |
 | 11 | [Music](0011-music.md): the part `music`; artists, albums (release groups) and tracks (recordings) by MusicBrainz ID; titles carry their own names; art from the Cover Art Archive; one audio playback per track | Adopted; every type optional (`video`, `music`); open points still open |
 | 12 | [Groups](0012-groups.md): servers whose operators chose each other, as a list of signed events every member keeps; an owner, admins, members; one kind of code; requests encrypted for each member; offers and limits per group; the part `groups` | Proposed 2026-11-20 |
-| 13 | [Version 0](0013-version-0.md): the protocol is a draft until it's stable: every version becomes 0, spec/v0.md moves to history | Decided in principle 2026-11-20, done with 12 |
+| 13 | [Version 0](0013-version-0.md): the protocol is a draft until it's stable: every version becomes 0, spec/history/test-draft.md moves to history | Decided in principle 2026-11-20, done with 12 |
 | – | [Clarifications](clarifications.md): 34 small fixes that need only a "yes" | Accepted, all 34 |
 
 Some proposals lean on others; each says how it reads without them:

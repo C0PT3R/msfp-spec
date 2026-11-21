@@ -1,6 +1,6 @@
 package main
 
-// The video part's titles (spec/v1/video.md): title keys by TMDB ID
+// The video part's titles (spec/v0/video.md): title keys by TMDB ID
 // (section 4), and what a caller keeps of a video title (section 3.1),
 // its picture (section 3.2) included.
 

@@ -1,4 +1,4 @@
-# MSFP version 1: the media part, version 1
+# MSFP version 0: the media part, version 0
 
 **Draft.**
 
@@ -79,7 +79,7 @@ checks apply to the URL's path split at `/` into its parts, compared
 exactly as sent: no part is decoded, normalized or resolved before the
 check, and a URL with an empty part, a `.` or `..` part, a `%`, a query or
 a fragment is refused. Test cases: `mediaNames` in
-[vectors/v1/strict.json](../../vectors/v1/strict.json).
+[vectors/v0/strict.json](../../vectors/v0/strict.json).
 
 ## 2. Requests
 
@@ -215,7 +215,7 @@ which it sends lowercased, and sends `application/octet-stream` instead
 of any other.
 
 Test cases for section 3.1 are in
-[vectors/v1/media.json](../../vectors/v1/media.json), beside video's
+[vectors/v0/media.json](../../vectors/v0/media.json), beside video's
 WebVTT and PGS cases.
 
 ### 3.1 HLS playlists

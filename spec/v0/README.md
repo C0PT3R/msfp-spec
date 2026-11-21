@@ -1,9 +1,12 @@
-# MSFP version 1
+# MSFP version 0
 
-**Draft.** Version 1 stands alone: a version 1 server speaks version 1
-only. [Version 0](../v0.md) was a test draft ([history](#history)).
+**Draft.** Version 0 stands alone: a version 0 server speaks version 0
+only. Version 0 means draft: anything may change, with no promise of
+compatibility between two drafts; version 1 will be the first stable
+version. Before it, MSFP had [a test draft](../history/test-draft.md)
+([history](#history)).
 
-Version 1 is made of a core and five parts, each with its own version:
+Version 0 is made of a core and five parts, each with its own version:
 three that hold the shared mechanics (`catalog`, `playback`, `media`),
 and two content parts (`video`, `music`), each optional, that say what
 the titles are and how they play. This lets an implementation build the
@@ -15,12 +18,12 @@ media formats more often.
 
 | Document | Version | What it holds |
 |----------|---------|---------------|
-| [core.md](core.md) | core 1 | encodings and canonical forms, HTTPS, keys and fingerprints, the pairing code, signed requests and answers, pairing and its states, `pair`, `hello`, key rotation and revocation (`rotate`, `revoke`), address changes, versions and parts, the discovery document |
-| [catalog.md](catalog.md) | `catalog` 1 | `libraries` and `titles`, opaque library IDs, the general rules of title keys |
-| [playback.md](playback.md) | `playback` 1 | `play`, `progress`, `stop`, limits, what the owning server enforces |
-| [media.md](media.md) | `media` 1 | what the stream URLs serve: HLS, the file; how long a ticket works |
-| [video.md](video.md) | `video` 1 | films and series by TMDB: title keys and their identity rules (TMDB's numbering, several episodes in one copy, other identifiers), subtitles, PGS, WebVTT, skip markers, seek-bar previews |
-| [music.md](music.md) | `music` 1 | artists, albums and tracks by MusicBrainz: keys, descriptions, cover art, audio-only playback |
+| [core.md](core.md) | core 0 | encodings and canonical forms, HTTPS, keys and fingerprints, the pairing code, signed requests and answers, pairing and its states, `pair`, `hello`, key rotation and revocation (`rotate`, `revoke`), address changes, versions and parts, the discovery document |
+| [catalog.md](catalog.md) | `catalog` 0 | `libraries` and `titles`, opaque library IDs, the general rules of title keys |
+| [playback.md](playback.md) | `playback` 0 | `play`, `progress`, `stop`, limits, what the owning server enforces |
+| [media.md](media.md) | `media` 0 | what the stream URLs serve: HLS, the file; how long a ticket works |
+| [video.md](video.md) | `video` 0 | films and series by TMDB: title keys and their identity rules (TMDB's numbering, several episodes in one copy, other identifiers), subtitles, PGS, WebVTT, skip markers, seek-bar previews |
+| [music.md](music.md) | `music` 0 | artists, albums and tracks by MusicBrainz: keys, descriptions, cover art, audio-only playback |
 
 Read the core first. Each part says what it needs from the core, and
 refers to it by section.
@@ -32,7 +35,7 @@ one place, with where each is defined.
 
 | Term | Meaning | Defined in |
 |------|---------|------------|
-| Server | one installation of an implementation, with one address and one current key | [core 1](core.md#1-overview-and-terms) |
+| Server | one installation of an implementation, with one address and one current key | [core 0](core.md#1-overview-and-terms) |
 | Address | where a server's API answers: `https://host[:port]`, no path | [core 5.2](core.md#52-addresses) |
 | Base path | the path of the federation calls, `/api/v1/federation/` unless the discovery document says otherwise | [core 11](core.md#11-the-discovery-document) |
 | Peer | another server this one knows by its public key | [core 7.3](core.md#73-states) |
@@ -92,19 +95,19 @@ versions and the part versions it speaks
 ([core section 10](core.md#10-versions-and-parts)):
 
 ```json
-{"state":"paired","core":[1],"parts":{"catalog":[1],"playback":[1],"media":[1],"video":[1],"music":[1]}}
+{"state":"paired","core":[0],"parts":{"catalog":[0],"playback":[0],"media":[0],"video":[0],"music":[0]}}
 ```
 
 - For the core and for each part, two servers use the highest version
   both list. No common version: that part is off between them.
 - A `hello` without `core` leaves no common core: the sender doesn't
-  speak MSFP 1. Without `parts`, the sender speaks no part.
+  speak MSFP 0. Without `parts`, the sender speaks no part.
 - Each side keeps what the peer's latest signed `hello` listed.
 - A caller makes no call of a part that is off, and shows its people
   nothing that needs it. A receiver answers such a call with a signed
   `404` of type `not-supported`, which doesn't mean "not paired".
-- The core's version also shows in every signed message: core 1 uses the
-  labels `msfp-1 …` and the headers `MSFP-*`. A later core will have its
+- The core's version also shows in every signed message: core 0 uses the
+  labels `msfp-0 …` and the headers `MSFP-*`. A later core will have its
   own, so a message signed under one core never verifies under another.
 
 An optional discovery document, `GET /.well-known/msfp`, lets a server
@@ -115,7 +118,7 @@ proves nothing, and is off by default
 ## Versioning
 
 - The core and each part have their own version: a non-negative integer.
-  Version 1 of each is the documents above.
+  Version 0 of each is the documents above.
 - **A new version of a part** is needed when an existing member's meaning
   changes, or when a receiver of the older version would misread a
   message.
@@ -133,21 +136,27 @@ proves nothing, and is off by default
 
 ## History
 
-Version 0 ([spec/v0.md](../v0.md)) was a test draft. Version 1
-supersedes it, and doesn't work with it: no version 1 server speaks
-version 0, and version 0 is not to be implemented. It stays in this
-repository as history, with its vectors
-([vectors/v0.json](../../vectors/v0.json) and
-[vectors/v0-strict.json](../../vectors/v0-strict.json)), whose
-canonical-form cases hold for core 1 too.
+The test draft of November 2026
+([spec/history/test-draft.md](../history/test-draft.md)) came first. This
+version supersedes it, and doesn't work with it: no server of this
+version speaks the test draft, and the test draft is not to be
+implemented. It stays in this repository as history, with its vectors
+([vectors/history/test-draft.json](../../vectors/history/test-draft.json)
+and
+[vectors/history/test-draft-strict.json](../../vectors/history/test-draft-strict.json)),
+whose canonical-form cases hold for this core too.
 
-### What version 1 changes from version 0
+This version was first numbered 1, and became version 0 on 2026-11-20
+([proposal 13](../../proposals/0013-version-0.md)): a draft until it is
+stable.
+
+### What this version changes from the test draft
 
 - **Strict rules** (proposal 1): one rule set for Ed25519, base64url,
-  integers, JSON (I-JSON), headers and addresses. Version 0 received the
-  same rules as corrections; version 1 also refuses `null`.
+  integers, JSON (I-JSON), headers and addresses. The test draft received
+  the same rules as corrections; this version also refuses `null`.
 - **Opaque IDs** (proposal 2): library and version IDs chosen by the
-  owning server. Also a version 0 correction.
+  owning server. Also a correction of the test draft.
 - **Key rotation and revocation** (proposal 3), in the core.
 - **A core plus parts** (proposal 4), MSFP's own labels and headers, and
   the discovery document.
@@ -166,17 +175,17 @@ canonical-form cases hold for core 1 too.
   `inbound: false` in `pair` and `hello`, peers that stop calling, a
   `hello` on a schedule, rotation and revocation pulled in `hello`
   answers, and the address `https://msfp-<26>.invalid`.
-- **The clarifications** (all 34), as in version 0's corrections.
-- The seek-bar previews already in version 0, in `video`.
+- **The clarifications** (all 34), as in the test draft's corrections.
+- The seek-bar previews already in the test draft, in `video`.
 - **The review round of 2026-11-16**: which addresses a server connects
-  to ([core section 3.3](core.md#33-connecting-to-peers), also a version 0
-  correction); required rate limits and overload answers (core section
+  to ([core section 3.3](core.md#33-connecting-to-peers), also a correction
+  of the test draft); required rate limits and overload answers (core section
   8.3); logging (core section 14.1); one error reference (core section
   8.2); exact HLS, WebVTT and PGS rules and bounds on fetches
   ([media](media.md) sections 2 and 3, and [video](video.md) section 6
   for WebVTT and PGS); choosing the copy and tracks, and
   a playback's states ([playback](playback.md) sections 2.6 and 6).
-- **The live interop of 2026-11-17**, as in version 0's corrections: no
+- **The live interop of 2026-11-17**, as in the test draft's corrections: no
   content codings (core sections 3, 6.3 and 6.6); answers' members of
   the wrong JSON type ([catalog](catalog.md) sections 2.2 and 3.3);
   `titles` without `libraries` (catalog section 3); a `hello`'s answer
@@ -190,7 +199,7 @@ are listed in each document's open questions.
 
 ## Test vectors
 
-[vectors/v1/](../../vectors/v1/) holds keys, a code, signed requests and
+[vectors/v0/](../../vectors/v0/) holds keys, a code, signed requests and
 answers under the MSFP labels and headers, a rotation statement, a
 revocation statement, a `hello` carrying `core`, `parts`,
 `certificates` and `address`, and the `hello`s of a server that can't be

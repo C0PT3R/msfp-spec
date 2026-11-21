@@ -1,5 +1,5 @@
-# Ed25519 (pure Ed25519, RFC 8032), with the strict checks of MSFP core 1
-# section 2.1 (spec/v1/core.md) on top.
+# Ed25519 (pure Ed25519, RFC 8032), with the strict checks of MSFP core 0
+# section 2.1 (spec/v0/core.md) on top.
 #
 # The arithmetic below (point_add to verify) is the reference code of
 # RFC 8032, section 6, lightly adapted (Python 3 only, no exceptions for
@@ -150,7 +150,7 @@ def sign(seed, msg):
     return R + int.to_bytes(s, 32, "little")
 
 
-# ---- MSFP core 1 section 2.1 ------------------------------------------------
+# ---- MSFP core 0 section 2.1 ------------------------------------------------
 
 @functools.lru_cache(maxsize=4096)
 def valid_point(b):

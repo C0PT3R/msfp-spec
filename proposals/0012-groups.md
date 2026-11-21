@@ -4,9 +4,9 @@ Status: Proposed (2026-11-20). Designed with the owner on 2026-11-20; every
 choice marked "decided" below is the owner's. Ships with proposal 13
 (version 0), in one release of every implementation.
 Touches: sections 1, 5, 6.5, 7, 9.1, 10.1, 12 and 14 of
-[spec/v1/core.md](../spec/v1/core.md); sections 1 and 5 of
-[catalog.md](../spec/v1/catalog.md); sections 5 and 6 of
-[playback.md](../spec/v1/playback.md); adds a part, `groups`. Replaces
+[spec/v0/core.md](../spec/v0/core.md); sections 1 and 5 of
+[catalog.md](../spec/v0/catalog.md); sections 5 and 6 of
+[playback.md](../spec/v0/playback.md); adds a part, `groups`. Replaces
 [proposal 10](0010-mesh.md).
 
 A **group** is a set of servers whose operators chose each other, built

@@ -1,4 +1,4 @@
-"""MSFP core 1 on the wire (spec/v1/core.md): encodings, I-JSON,
+"""MSFP core 0 on the wire (spec/v0/core.md): encodings, I-JSON,
 addresses, the pairing code, signed requests and answers, statements,
 and an HTTPS client with section 3.2's certificate checks."""
 
@@ -19,10 +19,11 @@ import urllib.parse
 
 from . import ed25519
 
-REQUEST_LABEL = "msfp-1 request"
-ANSWER_LABEL = "msfp-1 response"
-PAIRING_LABEL = b"msfp-1 pairing\n"
-CODE_PREFIX = "msfp-pair-1."
+VERSION = 0  # the core and every part this suite speaks (core 10)
+REQUEST_LABEL = "msfp-0 request"
+ANSWER_LABEL = "msfp-0 response"
+PAIRING_LABEL = b"msfp-0 pairing\n"
+CODE_PREFIX = "msfp-pair-0."
 ROTATION_LABEL = "msfp-key-rotation-1"
 REVOCATION_LABEL = "msfp-key-revocation-1"
 FED = "/api/v1/federation/"
@@ -215,7 +216,7 @@ def check_address(a, allow_http=False):
         return "not https://host[:port] with nothing after"
     scheme, auth = m.groups()
     if scheme == "http" and not allow_http:
-        return "http (core 1 is https only)"
+        return "http (core 0 is https only)"
     host, port = auth, None
     if auth.startswith("["):
         close = auth.find("]")
@@ -336,7 +337,7 @@ def parse_code(text, allow_http=False):
     """(key, secret, expiry, address), or raises ValueError, as core 5.1 reads it."""
     clean = "".join(ch for ch in text if ch not in WHITE_SPACE)
     if not clean.startswith(CODE_PREFIX):
-        raise ValueError("not the exact prefix msfp-pair-1.")
+        raise ValueError("not the exact prefix msfp-pair-0.")
     rest = clean[len(CODE_PREFIX):]
     if len(rest) > 779:
         raise ValueError("over 779 characters")

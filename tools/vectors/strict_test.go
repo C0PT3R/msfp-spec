@@ -16,7 +16,7 @@ func TestLibraryBehaviour(t *testing.T) {
 	var f struct {
 		Signatures []sigVector `json:"signatures"`
 	}
-	b, err := os.ReadFile("../../vectors/v0-strict.json")
+	b, err := os.ReadFile("../../vectors/history/test-draft-strict.json")
 	if err != nil {
 		t.Fatal(err)
 	}

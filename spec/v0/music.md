@@ -1,4 +1,4 @@
-# MSFP version 1: the music part, version 1
+# MSFP version 0: the music part, version 0
 
 **Draft.**
 
@@ -35,7 +35,7 @@ specifications.
 - **Album**: a release group: every edition of one album (a remaster, a
   country's pressing).
 - **Track**: a recording: one performance, wherever it appears.
-- **Scheme**: `music` 1 has one, `mb` (MusicBrainz).
+- **Scheme**: `music` 0 has one, `mb` (MusicBrainz).
 
 Tagging tools write the recording MBID in the tag named "MusicBrainz
 Track Id", and the release track's in "MusicBrainz Release Track Id":
@@ -70,7 +70,7 @@ Three kinds of title, named by MBIDs:
 
 A title's `kind` in `titles` is `artist`, `album` or `track`: the kind
 its key names. Test cases: `keys` in
-[vectors/v1/music.json](../../vectors/v1/music.json).
+[vectors/v0/music.json](../../vectors/v0/music.json).
 
 ## 3. What a title carries
 
@@ -143,7 +143,7 @@ each counts as absent; an entry of `artists` that isn't a string is
 skipped alone, as is a value of `ids` that isn't a string.
 
 Test cases: `titles` in
-[vectors/v1/music.json](../../vectors/v1/music.json), each with what the
+[vectors/v0/music.json](../../vectors/v0/music.json), each with what the
 caller keeps.
 
 ## 4. Pictures
@@ -215,7 +215,7 @@ The open points of [proposal 11](../../proposals/0011-music.md), left for
 later versions of this part:
 
 1. **Untagged libraries.** A library without MBIDs shares nothing. Is
-   that acceptable for version 1, with a later scheme for untagged
+   that acceptable for version 0, with a later scheme for untagged
    music, or should a fallback be in from the start?
 2. **Descriptions for video too.** If music titles carry names, should
    films and series be allowed to (as an option), for servers that don't

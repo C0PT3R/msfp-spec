@@ -5,14 +5,14 @@ Values for an implementation's tests to check against. They are under
 
 | File | Version | Where it comes from |
 |------|---------|---------------------|
-| [v0.json](v0.json) | 0 | History: version 0 was a test draft, not to be implemented. From Overfin's own code. Keys, a pairing code, the pairing proof, and three signed exchanges ([v0 section 15](../spec/v0.md#15-test-vectors)). It never changes. |
-| [v0-strict.json](v0-strict.json) | 0 | History, as v0.json. The generator below. Valid and invalid cases for the canonical forms of [v0 section 2.1](../spec/v0.md#21-canonical-forms) and the code and address rules of v0 section 5: keys (the identity, a point of order 8, a key with a small-order part, a non-canonical encoding), signatures (an identity-key forgery, a torsion R, S + L), base64url, dates, integers, JSON bodies, addresses and codes, each with its verdict. They hold for core 1 too, except that core 1 refuses `http`. |
-| [v1/](v1/) | core 1 | The generator below. Keys and commitments, a `msfp-pair-1.` code with an `https` address, signed requests and answers under the MSFP labels and headers (with the answer's media type), a rotation statement, a revocation statement, a `hello` carrying `core`, `parts`, `certificates` and `address`, the `hello`s of a server that can't be called (`inbound: false`, `knownKey`, and an answer carrying `rotation` and `revocation`), address and code verdicts under core 1, the addresses of servers that can't be called (`msfp-<26>.invalid`), the destinations a server refuses to connect to, media servers' language codes and the tags sent for them, WebVTT, HLS and PGS cases, music title keys and titles with what a caller keeps of each, and video titles with what a caller keeps of each ([core section 17](../spec/v1/core.md#17-test-vectors)). |
+| [history/test-draft.json](history/test-draft.json) | the test draft | History: the test draft of November 2026, not to be implemented. From Overfin's own code. Keys, a pairing code, the pairing proof, and three signed exchanges ([its section 15](../spec/history/test-draft.md#15-test-vectors)). It never changes. |
+| [history/test-draft-strict.json](history/test-draft-strict.json) | the test draft | History, as test-draft.json. The generator below. Valid and invalid cases for the canonical forms of [the test draft's section 2.1](../spec/history/test-draft.md#21-canonical-forms) and the code and address rules of its section 5: keys (the identity, a point of order 8, a key with a small-order part, a non-canonical encoding), signatures (an identity-key forgery, a torsion R, S + L), base64url, dates, integers, JSON bodies, addresses and codes, each with its verdict. They hold for core 0 too, except that core 0 refuses `http`. |
+| [v0/](v0/) | core 0 | The generator below. Keys and commitments, a `msfp-pair-0.` code with an `https` address, signed requests and answers under the MSFP labels and headers (with the answer's media type), a rotation statement, a revocation statement, a `hello` carrying `core`, `parts`, `certificates` and `address`, the `hello`s of a server that can't be called (`inbound: false`, `knownKey`, and an answer carrying `rotation` and `revocation`), address and code verdicts under core 0, the addresses of servers that can't be called (`msfp-<26>.invalid`), the destinations a server refuses to connect to, media servers' language codes and the tags sent for them, WebVTT, HLS and PGS cases, music title keys and titles with what a caller keeps of each, and video titles with what a caller keeps of each ([core section 17](../spec/v0/core.md#17-test-vectors)). |
 
-**No implementation produced the files of version 1, nor v0-strict.json.**
+**No implementation produced the files of version 0, nor test-draft-strict.json.**
 The media and destination cases were checked against Overfin's own
 sanitizer and checks on 2026-11-16: they agree, except for the HLS cases
-that [media section 3.1](../spec/v1/media.md#31-hls-playlists) lists in
+that [media section 3.1](../spec/v0/media.md#31-hls-playlists) lists in
 its Overfin note.
 These files come from the
 generator alone: an independent program written from the specification. When an
@@ -34,14 +34,14 @@ Ed25519) as its only dependency.
 ```
 cd tools/vectors
 go run .          # checks every file in vectors/
-go run . -write   # writes v0-strict.json and v1/*.json, then checks
+go run . -write   # writes history/test-draft-strict.json and v0/*.json, then checks
 go test ./...     # checks what the files say about common libraries
 ```
 
 The check:
 
 - regenerates every file it writes and compares the bytes;
-- regenerates v0.json from version 0's rules and compares the bytes,
+- regenerates history/test-draft.json from the test draft's rules and compares the bytes,
   without ever writing it;
 - reads every file back and checks each value on its own: public keys,
   fingerprints and commitments from their seeds, codes from their parts,
@@ -49,7 +49,7 @@ The check:
   strict rules, every pin from its key, and every verdict against the
   generator's checks.
 
-Its tests confirm the comments in v0-strict.json about common libraries
+Its tests confirm the comments in test-draft-strict.json about common libraries
 (Go's `crypto/ed25519` accepts the identity-key forgery and refuses the
 torsion R; a cofactored check accepts the torsion R), and check IPv6
 addresses, which the vectors leave out.

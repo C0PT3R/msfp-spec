@@ -1,12 +1,12 @@
-# MSFP version 1 conformance suite
+# MSFP version 0 conformance suite
 
 A program that plays a peer against a server you run, and checks that
-server against [version 1](../spec/v1/README.md): the
-[core](../spec/v1/core.md) and the parts
-[catalog](../spec/v1/catalog.md), [playback](../spec/v1/playback.md),
-[media](../spec/v1/media.md), [video](../spec/v1/video.md) and, when the
-server lists it, [music](../spec/v1/music.md). It tests version 1 only.
-The version 0 suite is in this repository's git history (up to commit
+server against [version 0](../spec/v0/README.md): the
+[core](../spec/v0/core.md) and the parts
+[catalog](../spec/v0/catalog.md), [playback](../spec/v0/playback.md),
+[media](../spec/v0/media.md), [video](../spec/v0/video.md) and, when the
+server lists it, [music](../spec/v0/music.md). It tests version 0 only.
+The test draft's suite is in this repository's git history (up to commit
 `8cb79af`).
 
 It pairs with the server from a pairing code, then checks the pairing,
@@ -41,7 +41,7 @@ machine, or another container, that the server reaches.
 
    ```sh
    python3 conformance/run.py \
-       --code 'msfp-pair-1.…' \
+       --code 'msfp-pair-0.…' \
        --address https://192.0.2.40:8000 \
        --listen 0.0.0.0:8000
    ```
@@ -150,12 +150,12 @@ The run goes in this order; the counts are the checks in each group.
 
 | Group | Checks | Sections | What is checked |
 |-------|--------|----------|-----------------|
-| C | 1 | core 5.1 | the code: prefix `msfp-pair-1.`, base64url, the key, the expiry, the address |
+| C | 1 | core 5.1 | the code: prefix `msfp-pair-0.`, base64url, the key, the expiry, the address |
 | D | 1 | core 11 | the discovery document: none, answered like a missing path (`404`, or whatever such a path gets), or a valid document whose `base` the suite then uses |
 | S | 4 | core 6.4, 3, 14 | strangers: the unsigned `404` on every call, like a missing path |
 | P | 11 | core 9.1, 2.1, 5.2, 6.5, 12.5 | `pair`: wrong proofs, forged and small-order keys, stale dates, bad addresses, bad members (`inbound`, `null`, wrong types), the pairing itself, the next key commitment, replay, the used code, the signed `409` |
 | W | 4 | core 7.1, 7.3 | waiting: `hello` `waiting`, no forcing `paired`, a signed `404` on `libraries`, the server's `hello` on acceptance |
-| H | 6 | core 9.2, 10, 3.2 | `hello`: its members, versions and parts (core 1; catalog, playback, media, video), its address, the pin of the certificate served, calls that need *trusted* or *named*, removing and naming pins |
+| H | 6 | core 9.2, 10, 3.2 | `hello`: its members, versions and parts (core 0; catalog, playback, media, video), its address, the pin of the certificate served, calls that need *trusted* or *named*, removing and naming pins |
 | V | 6 | core 10.2 to 10.4, catalog 5 | versions: bad `core` and `parts` refused, odd entries ignored, a part that is off answered `404` `not-supported` (`playback`, `catalog`, `media` as a dependency), no `limits` and no video titles when their parts are off |
 | J | 2 | core 2.3 | I-JSON and types: twice-named members, surrogates, noncharacters, bad UTF-8, a byte order mark, `null`, wrong types refused; white space and unknown members accepted |
 | G | 10 | core 2.2, 2.4, 3, 6.2, 6.4 | signatures: dates, nonces, keys and signatures outside their one form, another host, path or key, duplicate headers, a query, percent-encoding, the media type, `Sec-Fetch-Site`, content codings, a body over 64 KiB |
@@ -171,7 +171,7 @@ The run goes in this order; the counts are the checks in each group.
 | AD | 3 | core 13.2 | address changes: a new address the suite serves, confirmed by a `hello` there before any other call; moving back; an address nothing serves, the old one staying |
 | X | 1 | core 3.3 | refused destinations: loopback addresses announced as the suite's are never connected to |
 | O | 4 | core 9.3, 12.3, 12.4, 12.6, 12.7 | the server's own key: a pushed `rotate` signed with the old key and matching its commitment, then signing with the new key only; a rotation and a revocation pulled in `hello` answers by a server that can't be called |
-| U | 7 | core 5.2, 7.5, 9.2, 13.2 | the suite as a server that can't be called: `inbound: false` only with an address `https://msfp-<26>.invalid` (the forms of `vectors/v1/strict.json`), stored at once, `knownKey` and `rotation` type-checked, its own calls still answered, no connection to it at all, and `inbound` back to `true` confirmed by a `hello` first |
+| U | 7 | core 5.2, 7.5, 9.2, 13.2 | the suite as a server that can't be called: `inbound: false` only with an address `https://msfp-<26>.invalid` (the forms of `vectors/v0/strict.json`), stored at once, `knownKey` and `rotation` type-checked, its own calls still answered, no connection to it at all, and `inbound` back to `true` confirmed by a `hello` first |
 | E | 2 | core 7.4 | (`--end`) `hello` `ended`, then the unsigned `404` |
 | A | 2 | core 6.6, 8.2 | every answer that had to be signed was, and every signed refusal is a problem document |
 
@@ -229,10 +229,10 @@ python3 conformance/selftest.py           # about 5 minutes
 python3 conformance/selftest.py --quick   # without the fault pass
 ```
 
-It checks the suite's readers against every case of `vectors/v1/` (and
-those of `vectors/v0-strict.json` that core section 17 says hold for
-core 1), then runs the whole suite, over HTTPS both ways, against an
-in-process fake version 1 server (`msfpconf/fake.py`, built from the
+It checks the suite's readers against every case of `vectors/v0/` (and
+those of `vectors/history/test-draft-strict.json` that core section 17 says hold for
+core 0), then runs the whole suite, over HTTPS both ways, against an
+in-process fake version 0 server (`msfpconf/fake.py`, built from the
 specification and the vectors, with the self-test as its operator):
 every check must pass. Then it runs again with deliberate faults in the
 fake (replays accepted, `null` accepted, wrong changes, a bad `with`, no

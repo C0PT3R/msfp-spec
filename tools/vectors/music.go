@@ -1,6 +1,6 @@
 package main
 
-// The music part's rules (spec/v1/music.md): title keys by MusicBrainz
+// The music part's rules (spec/v0/music.md): title keys by MusicBrainz
 // ID (section 2), and what a caller keeps of a music title (section 3.2),
 // with names cleaned as core section 9.1 cleans a server's name.
 

@@ -270,7 +270,7 @@ def title_problems(t, libs, parts_on):
 
 
 def music_vectors_ok(path):
-    """Checks keep_music_title against vectors/v1/music.json: a list of mismatches."""
+    """Checks keep_music_title against vectors/v0/music.json: a list of mismatches."""
     v = json.load(open(path))
     bad = []
     for c in v["keys"]:

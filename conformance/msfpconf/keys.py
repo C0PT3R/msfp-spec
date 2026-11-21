@@ -652,13 +652,13 @@ class KeyChecks:
                    "a signed 404", callable_form)
 
         def bad_forms():
-            vec = os.path.join(os.path.dirname(__file__), "..", "..", "vectors", "v1", "strict.json")
+            vec = os.path.join(os.path.dirname(__file__), "..", "..", "vectors", "v0", "strict.json")
             forms = [v.get("text", "") for v in json.load(open(vec))["uncallableAddresses"] if not v["valid"]]
             base = {k: v for k, v in self.hello_body("paired").items() if k != "certificates"}
             return refused([("inbound false with %s" % f, dict(base, address=f, inbound=False)) for f in forms] +
                            [("inbound \"false\"", dict(base, address=x, inbound="false")),
                             ("inbound 0", dict(base, address=x, inbound=0))])
-        self.check("U2", "core 5.2, 7.5", "inbound false with the invalid forms of vectors/v1/strict.json, or inbound not a "
+        self.check("U2", "core 5.2, 7.5", "inbound false with the invalid forms of vectors/v0/strict.json, or inbound not a "
                    "boolean: a signed 404", bad_forms)
 
         def switch():

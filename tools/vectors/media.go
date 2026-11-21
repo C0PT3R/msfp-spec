@@ -1,9 +1,9 @@
 package main
 
-// The media rules of spec/v1/media.md section 3 (HLS playlists, WebVTT,
-// PGS), and the destinations of spec/v1/core.md section 3.3. Written from
-// the specification's text, to check vectors/v1/media.json and the
-// destinations of vectors/v1/strict.json.
+// The media rules of spec/v0/media.md section 3 (HLS playlists, WebVTT,
+// PGS), and the destinations of spec/v0/core.md section 3.3. Written from
+// the specification's text, to check vectors/v0/media.json and the
+// destinations of vectors/v0/strict.json.
 
 import (
 	"bytes"

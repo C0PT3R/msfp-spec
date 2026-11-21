@@ -39,21 +39,21 @@ be empty when the stored record says the server can't be called.
 
 | Field | Default | Content |
 |-------|---------|---------|
-| `Address` | required | `https://host[:port]`, no path ([core 5.2](../spec/v1/core.md#52-addresses)). Kept while the server can't be called, for when it can again |
+| `Address` | required | `https://host[:port]`, no path ([core 5.2](../spec/v0/core.md#52-addresses)). Kept while the server can't be called, for when it can again |
 | `Store` | required | [host.md section 1](host.md#1-store) |
 | `Name` | the host of the address | `func() string`, read at each `pair` and `hello` |
 | `Sealer` | the Store's own | [host.md section 5](host.md#5-sealer) |
-| `Prefix` | `""` | where the routes are mounted, before `/api/v1/federation/` and `/api/v1/stream/`; segments of `A-Z a-z 0-9 . _ ~ -`. A server with one needs `Discovery`, or peers can't find it ([core 11](../spec/v1/core.md#11-the-discovery-document)) |
+| `Prefix` | `""` | where the routes are mounted, before `/api/v1/federation/` and `/api/v1/stream/`; segments of `A-Z a-z 0-9 . _ ~ -`. A server with one needs `Discovery`, or peers can't find it ([core 11](../spec/v0/core.md#11-the-discovery-document)) |
 | `Discovery` | off | serve `/.well-known/msfp` |
-| `Pins` | nil: the engine reads them | this server's certificate pins ([core 3.2](../spec/v1/core.md#32-https-certificates)). nil: read by connecting to its own address (and the former one during a move). Give them all behind a proxy with several certificates |
+| `Pins` | nil: the engine reads them | this server's certificate pins ([core 3.2](../spec/v0/core.md#32-https-certificates)). nil: read by connecting to its own address (and the former one during a move). Give them all behind a proxy with several certificates |
 | `AllowLoopback` | off | let the default Dialer reach peers on this machine |
-| `PlainHTTPForTests` | off | accept and make `http` pairings ([core 3.1](../spec/v1/core.md#31-local-testing)). **Process-wide**: it turns on `wire.AllowPlainHTTPForTests`. Logged as a warning at each start |
-| `Limits` | the spec's numbers | `CallLimits` ([core 8.3](../spec/v1/core.md#83-limits-and-overload)): per address 50/s burst 400; per peer 20/s burst 200; all peers 200/s burst 2,000; `play` per peer 0.5/s burst 20; at once 8 per peer, 64 in all, queue wait 5 s. A zero field takes its default |
+| `PlainHTTPForTests` | off | accept and make `http` pairings ([core 3.1](../spec/v0/core.md#31-local-testing)). **Process-wide**: it turns on `wire.AllowPlainHTTPForTests`. Logged as a warning at each start |
+| `Limits` | the spec's numbers | `CallLimits` ([core 8.3](../spec/v0/core.md#83-limits-and-overload)): per address 50/s burst 400; per peer 20/s burst 200; all peers 200/s burst 2,000; `play` per peer 0.5/s burst 20; at once 8 per peer, 64 in all, queue wait 5 s. A zero field takes its default |
 | `NewPairing` | 2 streams, 1 transcode, no cap | the limits a new pairing starts with |
 | `Clock`, `Random`, `Dialer`, `Notifier`, `SheetEncoder` | the system's, the engine's | [host.md section 6](host.md#6-clock-dialer-notifier-sheet-encoder) |
 | `Logger` | `slog.Default()` | nothing secret is logged |
 | `ClientAddress` | `WithClient`'s, else the connection's | `func(*http.Request) netip.Addr`: the caller's address as the host's trusted proxies say. The engine never reads `X-Forwarded-For` |
-| `NotFound` | MSFP's `404` problem | the host's own answer for a path that doesn't exist, so the engine's unsigned refusals look the same ([core 3](../spec/v1/core.md#3-transport)) |
+| `NotFound` | MSFP's `404` problem | the host's own answer for a path that doesn't exist, so the engine's unsigned refusals look the same ([core 3](../spec/v0/core.md#3-transport)) |
 | `Parts` | nil: all five | `catalog`, `playback`, `media`, `video`, `music`. A part without those it needs is left out (`video` and `music` need the other three; `playback` needs `catalog` and `media`). An empty list: the core alone |
 | `Catalog`, `Playback`, `Media` | absent | absent: nothing offered, every `play` answered `404` |
 | `MaxBitrateKbps` | 0 (none) | this server's cap on what peers play here |
@@ -67,15 +67,15 @@ never by opening a new one.
 
 | Method | Content | Spec |
 |--------|---------|------|
-| `SetAddress(address)` | a move: the new address is tried at once; once this server reaches itself there, peers are told, and the former address is accepted 30 days or until every peer moved. While the server can't be called, only kept. Errors `InvalidAddress`, `PlainHTTP` | [core 13.1](../spec/v1/core.md#131-the-server-that-moves) |
-| `SetUncallable(on)` | on: the address becomes the `.invalid` one, made at the first time and kept; live codes withdrawn; every peer sent a hello, then on core 7.5's schedule. Off: a move back to the address, announced once reached. Off without any address: `InvalidAddress` (`SetAddress` first) | [core 7.5](../spec/v1/core.md#75-a-peer-that-cant-be-called) |
-| `SetDiscovery(on)` | **sync** | [core 11](../spec/v1/core.md#11-the-discovery-document) |
+| `SetAddress(address)` | a move: the new address is tried at once; once this server reaches itself there, peers are told, and the former address is accepted 30 days or until every peer moved. While the server can't be called, only kept. Errors `InvalidAddress`, `PlainHTTP` | [core 13.1](../spec/v0/core.md#131-the-server-that-moves) |
+| `SetUncallable(on)` | on: the address becomes the `.invalid` one, made at the first time and kept; live codes withdrawn; every peer sent a hello, then on core 7.5's schedule. Off: a move back to the address, announced once reached. Off without any address: `InvalidAddress` (`SetAddress` first) | [core 7.5](../spec/v0/core.md#75-a-peer-that-cant-be-called) |
+| `SetDiscovery(on)` | **sync** | [core 11](../spec/v0/core.md#11-the-discovery-document) |
 
 ## 3. HTTP handlers
 
-Spec: [core 6](../spec/v1/core.md#6-signing-requests-and-answers),
-[core 8](../spec/v1/core.md#8-common-rules-for-every-call),
-[media 2](../spec/v1/media.md#2-requests).
+Spec: [core 6](../spec/v0/core.md#6-signing-requests-and-answers),
+[core 8](../spec/v0/core.md#8-common-rules-for-every-call),
+[media 2](../spec/v0/media.md#2-requests).
 
 | Handler | Mount at | Serves |
 |---------|----------|--------|
@@ -102,8 +102,8 @@ a signed answer or refusal, crashes as signed `500`s.
 Each goes at once: a call to a peer isn't held by the back-off of
 background calls, only by a peer's signed `retryAfter`.
 
-**Pairing.** Spec: [core 5](../spec/v1/core.md#5-the-pairing-code),
-[core 7](../spec/v1/core.md#7-pairing-step-by-step).
+**Pairing.** Spec: [core 5](../spec/v0/core.md#5-the-pairing-code),
+[core 7](../spec/v0/core.md#7-pairing-step-by-step).
 
 | Method | Result | Errors |
 |--------|--------|--------|
@@ -117,8 +117,8 @@ background calls, only by a peer's signed `retryAfter`.
 | `End(peer)` | ends or refuses a pairing in any state: deleted, its keys forgotten, then told | `NotFound` |
 | `PanelOpen()` | **sync**: the panel lists peers now; each peer in `theirs` gets a `hello`, at most every 20 seconds, in the background | |
 
-**Sharing.** Spec: [catalog 2](../spec/v1/catalog.md#2-libraries),
-[playback 5](../spec/v1/playback.md#5-limits).
+**Sharing.** Spec: [catalog 2](../spec/v0/catalog.md#2-libraries),
+[playback 5](../spec/v0/playback.md#5-limits).
 
 | Method | Result | Errors |
 |--------|--------|--------|
@@ -128,15 +128,15 @@ background calls, only by a peer's signed `retryAfter`.
 | `SetLimits(peer, Limits)` | from its next `play` on | `NotFound`, `InvalidLimits` |
 | `ReadNow(peer)` | a reading now, waited for: titles kept | `NotFound`, `NotPaired`, `Uncallable`, `Suspended`, `NotSupported`, `Unreachable`, `BackingOff`, the peer's refusals |
 
-**Keys.** Spec: [core 12](../spec/v1/core.md#12-key-rotation-and-revocation).
+**Keys.** Spec: [core 12](../spec/v0/core.md#12-key-rotation-and-revocation).
 
 | Method | Result | Errors |
 |--------|--------|--------|
-| `NextKey()` | `(fingerprint, onServer)`: from the commitment ([core 4.2](../spec/v1/core.md#42-the-fingerprint)) | |
+| `NextKey()` | `(fingerprint, onServer)`: from the commitment ([core 4.2](../spec/v0/core.md#42-the-fingerprint)) | |
 | `ExportNextKey()` | `(text, fingerprint)`; text `msfp-next-key-1.<seed>` | `NoNextKey` |
 | `DeleteNextKey()` | the seed leaves the server, the commitment stays; `Rotate` and `KeyStolen` then need the text | `NoNextKey` |
 | `Rotate(nextKey)` | to the next key (`""`: the seed here; or the exported text). Live codes withdrawn. Every callable peer sent `rotate`; returns when each answered or failed. A change still under way is finished first | `NoNextKey`, `NotNextKey`, `RotationUnderWay` (another key action is running now) |
-| `KeyStolen(nextKey, withoutNext)` | `rotated`: revokes the key (every callable peer sent `revoke`), then rotates to the next key. With `withoutNext`: a new key, not a rotation; every pairing ends without `ended`; for 30 days former peers' hellos get the revocation ([core 12.7](../spec/v1/core.md#127-what-to-do-on-compromise)). Live codes withdrawn | `NoNextKey` (nothing revoked), `NotNextKey`, `RotationUnderWay` |
+| `KeyStolen(nextKey, withoutNext)` | `rotated`: revokes the key (every callable peer sent `revoke`), then rotates to the next key. With `withoutNext`: a new key, not a rotation; every pairing ends without `ended`; for 30 days former peers' hellos get the revocation ([core 12.7](../spec/v0/core.md#127-what-to-do-on-compromise)). Live codes withdrawn | `NoNextKey` (nothing revoked), `NotNextKey`, `RotationUnderWay` |
 | `ConfirmRotation(peer)` | `PeerView`: the peer's pending key becomes its key, after the operators compared fingerprints; a hello follows | `NotFound`, `Suspended`, `NoPending`, `KeyTaken` |
 | `DismissRefused(peer)` | clears a refused rotation's warning | `NotFound` |
 
@@ -209,9 +209,9 @@ everything it relays.
 
 ### 6.1 Playing
 
-Spec: [playback 2](../spec/v1/playback.md#2-play),
-[playback 3](../spec/v1/playback.md#3-progress),
-[video 5](../spec/v1/video.md#5-playing-a-film-or-an-episode).
+Spec: [playback 2](../spec/v0/playback.md#2-play),
+[playback 3](../spec/v0/playback.md#3-progress),
+[video 5](../spec/v0/video.md#5-playing-a-film-or-an-episode).
 
 ```
 Play(peer, req: PlayRequest) -> RemotePlayback
@@ -227,7 +227,7 @@ Stop(id, positionMs)                      errors: NotFound
 | Field | Content |
 |-------|---------|
 | `Title` | the key, as the peer listed it |
-| `Capabilities` | the viewer's device; the engine sends only MSFP's values, coarsened ([playback 2.1](../spec/v1/playback.md#21-the-request)) |
+| `Capabilities` | the viewer's device; the engine sends only MSFP's values, coarsened ([playback 2.1](../spec/v0/playback.md#21-the-request)) |
 | `StartMs`, `MaxBitrateKbps` | the bitrate rounded down to a whole 1,000 |
 | `AudioLanguage`, `AudioTrack`, `SubtitleLanguage`, `SubtitleTrack`, `VersionID` | the viewer's wishes; IDs from a former answer; `SubtitleTrack` may be `off` |
 | `Replaces` | a playback of the same viewer to stop first; its `stop` waited for up to 5 seconds |
@@ -237,7 +237,7 @@ Stop(id, positionMs)                      errors: NotFound
 - **Busy now**: `StreamLimitReached`, `ServerBusy` (a `503`, or no
   answer, or an unsigned one), `BackingOff` (a `429`, or calls
   unanswered lately). **Not playable**: `NotPlayable` and the rest
-  ([playback 2.5](../spec/v1/playback.md#25-refusals)). What lasts
+  ([playback 2.5](../spec/v0/playback.md#25-refusals)). What lasts
   (`KeyLost`, `Suspended`, `Uncallable`, `NotSupported`, a destination
   or certificate refused) comes as itself, never as `ServerBusy`.
 - An answer that breaks a "must": the engine sends `stop`, then fails
@@ -261,9 +261,9 @@ forgets the playback. `positionMs` -1: not known.
 
 ### 6.2 Relaying media
 
-Spec: [media 2](../spec/v1/media.md#2-requests),
-[media 3](../spec/v1/media.md#3-what-is-fetched),
-[video 6](../spec/v1/video.md#6-media).
+Spec: [media 2](../spec/v0/media.md#2-requests),
+[media 3](../spec/v0/media.md#3-what-is-fetched),
+[video 6](../spec/v0/video.md#6-media).
 
 ```
 Fetch(id, path: MediaPath, rng: String, out: ResponseSink)
@@ -316,30 +316,30 @@ queries too, so a host that missed one loses nothing.
 
 | Event | Fields | When | Spec |
 |-------|--------|------|------|
-| `PeerWaiting` | `Fingerprint` | a peer redeemed our code: the operator compares, then `Accept` or `End` | [core 7.1](../spec/v1/core.md#71-the-steps) |
+| `PeerWaiting` | `Fingerprint` | a peer redeemed our code: the operator compares, then `Accept` or `End` | [core 7.1](../spec/v0/core.md#71-the-steps) |
 | `PeerPaired` | | a pairing became `paired`, either side | core 7.1 |
-| `PeerGone` | | a peer said, signed, it doesn't know us; or 30 days suspended without a valid rotation | [core 7.3](../spec/v1/core.md#73-states) |
-| `PeerEnded` | `ByThem` | a pairing ended, by us (`End`) or by them | [core 7.4](../spec/v1/core.md#74-ending-a-pairing) |
-| `VersionsChanged` | | a peer's versions changed | [core 10](../spec/v1/core.md#10-versions-and-parts) |
-| `PeerSuspended` | | a peer revoked its key: warn, hide what needs it from viewers | [core 12.6](../spec/v1/core.md#126-revocation) |
+| `PeerGone` | | a peer said, signed, it doesn't know us; or 30 days suspended without a valid rotation | [core 7.3](../spec/v0/core.md#73-states) |
+| `PeerEnded` | `ByThem` | a pairing ended, by us (`End`) or by them | [core 7.4](../spec/v0/core.md#74-ending-a-pairing) |
+| `VersionsChanged` | | a peer's versions changed | [core 10](../spec/v0/core.md#10-versions-and-parts) |
+| `PeerSuspended` | | a peer revoked its key: warn, hide what needs it from viewers | [core 12.6](../spec/v0/core.md#126-revocation) |
 | `PeerResumed` | | a suspended peer rotated to its committed key; `PeerRotated` comes too | core 12.6 |
-| `RotationPending` | `Fingerprint` | a peer moved to a key it hadn't committed to: `ConfirmRotation` or `End` | [core 12.3](../spec/v1/core.md#123-receiving-a-rotation) |
+| `RotationPending` | `Fingerprint` | a peer moved to a key it hadn't committed to: `ConfirmRotation` or `End` | [core 12.3](../spec/v0/core.md#123-receiving-a-rotation) |
 | `RotationRefused` | `Fingerprint` | a peer's rotation didn't match its commitment; a warning | core 12.3 |
 | `PeerRotated` | `Fingerprint` | a peer's new key is current | core 12.3 |
-| `RotationAnswered` | `State` | a peer answered our change of key: `rotated`, `pending`, `refused`; also when a hello under the new key shows it moved | [core 12.4](../spec/v1/core.md#124-what-each-side-does-during-the-change) |
+| `RotationAnswered` | `State` | a peer answered our change of key: `rotated`, `pending`, `refused`; also when a hello under the new key shows it moved | [core 12.4](../spec/v0/core.md#124-what-each-side-does-during-the-change) |
 | `OurKeyLost` | | our change of key ended and this peer never moved: pair again | core 12.4 |
 | `RotationEnded` | `Lost` | our change of key is over, the old key deleted (server event) | core 12.4 |
-| `AddressAnnounced` | `Address` | we reached ourselves at our new address and told peers (server event) | [core 13.1](../spec/v1/core.md#131-the-server-that-moves) |
+| `AddressAnnounced` | `Address` | we reached ourselves at our new address and told peers (server event) | [core 13.1](../spec/v0/core.md#131-the-server-that-moves) |
 | `NotMovedLate` | | a peer still calls our former address 3 days after the announcement | core 13.1 |
 | `MoveEnded` | `NotMoved` | our move is over: all moved (0), or 30 days (server event) | core 13.1 |
-| `PeerMoved` | `From`, `To` | a peer's new address was confirmed (or read from an uncallable peer's hello) | [core 13.2](../spec/v1/core.md#132-a-peer-that-learns-of-a-move) |
+| `PeerMoved` | `From`, `To` | a peer's new address was confirmed (or read from an uncallable peer's hello) | [core 13.2](../spec/v0/core.md#132-a-peer-that-learns-of-a-move) |
 | `PeerMoveFailing` | `Address`, `Since` | a peer's new address has failed for a day; once per move | core 13.2 |
-| `InboundChanged` | `Inbound` | a peer can't be called (`no`), can again (`confirming`: its address checked first), or its address answered (`yes`) | [core 7.5](../spec/v1/core.md#75-a-peer-that-cant-be-called) |
+| `InboundChanged` | `Inbound` | a peer can't be called (`no`), can again (`confirming`: its address checked first), or its address answered (`yes`) | [core 7.5](../spec/v0/core.md#75-a-peer-that-cant-be-called) |
 | `CallsFailed` | | a peer's hello answer said our calls fail: suggest "this server can't be called" | core 7.5 |
-| `CatalogReadEnded` | `Titles`, `Changes`, `Err` | a reading ended: titles kept (new or changed, for changes), or why it failed (what was kept stays: a whole reading is kept only once read to its end) | [catalog 3.2](../spec/v1/catalog.md#32-whole-list-or-changes) |
-| `WantsGone` | `Libraries` | wanted libraries no longer offered; their titles go at the next reading | [catalog 2.2](../spec/v1/catalog.md#22-what-the-caller-keeps) |
-| `PlaybackStarted` | `Playback`, `Title`, `Method` | a peer's playback here started | [playback 6.1](../spec/v1/playback.md#61-a-playbacks-states) |
-| `PlaybackEnded` | `Playback`, `Title`, `Reason` | it ended, and why | [playback 6.3](../spec/v1/playback.md#63-how-a-playback-ends) |
+| `CatalogReadEnded` | `Titles`, `Changes`, `Err` | a reading ended: titles kept (new or changed, for changes), or why it failed (what was kept stays: a whole reading is kept only once read to its end) | [catalog 3.2](../spec/v0/catalog.md#32-whole-list-or-changes) |
+| `WantsGone` | `Libraries` | wanted libraries no longer offered; their titles go at the next reading | [catalog 2.2](../spec/v0/catalog.md#22-what-the-caller-keeps) |
+| `PlaybackStarted` | `Playback`, `Title`, `Method` | a peer's playback here started | [playback 6.1](../spec/v0/playback.md#61-a-playbacks-states) |
+| `PlaybackEnded` | `Playback`, `Title`, `Reason` | it ended, and why | [playback 6.3](../spec/v0/playback.md#63-how-a-playback-ends) |
 | `RemotePlaybackEnded` | `Playback`, `Reason` | our playback on a peer ended without `Stop`: `410` (`expired`), the pairing ended, the peer suspended or uncallable (`pairingEnded`) | playback 6.3 |
 
 ## 8. Background work
@@ -372,7 +372,7 @@ each a `*msfp.Error{Code, Err}`; `Err` holds detail for the logs (never
 a secret, never sent). Match with `errors.Is`.
 
 **A peer's refusals**, for calls the engine makes
-([core 8.2](../spec/v1/core.md#82-refusals)):
+([core 8.2](../spec/v0/core.md#82-refusals)):
 
 | Code | From | Means |
 |------|------|-------|
@@ -388,7 +388,7 @@ a secret, never sent). Match with `errors.Is`.
 | `RateLimited` | `429` | calls held until `retryAfter` |
 | `ServerBusy` | `503` | busy now |
 | `PeerFailed` | `500` | |
-| `Unreachable` | no answer, unsigned or badly signed, a refused certificate; an unsigned `404` only once tried again a second later ([core 6.5](../spec/v1/core.md#65-nonces-replay-and-restarts)) | |
+| `Unreachable` | no answer, unsigned or badly signed, a refused certificate; an unsigned `404` only once tried again a second later ([core 6.5](../spec/v0/core.md#65-nonces-replay-and-restarts)) | |
 
 **The engine's own:**
 
@@ -429,7 +429,7 @@ peer's title, the one public ID it was listed in).
 **`Limits`**: `Streams` (0 to 50), `Transcodes` (0 to streams),
 `BitrateKbps` (0: none), `Audio`, `AudioStreams`, `AudioTranscodes`.
 With `Audio`, tracks count apart, within the last two; without, in the
-first two ([music 5.1](../spec/v1/music.md#51-limits)). `Check()` gives
+first two ([music 5.1](../spec/v0/music.md#51-limits)). `Check()` gives
 `InvalidLimits`.
 
 **`Track`**: `ID` (`a<n>`, `s<n>`), `Label` (the language's name in

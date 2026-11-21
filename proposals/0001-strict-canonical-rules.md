@@ -2,7 +2,7 @@
 
 Status: Adopted (2026-11-16), with the check on R required (open point 1).
 Touches: sections 2, 3, 4.1, 5, 6, 9.1 and open question 7 of
-[spec/v0.md](../spec/v0.md).
+[spec/history/test-draft.md](../spec/history/test-draft.md).
 
 ## Problem
 

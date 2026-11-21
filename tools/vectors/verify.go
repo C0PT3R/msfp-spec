@@ -121,14 +121,14 @@ func verifyAll(read func(string) []byte) []error {
 	}
 
 	// vectors/v0.json
-	v0 := load("v0.json")
-	checkKeys("v0.json", v0["keys"].(obj), false)
-	checkCode("v0.json", core0, true, v0["code"].(obj), v0["proof"].(obj))
+	v0 := load("history/test-draft.json")
+	checkKeys("history/test-draft.json", v0["keys"].(obj), false)
+	checkCode("history/test-draft.json", draftCore, true, v0["code"].(obj), v0["proof"].(obj))
 	for _, e := range v0["exchanges"].([]any) {
-		checkExchange("v0.json", core0, e.(obj))
+		checkExchange("history/test-draft.json", draftCore, e.(obj))
 	}
 
-	// vectors/v0-strict.json and vectors/v1/strict.json
+	// vectors/v0-strict.json and vectors/v0/strict.json
 	verdicts := func(file, list string, f func(obj) error) {
 		o := load(file)
 		for _, v := range o[list].([]any) {
@@ -146,19 +146,19 @@ func verifyAll(read func(string) []byte) []error {
 		}
 		return []byte(str(x, "text"))
 	}
-	verdicts("v0-strict.json", "keys", func(x obj) error {
+	verdicts("history/test-draft-strict.json", "keys", func(x obj) error {
 		b, err := b64.DecodeString(str(x, "text"))
 		if err != nil {
 			return err
 		}
 		return checkKey(b)
 	})
-	verdicts("v0-strict.json", "signatures", func(x obj) error {
+	verdicts("history/test-draft-strict.json", "signatures", func(x obj) error {
 		pub, _ := b64.DecodeString(str(x, "public"))
 		sig, _ := b64.DecodeString(str(x, "signature"))
 		return verifyStrict(pub, []byte(str(x, "message")), sig)
 	})
-	verdicts("v0-strict.json", "base64url", func(x obj) error {
+	verdicts("history/test-draft-strict.json", "base64url", func(x obj) error {
 		n := 32
 		if len(str(x, "name")) >= 7 && str(x, "name")[:7] == "a nonce" {
 			n = 16
@@ -166,42 +166,42 @@ func verifyAll(read func(string) []byte) []error {
 		_, err := checkB64(str(x, "text"), n)
 		return err
 	})
-	verdicts("v0-strict.json", "dates", func(x obj) error { return checkDate(str(x, "text")) })
-	verdicts("v0-strict.json", "integers", func(x obj) error { return checkInteger(str(x, "text")) })
-	verdicts("v0-strict.json", "json", func(x obj) error { return checkIJSON(text(x)) })
-	verdicts("v0-strict.json", "addresses", func(x obj) error { return checkAddress(str(x, "text"), true) })
-	verdicts("v0-strict.json", "codes", func(x obj) error { _, err := readCode(str(x, "text"), core0.prefix, true); return err })
-	verdicts("v1/strict.json", "addresses", func(x obj) error { return checkAddress(str(x, "text"), false) })
-	verdicts("v1/strict.json", "codes", func(x obj) error { _, err := readCode(str(x, "text"), core1.prefix, false); return err })
-	verdicts("v1/strict.json", "mediaNames", func(x obj) error { return checkMediaName(str(x, "text")) })
-	verdicts("v1/strict.json", "bases", func(x obj) error { return checkBase(str(x, "text")) })
-	verdicts("v1/strict.json", "destinations", func(x obj) error { return checkDestination(str(x, "text")) })
-	verdicts("v1/strict.json", "uncallableAddresses", func(x obj) error { return checkUncallableAddress(str(x, "text")) })
-	for _, v := range load("v1/strict.json")["helloVersions"].([]any) {
+	verdicts("history/test-draft-strict.json", "dates", func(x obj) error { return checkDate(str(x, "text")) })
+	verdicts("history/test-draft-strict.json", "integers", func(x obj) error { return checkInteger(str(x, "text")) })
+	verdicts("history/test-draft-strict.json", "json", func(x obj) error { return checkIJSON(text(x)) })
+	verdicts("history/test-draft-strict.json", "addresses", func(x obj) error { return checkAddress(str(x, "text"), true) })
+	verdicts("history/test-draft-strict.json", "codes", func(x obj) error { _, err := readCode(str(x, "text"), draftCore.prefix, true); return err })
+	verdicts("v0/strict.json", "addresses", func(x obj) error { return checkAddress(str(x, "text"), false) })
+	verdicts("v0/strict.json", "codes", func(x obj) error { _, err := readCode(str(x, "text"), core0.prefix, false); return err })
+	verdicts("v0/strict.json", "mediaNames", func(x obj) error { return checkMediaName(str(x, "text")) })
+	verdicts("v0/strict.json", "bases", func(x obj) error { return checkBase(str(x, "text")) })
+	verdicts("v0/strict.json", "destinations", func(x obj) error { return checkDestination(str(x, "text")) })
+	verdicts("v0/strict.json", "uncallableAddresses", func(x obj) error { return checkUncallableAddress(str(x, "text")) })
+	for _, v := range load("v0/strict.json")["helloVersions"].([]any) {
 		x := v.(obj)
 		got, err := keptVersions([]byte(str(x, "text")))
 		if (err == nil) != (x["valid"] == true) || got != str(x, "output") {
-			bad("v1/strict.json: helloVersions %q: the file says valid=%v, output %q; the rules give %v, %q", str(x, "name"), x["valid"], str(x, "output"), err, got)
+			bad("v0/strict.json: helloVersions %q: the file says valid=%v, output %q; the rules give %v, %q", str(x, "name"), x["valid"], str(x, "output"), err, got)
 		}
 	}
-	for _, v := range load("v1/strict.json")["languageCodes"].([]any) {
+	for _, v := range load("v0/strict.json")["languageCodes"].([]any) {
 		x := v.(obj)
 		got, err := sentTag(str(x, "text"))
 		if (err == nil) != (x["valid"] == true) || got != str(x, "output") {
-			bad("v1/strict.json: languageCodes %q: the file says valid=%v, output %q; the rules give %v, %q", str(x, "text"), x["valid"], str(x, "output"), err, got)
+			bad("v0/strict.json: languageCodes %q: the file says valid=%v, output %q; the rules give %v, %q", str(x, "text"), x["valid"], str(x, "output"), err, got)
 		}
 	}
-	verdicts("v1/media.json", "hls", func(x obj) error { return checkPlaylist([]byte(str(x, "text"))) })
-	verdicts("v1/media.json", "pgs", func(x obj) error { return checkPGS(text(x)) })
-	for _, v := range load("v1/media.json")["webvtt"].([]any) {
+	verdicts("v0/media.json", "hls", func(x obj) error { return checkPlaylist([]byte(str(x, "text"))) })
+	verdicts("v0/media.json", "pgs", func(x obj) error { return checkPGS(text(x)) })
+	for _, v := range load("v0/media.json")["webvtt"].([]any) {
 		x := v.(obj)
 		got, err := rebuildVTT(text(x))
 		if (err == nil) != (x["valid"] == true) || string(got) != str(x, "output") {
-			bad("v1/media.json: webvtt %q: the file says valid=%v, output %q; the rules give %v, %q", str(x, "name"), x["valid"], str(x, "output"), err, got)
+			bad("v0/media.json: webvtt %q: the file says valid=%v, output %q; the rules give %v, %q", str(x, "name"), x["valid"], str(x, "output"), err, got)
 		}
 	}
 
-	mf := load("v1/music.json")
+	mf := load("v0/music.json")
 	var libs []string
 	for _, l := range mf["libraries"].([]any) {
 		libs = append(libs, l.(string))
@@ -210,23 +210,23 @@ func verifyAll(read func(string) []byte) []error {
 		x := v.(obj)
 		kind, err := checkMusicKey(str(x, "text"))
 		if (err == nil) != (x["valid"] == true) || kind != str(x, "kind") {
-			bad("v1/music.json: key %q: the file says valid=%v, kind %q; the rules give %v, %q", str(x, "text"), x["valid"], str(x, "kind"), err, kind)
+			bad("v0/music.json: key %q: the file says valid=%v, kind %q; the rules give %v, %q", str(x, "text"), x["valid"], str(x, "kind"), err, kind)
 		}
 	}
 	for _, v := range mf["titles"].([]any) {
 		x := v.(obj)
 		got, err := keepMusicTitle([]byte(str(x, "text")), libs)
 		if (err == nil) != (x["valid"] == true) || string(got) != str(x, "output") {
-			bad("v1/music.json: title %q: the file says valid=%v, output %q; the rules give %v, %q", str(x, "name"), x["valid"], str(x, "output"), err, got)
+			bad("v0/music.json: title %q: the file says valid=%v, output %q; the rules give %v, %q", str(x, "name"), x["valid"], str(x, "output"), err, got)
 		}
 		if err == nil {
 			if e := checkIJSON(got); e != nil {
-				bad("v1/music.json: title %q: output: %v", str(x, "name"), e)
+				bad("v0/music.json: title %q: output: %v", str(x, "name"), e)
 			}
 		}
 	}
 
-	videoFile := load("v1/video.json")
+	videoFile := load("v0/video.json")
 	var vlibs []string
 	for _, l := range videoFile["libraries"].([]any) {
 		vlibs = append(vlibs, l.(string))
@@ -235,79 +235,79 @@ func verifyAll(read func(string) []byte) []error {
 		x := v.(obj)
 		got, err := keepVideoTitle([]byte(str(x, "text")), vlibs)
 		if (err == nil) != (x["valid"] == true) || string(got) != str(x, "output") {
-			bad("v1/video.json: title %q: the file says valid=%v, output %q; the rules give %v, %q", str(x, "name"), x["valid"], str(x, "output"), err, got)
+			bad("v0/video.json: title %q: the file says valid=%v, output %q; the rules give %v, %q", str(x, "name"), x["valid"], str(x, "output"), err, got)
 		}
 		if err == nil {
 			if e := checkIJSON(got); e != nil {
-				bad("v1/video.json: title %q: output: %v", str(x, "name"), e)
+				bad("v0/video.json: title %q: output: %v", str(x, "name"), e)
 			}
 		}
 	}
 
-	// vectors/v1/
-	keys := load("v1/keys.json")
-	checkKeys("v1/keys.json", keys["keys"].(obj), true)
+	// vectors/v0/
+	keys := load("v0/keys.json")
+	checkKeys("v0/keys.json", keys["keys"].(obj), true)
 	for name, v := range keys["certificates"].(obj) {
 		c := v.(obj)
 		der, _ := hex.DecodeString(str(c, "spki"))
 		if b64.EncodeToString(sha(der)) != str(c, "pin") {
-			bad("v1/keys.json: certificate %s: wrong pin", name)
+			bad("v0/keys.json: certificate %s: wrong pin", name)
 		}
 		seed, _ := hex.DecodeString(str(c, "seed"))
 		if hex.EncodeToString(spki(newKey(seed))) != str(c, "spki") {
-			bad("v1/keys.json: certificate %s: spki isn't the seed's", name)
+			bad("v0/keys.json: certificate %s: spki isn't the seed's", name)
 		}
 	}
-	cf := load("v1/code.json")
-	checkCode("v1/code.json", core1, false, cf["code"].(obj), cf["proof"].(obj))
-	for _, e := range load("v1/exchanges.json")["exchanges"].([]any) {
-		checkExchange("v1/exchanges.json", core1, e.(obj))
-		checkPrivate("v1/exchanges.json: "+str(e.(obj), "name"), e.(obj), pubs, bad)
+	cf := load("v0/code.json")
+	checkCode("v0/code.json", core0, false, cf["code"].(obj), cf["proof"].(obj))
+	for _, e := range load("v0/exchanges.json")["exchanges"].([]any) {
+		checkExchange("v0/exchanges.json", core0, e.(obj))
+		checkPrivate("v0/exchanges.json: "+str(e.(obj), "name"), e.(obj), pubs, bad)
 	}
 
-	rf := load("v1/rotation.json")
+	rf := load("v0/rotation.json")
 	r := rf["rotation"].(obj)
 	old, nu := pubs[str(r, "from")], pubs[str(r, "to")]
 	if b64.EncodeToString(old) != str(r, "oldKey") || b64.EncodeToString(nu) != str(r, "newKey") ||
 		commitment(pubs[str(r, "next")]) != str(r, "nextCommitment") {
-		bad("v1/rotation.json: keys or commitment differ from keys.json")
+		bad("v0/rotation.json: keys or commitment differ from keys.json")
 	}
 	st := rotationStatement(old, nu, str(r, "nextCommitment"), num(r, "date"))
 	if st != str(r, "statement") {
-		bad("v1/rotation.json: statement isn't rebuilt from the fields")
+		bad("v0/rotation.json: statement isn't rebuilt from the fields")
 	}
-	checkSig("v1/rotation.json old", str(r, "from"), st, str(r, "oldSignature"))
-	checkSig("v1/rotation.json new", str(r, "to"), st, str(r, "newSignature"))
+	checkSig("v0/rotation.json old", str(r, "from"), st, str(r, "oldSignature"))
+	checkSig("v0/rotation.json new", str(r, "to"), st, str(r, "newSignature"))
 	re := rf["exchange"].(obj)
-	checkExchange("v1/rotation.json", core1, re)
+	checkExchange("v0/rotation.json", core0, re)
 	var rb obj
 	_ = json.Unmarshal([]byte(str(re, "body")), &rb)
 	if str(rb, "newKey") != str(r, "newKey") || str(rb, "nextCommitment") != str(r, "nextCommitment") ||
 		num(rb, "date") != num(r, "date") || str(rb, "oldSignature") != str(r, "oldSignature") ||
 		str(rb, "newSignature") != str(r, "newSignature") || str(re, "signer") != str(r, "from") {
-		bad("v1/rotation.json: the rotate request doesn't carry the statement")
+		bad("v0/rotation.json: the rotate request doesn't carry the statement")
 	}
 
-	vf := load("v1/revocation.json")
+	vf := load("v0/revocation.json")
 	v := vf["revocation"].(obj)
 	vs := revocationStatement(pubs[str(v, "key")], num(v, "date"))
 	if vs != str(v, "statement") || b64.EncodeToString(pubs[str(v, "key")]) != str(v, "public") {
-		bad("v1/revocation.json: statement isn't rebuilt from the fields")
+		bad("v0/revocation.json: statement isn't rebuilt from the fields")
 	}
-	checkSig("v1/revocation.json", str(v, "key"), vs, str(v, "signature"))
+	checkSig("v0/revocation.json", str(v, "key"), vs, str(v, "signature"))
 	ve := vf["exchange"].(obj)
-	checkExchange("v1/revocation.json", core1, ve)
+	checkExchange("v0/revocation.json", core0, ve)
 	var vb obj
 	_ = json.Unmarshal([]byte(str(ve, "body")), &vb)
 	if strconv.FormatInt(num(vb, "date"), 10) != strconv.FormatInt(num(v, "date"), 10) ||
 		str(vb, "signature") != str(v, "signature") || str(ve, "signer") != str(v, "key") {
-		bad("v1/revocation.json: the revoke request doesn't carry the statement")
+		bad("v0/revocation.json: the revoke request doesn't carry the statement")
 	}
 	return errs
 }
 
 // checkPrivate checks the members of a server that can't be called
-// (spec/v1/core.md sections 5.2, 7.5, 12.4 and 12.6) in an exchange: an
+// (spec/v0/core.md sections 5.2, 7.5, 12.4 and 12.6) in an exchange: an
 // inbound false carries an address of the uncallable form, knownKey is a
 // test key, and the rotation and revocation an answer carries check out
 // under the key that signed the answer.

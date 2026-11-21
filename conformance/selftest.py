@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 """The suite's self-test. Needs no server.
 
-1. The suite's readers against the vectors: vectors/v1/*.json (keys,
+1. The suite's readers against the vectors: vectors/v0/*.json (keys,
    code, exchanges, rotation, revocation, strict, media, music) and the
-   cases of vectors/v0-strict.json that core 1 section 17 says hold for
-   core 1 (keys, signatures, base64url, dates, integers, JSON).
-2. The whole suite against an in-process fake version 1 server
+   cases of vectors/history/test-draft-strict.json that core 0 section 17 says hold for
+   core 0 (keys, signatures, base64url, dates, integers, JSON).
+2. The whole suite against an in-process fake version 0 server
    (msfpconf/fake.py, built from the specification and the vectors),
    over HTTPS both ways, with the self-test playing the server's
    operator. Every check must pass.
@@ -67,7 +67,7 @@ def vectors():
             bad.append("%s / %s: expected %s, got %s" % (group, name, want, got))
 
     load = lambda *p: json.load(open(os.path.join(VEC, *p)))
-    v0 = load("v0-strict.json")
+    v0 = load("history", "test-draft-strict.json")
     for c in v0["keys"]:
         k = unb64u(c["text"], 32)
         expect("v0-strict keys", c["name"], c["valid"], k is not None and ed25519.valid_point(k))
@@ -94,7 +94,7 @@ def vectors():
             ok = False
         expect("v0-strict json", c["name"], c["valid"], ok)
 
-    st = load("v1", "strict.json")
+    st = load("v0", "strict.json")
     for c in st["addresses"]:
         expect("addresses", c.get("text", ""), c["valid"], check_address(c.get("text", "")) is None)
     for c in st["codes"]:
@@ -113,7 +113,7 @@ def vectors():
     for c in st["uncallableAddresses"]:
         expect("uncallableAddresses", c.get("text", ""), c["valid"], check_uncallable_address(c.get("text", "")) is None)
 
-    keys = load("v1", "keys.json")
+    keys = load("v0", "keys.json")
     K = {}
     for name, k in keys["keys"].items():
         K[name] = Key(bytes.fromhex(k["seed"]))
@@ -124,7 +124,7 @@ def vectors():
     for name, c in keys["certificates"].items():
         expect("certificates", name, c["pin"], b64u(hashlib.sha256(bytes.fromhex(c["spki"])).digest()))
 
-    code = load("v1", "code.json")
+    code = load("v0", "code.json")
     key, secret, expiry, address = parse_code(code["code"]["text"])
     expect("code", "key", K[code["code"]["key"]].pub, key)
     expect("code", "secret", code["code"]["secret"], secret.hex())
@@ -134,7 +134,7 @@ def vectors():
     pr = code["proof"]
     expect("code", "proof", pr["value"], b64u(proof(secret, K[pr["redeemer"]].pub, pr["address"])))
 
-    ex = load("v1", "exchanges.json")["exchanges"] + [load("v1", "rotation.json")["exchange"], load("v1", "revocation.json")["exchange"]]
+    ex = load("v0", "exchanges.json")["exchanges"] + [load("v0", "rotation.json")["exchange"], load("v0", "revocation.json")["exchange"]]
     for e in ex:
         n = e["name"]
         signer, answerer = K[e["signer"]], K[e["answerer"]]
@@ -155,16 +155,16 @@ def vectors():
         if "revocation" in body:
             read_revocation(answerer.pub, body["revocation"], now=body["revocation"]["date"])
 
-    rot = load("v1", "rotation.json")["rotation"]
+    rot = load("v0", "rotation.json")["rotation"]
     mine = make_rotation(K["a"], K["a2"], rot["nextCommitment"], rot["date"])
     expect("rotation", "oldSignature", rot["oldSignature"], mine["oldSignature"])
     expect("rotation", "newSignature", rot["newSignature"], mine["newSignature"])
     new, nc = read_rotation(K["a"].pub, mine, now=rot["date"])
     expect("rotation", "reads", (K["a2"].pub, rot["nextCommitment"]), (new, nc))
-    rev = load("v1", "revocation.json")["revocation"]
+    rev = load("v0", "revocation.json")["revocation"]
     read_revocation(K["a"].pub, {"date": rev["date"], "signature": rev["signature"]}, now=rev["date"])
 
-    media = load("v1", "media.json")
+    media = load("v0", "media.json")
     for c in media["webvtt"]:
         raw = bytes.fromhex(c["hex"]) if "hex" in c else c.get("text", "").encode("utf-8", "surrogatepass")
         try:
@@ -181,7 +181,7 @@ def vectors():
         except Refused:
             ok = False
         expect("pgs", c["name"], c["valid"], ok)
-    bad += music_vectors_ok(os.path.join(VEC, "v1", "music.json"))
+    bad += music_vectors_ok(os.path.join(VEC, "v0", "music.json"))
     return bad
 
 
@@ -246,7 +246,7 @@ def main():
         print("\n".join(bad))
         print("vectors: %d case(s) wrong" % len(bad))
         return 1
-    print("vectors: every case of vectors/v1/ and of v0-strict.json (as core 1 section 17 says) decides as the files say")
+    print("vectors: every case of vectors/v0/ and of test-draft-strict.json (as core 0 section 17 says) decides as the files say")
     if "--vectors-only" in sys.argv:
         return 0
     bad, n, took, report, suite = end_to_end(verbose)

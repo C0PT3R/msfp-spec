@@ -1,4 +1,4 @@
-# MSFP version 1: the catalog part, version 1
+# MSFP version 0: the catalog part, version 0
 
 **Draft.**
 
@@ -46,7 +46,7 @@ specifications.
   [video](video.md#4-title-keys), `mb` (MusicBrainz) for
   [music](music.md#2-title-keys).
 - **Content part**: a part that names one kind of content's titles and
-  says how they play: `video` and `music` in version 1
+  says how they play: `video` and `music` in version 0
   ([core section 10.1](core.md#101-the-parts)).
 
 ## 2. Libraries
@@ -177,7 +177,7 @@ sent. Media servers often give the file's ISO 639-2/B code (`fre`,
 `ger`, `chi`) or its 639-2/T code (`fra`, `deu`, `zho`); either is sent
 as the ISO 639-1 code (`fr`, `de`, `zh`), a region kept (`fre-CA` is
 sent `fr-CA`). Test cases: `languageCodes` in
-[vectors/v1/strict.json](../../vectors/v1/strict.json).
+[vectors/v0/strict.json](../../vectors/v0/strict.json).
 
 ### 3.1 Paging and ordering
 

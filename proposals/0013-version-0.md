@@ -4,8 +4,8 @@ Status: Decided in principle by the owner (2026-11-20): "MSFP v1 should
 not exist yet… we should still be on v0". To be done with the next
 protocol changes (proposal 12), every implementation released at once.
 Touches: every document of spec/v1, which moves to spec/v0; the vectors;
-the conformance suite; [spec/v0.md](../spec/v0.md), which moves to
-history.
+the conformance suite; the test draft, `spec/v0.md`, which moves to
+[spec/history/test-draft.md](../spec/history/test-draft.md).
 
 ## Problem
 
@@ -28,10 +28,10 @@ outside its implementers' runs it. The number should say "draft".
   labels (`msfp-key-rotation-1`, `msfp-key-revocation-1`,
   `msfp-group-event-1`, `msfp-group-mail-1`) number their own format and
   stay.
-- **The test draft of November 2026** (spec/v0.md, "superseded, not to be
+- **The test draft of November 2026** (`spec/v0.md`, "superseded, not to be
   implemented") moves to `spec/history/` as "the test draft of November
   2026", so that two different texts don't both claim to be version 0.
-- **spec/v1/ becomes spec/v0/**, with its vectors (vectors/v1 to
+- **`spec/v1/` becomes `spec/v0/`**, with its vectors (vectors/v1 to
   vectors/v0) and the conformance suite's expectations.
 
 ## Cost

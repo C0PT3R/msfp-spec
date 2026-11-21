@@ -36,7 +36,7 @@ func sha(b []byte) []byte {
 
 func shaHex(b []byte) string { return hex.EncodeToString(sha(b)) }
 
-// fingerprint is section 4.2 of v0 and core 1.
+// fingerprint is section 4.2 of v0 and core 0.
 func fingerprint(pub []byte) string {
 	t := base32.StdEncoding.WithPadding(base32.NoPadding).EncodeToString(sha(pub)[:15])
 	var g []string
@@ -66,26 +66,26 @@ func (k key) text() string           { return b64.EncodeToString(k.pub) }
 
 // The labels of each core version.
 type core struct {
-	n        int
-	prefix   string // the code's prefix
-	request  string
-	response string
-	pairing  string
-	header   string // the headers' prefix, as in "<header>-Key"
+	signsType bool   // the answer message carries the media type (core 0, not the test draft)
+	prefix    string // the code's prefix
+	request   string
+	response  string
+	pairing   string
+	header    string // the headers' prefix, as in "<header>-Key"
 }
 
-var core0 = core{0, "overfin-pair-1.", "overfin-federation-1 request", "overfin-federation-1 response", "overfin-federation-1 pairing", "Overfin"}
-var core1 = core{1, "msfp-pair-1.", "msfp-1 request", "msfp-1 response", "msfp-1 pairing", "MSFP"}
+var draftCore = core{false, "overfin-pair-1.", "overfin-federation-1 request", "overfin-federation-1 response", "overfin-federation-1 pairing", "Overfin"}
+var core0 = core{true, "msfp-pair-0.", "msfp-0 request", "msfp-0 response", "msfp-0 pairing", "MSFP"}
 
 func (c core) requestMessage(method, host, target, date, nonce, body string) string {
 	return strings.Join([]string{c.request, method, host, target, date, nonce, shaHex([]byte(body))}, "\n")
 }
 
-// answerMessage: core 0 has four lines; core 1 adds the media type of
+// answerMessage: the test draft has four lines; core 0 adds the media type of
 // the answer's Content-Type ("-" without one) before the body hash.
 func (c core) answerMessage(nonce string, status int, contentType, body string) string {
 	lines := []string{c.response, nonce, strconv.Itoa(status)}
-	if c.n >= 1 {
+	if c.signsType {
 		lines = append(lines, mediaType(contentType))
 	}
 	lines = append(lines, shaHex([]byte(body)))

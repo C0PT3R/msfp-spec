@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Checks an MSFP version 1 server against spec/v1/, as a peer would.
+"""Checks an MSFP version 0 server against spec/v0/, as a peer would.
 
     python3 conformance/run.py --code '<pairing code from the server>' \\
         --address https://<this machine, as the server reaches it>:8000 --listen 0.0.0.0:8000
@@ -19,9 +19,9 @@ from msfpconf.report import Report  # noqa: E402
 
 
 def parser():
-    ap = argparse.ArgumentParser(description="MSFP version 1 conformance suite (spec/v1/: core 1, catalog, playback, "
+    ap = argparse.ArgumentParser(description="MSFP version 0 conformance suite (spec/v0/: core 0, catalog, playback, "
                                              "media, video and music 1)")
-    ap.add_argument("--code", help="a pairing code the server's operator made (msfp-pair-1.…); it is used: one code per run")
+    ap.add_argument("--code", help="a pairing code the server's operator made (msfp-pair-0.…); it is used: one code per run")
     ap.add_argument("--code2", help="a second code of the same server: checks the signed 409, then pairs again as a server "
                                     "that can't be called")
     ap.add_argument("--target", help="the server's address, https://host[:port]; taken from --code when given")
@@ -70,7 +70,7 @@ def main():
     if bool(a.tls_cert) != bool(a.tls_key):
         ap.error("give --tls-cert and --tls-key together")
     report = Report(verbose=a.verbose)
-    report.note("MSFP version 1 conformance suite %s, %s" % (__version__, time.strftime("%Y-%m-%d %H:%M:%S %Z")))
+    report.note("MSFP version 0 conformance suite %s, %s" % (__version__, time.strftime("%Y-%m-%d %H:%M:%S %Z")))
     suite = Suite(a, report)
     try:
         suite.run()

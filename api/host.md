@@ -20,17 +20,17 @@ Without Catalog, Playback and Media, the host offers nothing and every
 `play` is answered `404`. It can still read and play its peers' titles.
 
 The host may be a separate service beside its media server rather than
-inside it ([core 1](../spec/v1/core.md#1-overview-and-terms)): it then
+inside it ([core 0](../spec/v0/core.md#1-overview-and-terms)): it then
 relays the media, and holds the narrowest credential of the media server
 it can (a dedicated account limited to the offered libraries).
 
 ## 1. Store
 
-Spec: [core 7.2](../spec/v1/core.md#72-what-each-side-stores),
-[core 7.4](../spec/v1/core.md#74-ending-a-pairing),
-[core 13](../spec/v1/core.md#13-changing-a-servers-address),
-[catalog 2.1](../spec/v1/catalog.md#21-library-ids),
-[catalog 3.2](../spec/v1/catalog.md#32-whole-list-or-changes).
+Spec: [core 7.2](../spec/v0/core.md#72-what-each-side-stores),
+[core 7.4](../spec/v0/core.md#74-ending-a-pairing),
+[core 13](../spec/v0/core.md#13-changing-a-servers-address),
+[catalog 2.1](../spec/v0/catalog.md#21-library-ids),
+[catalog 3.2](../spec/v0/catalog.md#32-whole-list-or-changes).
 
 ```
 Read(fn: func(Tx) error) error
@@ -97,7 +97,7 @@ The engine fills every field. Go spells them in capitals
 | `current` | the current key's seed, sealed (`msfp current key`) |
 | `next`, `nextCommitment` | the next key's seed, sealed (absent once exported and deleted); SHA-256 of its public key |
 | `old`, `oldSince`, `oldRevoked` | the key before, while peers move from it, sealed (`msfp old key`); since when; whether it was revoked first |
-| `revoked`, `revokedAt` | a key revoked with no next key, sealed (`msfp revoked key`), kept 30 days for former peers' hellos ([core 12.7](../spec/v1/core.md#127-what-to-do-on-compromise)) |
+| `revoked`, `revokedAt` | a key revoked with no next key, sealed (`msfp revoked key`), kept 30 days for former peers' hellos ([core 12.7](../spec/v0/core.md#127-what-to-do-on-compromise)) |
 | `idsSecret` | the secret of opaque IDs, sealed (`msfp ids secret`); never changes |
 | `address`, `former`, `movedAt`, `reached` | where this server is now; the address before and when it changed, while a move lasts; whether it reached itself at the new one (until then its hellos name the former) |
 | `uncallable`, `uncallableAddress` | the operator's setting; the `https://msfp-<26>.invalid` address made for it, kept |
@@ -147,10 +147,10 @@ for memory, a `KeyFileSealer` on `sealing.key` for `jsonfile`.
 
 ## 2. Catalog
 
-Spec: [catalog 2](../spec/v1/catalog.md#2-libraries),
-[catalog 3](../spec/v1/catalog.md#3-titles),
-[video 3](../spec/v1/video.md#3-titles),
-[music 3](../spec/v1/music.md#3-what-a-title-carries).
+Spec: [catalog 2](../spec/v0/catalog.md#2-libraries),
+[catalog 3](../spec/v0/catalog.md#3-titles),
+[video 3](../spec/v0/video.md#3-titles),
+[music 3](../spec/v0/music.md#3-what-a-title-carries).
 
 The host's own libraries and titles, by its own library IDs. The engine
 maps them to public IDs, filters them by offers, pages them, and checks
@@ -169,7 +169,7 @@ a warning in the log).
 - A title its part can't name (no TMDB ID, no recording MBID) is not
   listed. An episode is named by its TMDB episode ID, looked up at TMDB
   when the media server stores none: its numbers are often not TMDB's
-  ([video 4.1](../spec/v1/video.md#41-episode-order)). The host fills its
+  ([video 4.1](../spec/v0/video.md#41-episode-order)). The host fills its
   `Place` with TMDB's current season and episode numbers (found by the
   episode's IMDb or TheTVDB ID when the media server's numbers aren't
   TMDB's); an episode without one isn't sent.
@@ -179,7 +179,7 @@ a warning in the log).
   `Height` (for a picture wider than 16:9, a 16:9 picture's as wide) and
   `HDR` (`hdr10`, `hlg`, `dv`). A copy of unknown size is left out. The
   engine sends the best, stepped, as the title's `video`
-  ([video 3.2](../spec/v1/video.md#32-the-picture)). `msfp.BestPicture`
+  ([video 3.2](../spec/v0/video.md#32-the-picture)). `msfp.BestPicture`
   ranks them; list copies to `Copies` in that order.
 - A `Copy` is `{Handle, Name, Audio, Library}`: the handle, the name
   shown in `versions`, its audio languages (for choosing the copy), and
@@ -209,10 +209,10 @@ the log at once; without it, readings stay whole until a title changes.
 
 ## 3. Playback
 
-Spec: [playback 2](../spec/v1/playback.md#2-play),
-[playback 6](../spec/v1/playback.md#6-what-the-owning-server-enforces),
-[video 5](../spec/v1/video.md#5-playing-a-film-or-an-episode),
-[music 5](../spec/v1/music.md#5-playing-a-track).
+Spec: [playback 2](../spec/v0/playback.md#2-play),
+[playback 6](../spec/v0/playback.md#6-what-the-owning-server-enforces),
+[video 5](../spec/v0/video.md#5-playing-a-film-or-an-episode),
+[music 5](../spec/v0/music.md#5-playing-a-track).
 
 The owning side. The engine has checked the `play`, found the copies,
 picked one, and refused what the pairing's limits refuse early.
@@ -225,7 +225,7 @@ picked one, and refused what the pairing's limits refuse early.
 | `Stop(handle, reason: EndReason)` | the playback ended; once for each `Start` that succeeded |
 
 **`CopyInfo`**: `AudioTracks`, `SubtitleTracks` (`Track`s: only those
-the host can serve as [video 6.2](../spec/v1/video.md#62-what-is-fetched)
+the host can serve as [video 6.2](../spec/v0/video.md#62-what-is-fetched)
 says, WebVTT parts for text and raw PGS parts for pictures; picture
 subtitles other than PGS left out), `DurationMs` (the whole copy),
 `Parts` (the files the copy is made of, played one after the other as
@@ -233,15 +233,15 @@ one; 0 or 1: one file), `EpisodeStartMs` (inside a copy holding several;
 0 unknown), `Trickplay` (nil for none).
 
 - A copy of several parts is served as `hls`, never `file`
-  ([media 1](../spec/v1/media.md#1-the-urls)): the engine refuses a
+  ([media 1](../spec/v0/media.md#1-the-urls)): the engine refuses a
   `Started` with `file` for it (the host's playback stopped, `500`).
 - Languages (`Track.Language`, a title's `Audio` and `Subtitles`, a
   `Copy`'s `Audio`) may be the media server's codes: the engine sends
   them as `wire.SentTag` gives them (`fre` and `fra` as `fr`;
-  [catalog 3](../spec/v1/catalog.md#3-titles)).
+  [catalog 3](../spec/v0/catalog.md#3-titles)).
 - `Default` is the track the file marks as default, never a person's
   saved choice; `Role` is best effort, absent for the title's own sound
-  ([playback 2.3 and 2.6](../spec/v1/playback.md#26-choosing-the-copy-and-the-tracks)).
+  ([playback 2.3 and 2.6](../spec/v0/playback.md#26-choosing-the-copy-and-the-tracks)).
 
 **`StartRequest`**:
 
@@ -260,7 +260,7 @@ one; 0 or 1: one file), `EpisodeStartMs` (inside a copy holding several;
 **`Admit`.** The host chooses `direct`, `remux` or `transcode`, then
 calls `Admit(method)` **before starting any work**. The engine counts the
 pairing's streams and, for `transcode`, its transcodes, in one step
-([playback 6.2](../spec/v1/playback.md#62-limits-at-once)). Over them:
+([playback 6.2](../spec/v0/playback.md#62-limits-at-once)). Over them:
 `StreamLimitReached` or `ServerBusy`. With `Limits.Audio`, tracks are
 counted apart. The host then checks its own budget, and calls
 `Slot.Release()` if that refuses or its start fails.
@@ -285,7 +285,7 @@ the limits refuse it.
 The engine then makes the playback ID and the ticket, builds the URLs,
 the versions, tracks and previews, and answers the peer.
 
-**Endings** (`EndReason`, [playback 6.3](../spec/v1/playback.md#63-how-a-playback-ends)):
+**Endings** (`EndReason`, [playback 6.3](../spec/v0/playback.md#63-how-a-playback-ends)):
 `stopped`, `expired`, `tooLong`, `pairingEnded`, `notOffered`,
 `operator`. A playback whose pairing ends while `Start` runs is stopped
 at once as `pairingEnded`; one whose library is no longer offered then,
@@ -294,7 +294,7 @@ as `notOffered`. The engine cuts open media responses itself. Background
 
 ## 4. Media
 
-Spec: [media](../spec/v1/media.md), [video 6](../spec/v1/video.md#6-media).
+Spec: [media](../spec/v0/media.md), [video 6](../spec/v0/video.md#6-media).
 
 ```
 Serve(handle, path: MediaPath, rng: *Range, out: ResponseSink)
@@ -315,14 +315,14 @@ Serve(handle, path: MediaPath, rng: *Range, out: ResponseSink)
   once (`length` -1 unknown, `contentRange` empty for none), then write
   the body.
 - Send playlists in media 1's subset
-  ([media 3.1](../spec/v1/media.md#31-hls-playlists)): the engine reads
+  ([media 3.1](../spec/v0/media.md#31-hls-playlists)): the engine reads
   each one whole and refuses one outside it, with a warning. WebVTT in
-  [video 6.3](../spec/v1/video.md#63-webvtt)'s form, PGS stretches, JPEG
+  [video 6.3](../spec/v0/video.md#63-webvtt)'s form, PGS stretches, JPEG
   sheets.
 
 ## 5. Sealer
 
-Spec: [core 12.5](../spec/v1/core.md#125-the-next-key-commitment).
+Spec: [core 12.5](../spec/v0/core.md#125-the-next-key-commitment).
 
 ```
 Seal(plain, context) -> sealed       sync, may fail
@@ -350,7 +350,7 @@ Open(sealed, context) -> plain       sync; errors: Sealed
 | `Notifier` | `Notify(Event)`, sync | in order, one at a time, outside the engine's locks; must return quickly |
 | `SheetEncoder` | `Reencode(jpeg, maxWidth, maxHeight) -> Bytes`; errors `NotAnImage` | the viewer's side: the engine has read the sheet (at most 8 MiB) and checked its header; the encoder decodes and encodes again, so only pixels reach the viewer |
 
-**Dialer** ([core 3.3](../spec/v1/core.md#33-connecting-to-peers)). The
+**Dialer** ([core 3.3](../spec/v0/core.md#33-connecting-to-peers)). The
 default looks the name up once, refuses the destinations of core 3.3
 (loopback only with `Config.AllowLoopback`), and connects to a checked
 address, with no proxy. A host whose connections go out elsewhere (a

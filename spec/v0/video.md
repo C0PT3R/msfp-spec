@@ -1,4 +1,4 @@
-# MSFP version 1: the video part, version 1
+# MSFP version 0: the video part, version 0
 
 **Draft.**
 
@@ -32,7 +32,7 @@ specifications.
 - **Title key**: here, the text that names a video title (section 4).
   The general rules of title keys are in
   [catalog section 4](catalog.md#4-title-keys).
-- **Scheme**: the source of the identifier in a title key. `video` 1 has
+- **Scheme**: the source of the identifier in a title key. `video` 0 has
   one, `tmdb` (The Movie Database).
 
 ## 2. Libraries
@@ -68,7 +68,7 @@ say) is a change of the title: a changes reading sends it again
 
 Besides the rules of [catalog section 3.3](catalog.md#33-what-the-caller-keeps-of-each-title):
 
-- the key's scheme is one the caller knows (`tmdb` in `video` 1);
+- the key's scheme is one the caller knows (`tmdb` in `video` 0);
 - at most 12 language tags in each list, each 2 to 12 characters of
   `A–Z a–z 0–9 -`, each once (compared without case); a bad tag is
   skipped, not the whole title;
@@ -104,7 +104,7 @@ Of `video` (section 3.2), for films and episodes only:
   describes the title, not a copy: no version is named).
 
 Test cases: `titles` in
-[vectors/v1/video.json](../../vectors/v1/video.json), each with what the
+[vectors/v0/video.json](../../vectors/v0/video.json), each with what the
 caller keeps.
 
 ### 3.2 The picture
@@ -185,7 +185,7 @@ followed for seasons and episodes by their place in the series:
   season ID.
 - `play` takes only films and episodes (section 5).
 
-The only scheme of `video` 1 is `tmdb`. A receiver skips keys of a
+The only scheme of `video` 0 is `tmdb`. A receiver skips keys of a
 scheme it doesn't know. A later version of this part may admit keys of
 other schemes, for titles TMDB lacks; its rules would say which scheme
 wins when a title has several, so that every server picks the same key.
@@ -473,7 +473,7 @@ The viewer's server sets the `Content-Type` of what it relays itself:
 `image/jpeg` for sheets.
 
 Test cases for sections 6.3 and 6.4 are in
-[vectors/v1/media.json](../../vectors/v1/media.json).
+[vectors/v0/media.json](../../vectors/v0/media.json).
 
 ### 6.3 WebVTT
 
@@ -692,7 +692,7 @@ Choices confirmed by the owner on 2026-11-17, moved here from
 out of `catalog`, `playback` and `media` on 2026-11-17):
 
 9. **The WebVTT and PGS vectors stay in
-   [vectors/v1/media.json](../../vectors/v1/media.json)**, a file named
+   [vectors/v0/media.json](../../vectors/v0/media.json)**, a file named
    for the part that held these rules before, rather than in a new file
    for `video`.
 
@@ -705,7 +705,7 @@ out of `catalog`, `playback` and `media` on 2026-11-17):
    ([catalog section 3.2](catalog.md#32-whole-list-or-changes)).
    Its test cases, with the rest of what a caller keeps of a video title
    (section 3.1), are in a file of their own,
-   [vectors/v1/video.json](../../vectors/v1/video.json); the WebVTT and
+   [vectors/v0/video.json](../../vectors/v0/video.json); the WebVTT and
    PGS cases stay where point 9 says.
 11. **Platform neutrality** (sections 3, 4.1, 5.3, 5.4, 5.5 and 7): only
     the subtitles the owning server can serve are listed; episodes keyed

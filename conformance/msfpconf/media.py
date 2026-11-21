@@ -1,4 +1,4 @@
-"""The media rules: HLS playlists (spec/v1/media.md section 3.1), ranges
+"""The media rules: HLS playlists (spec/v0/media.md section 3.1), ranges
 (media 2.1), WebVTT and PGS parts (video.md sections 6.3 and 6.4), and a
 JPEG's size from its header (video 6.2)."""
 

@@ -6,10 +6,10 @@ import (
 )
 
 // The language codes a media server gives, as MSFP sends them
-// (spec/v1/catalog.md section 3, language tags): an ISO 639-2 code, /B
+// (spec/v0/catalog.md section 3, language tags): an ISO 639-2 code, /B
 // (fre) or /T (fra), of a language ISO 639-1 names is sent as its 639-1
 // code (fr), the rest of the tag kept; every tag in BCP 47's case
-// conventions (spec/v1/core.md section 2.5); und, mul, zxx and mis not
+// conventions (spec/v0/core.md section 2.5); und, mul, zxx and mis not
 // sent.
 
 // iso639 maps each ISO 639-2 code, /B and /T, of a language that has an

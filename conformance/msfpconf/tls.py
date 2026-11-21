@@ -1,5 +1,5 @@
 """A self-signed certificate for the suite's own HTTPS server, made in
-pure Python (core 1 section 3.2 recommends ECDSA P-256 or Ed25519, kept
+pure Python (core 0 section 3.2 recommends ECDSA P-256 or Ed25519, kept
 apart from the federation key; P-256 is the one every TLS stack takes).
 
 Test code: the ECDSA arithmetic is slow and not constant-time. The key
@@ -120,7 +120,7 @@ def _pem(label, der):
 
 class Certificate:
     """A self-signed P-256 certificate for `hosts` (names or IP
-    addresses), valid from a day ago for `days`. `pin` is core 1 section
+    addresses), valid from a day ago for `days`. `pin` is core 0 section
     3.2's: base64url of SHA-256 of the SubjectPublicKeyInfo."""
 
     def __init__(self, hosts, days=30):

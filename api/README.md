@@ -2,7 +2,7 @@
 
 **Informative, not part of the protocol.** Nothing here changes what a
 server sends or accepts. Two servers interoperate if they follow
-[spec/v1](../spec/v1/README.md), whatever library they use.
+[spec/v0](../spec/v0/README.md), whatever library they use.
 
 ## Status
 
@@ -79,7 +79,7 @@ RedeemCode(text) -> PeerView
   rotate). Peers never see them.
 - **Library IDs.** The host names its libraries by its own IDs. Peers
   see only the opaque public IDs the engine makes
-  ([catalog 2.1](../spec/v1/catalog.md#21-library-ids)).
+  ([catalog 2.1](../spec/v0/catalog.md#21-library-ids)).
 - **Copies** are named by an opaque handle from the host. The engine
   stores it and passes it back, never sends it. A peer sees a version ID:
   `ver_` + the first 16 bytes of HMAC-SHA-256(IDs secret, `"version\n" +
@@ -133,7 +133,7 @@ All decided by the owner on 2026-11-18.
 | 9 | C# errors | exceptions | C# not built |
 | 10 | Events | one callback, `Notify`, in order, outside locks | yes |
 | 11 | Discovery and base paths | the engine fetches peers' documents and serves its own when on | yes |
-| 12 | The next key's text | `msfp-next-key-1.<seed>` only ([core 12.5](../spec/v1/core.md#125-the-next-key-commitment)) | yes |
+| 12 | The next key's text | `msfp-next-key-1.<seed>` only ([core 12.5](../spec/v0/core.md#125-the-next-key-commitment)) | yes |
 | 13 | Nonces | in memory only; requests dated before the start refused | yes |
 | 14 | Content parts | built in; the host says which it speaks (`Config.Parts`) | yes |
 | 15 | Library versions | one number for both libraries | C# not built |

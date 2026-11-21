@@ -1,5 +1,5 @@
 """The suite's own side of the pairing: an HTTPS server (or plain HTTP
-under --plain-http) that answers the server under test as a core 1 peer
+under --plain-http) that answers the server under test as a core 0 peer
 would, checks each of its requests as core 6.4 says, and records them."""
 
 import http.server

@@ -1,7 +1,8 @@
-# MSFP version 1: the core, version 1
+# MSFP version 0: the core, version 0
 
-**Draft.** Version 1 stands alone: it doesn't work with version 0,
-which was a test draft ([history](README.md#history)). How the parts fit
+**Draft.** Version 0 is a draft: anything may change until version 1, the
+first stable one. It doesn't work with the test draft of November 2026
+([history](README.md#history)). How the parts fit
 together is in [README.md](README.md).
 
 The core is what every MSFP server speaks: encodings, transport, keys, the
@@ -17,7 +18,7 @@ optional.
 
 The words "must", "must not" and "should" carry their usual meaning in
 specifications. Every example uses `example.org` names and RFC 5737
-addresses. The test vectors are in [vectors/v1/](../../vectors/v1/)
+addresses. The test vectors are in [vectors/v0/](../../vectors/v0/)
 (section 17).
 
 ## Contents
@@ -37,14 +38,14 @@ addresses. The test vectors are in [vectors/v1/](../../vectors/v1/)
 13. [Changing a server's address](#13-changing-a-servers-address)
 14. [Security considerations](#14-security-considerations)
 15. [Versioning](#15-versioning)
-16. [Coexisting with version 0](#16-coexisting-with-version-0) (removed)
+16. [Coexisting with the test draft](#16-coexisting-with-the-test-draft) (removed)
 17. [Test vectors](#17-test-vectors)
 18. [Open questions](#18-open-questions)
 
 ## 1. Overview and terms
 
 MSFP lets media servers share their libraries: one server's people browse
-and play titles another server holds, through their own server. Version 1
+and play titles another server holds, through their own server. Version 0
 covers manual pairing only: two operators pair their servers by hand, and
 each trusts only the servers it paired with.
 
@@ -179,7 +180,7 @@ identity (subgroup).
   −(2^53 − 1) to 2^53 − 1. Any other number (`2.5`, `1.0`, `1e3`) is
   valid I-JSON, and is invalid only where an integer is expected. Where
   a list ignores entries that aren't integers, it ignores such a number
-  too: `"core":[1,2.5]` lists core 1 (section 10.2).
+  too: `"core":[0,2.5]` lists core 0 (section 10.2).
 - `null` is not a valid value for any MSFP member. A sender leaves an
   empty optional member out, or sends `[]` or `""` where the field says
   so. A receiver refuses `null` in a known member of a request as an
@@ -232,14 +233,14 @@ case-sensitive and has one case:
   conventional form.
 
 Cases for all of these, valid and not, are in
-[vectors/v0-strict.json](../../vectors/v0-strict.json) and
-[vectors/v1/strict.json](../../vectors/v1/strict.json) (section 17).
+[vectors/history/test-draft-strict.json](../../vectors/history/test-draft-strict.json) and
+[vectors/v0/strict.json](../../vectors/v0/strict.json) (section 17).
 
 ## 3. Transport
 
 - **HTTPS only.** Every federation call and every media fetch uses
   `https`, with the certificate checks of section 3.2. There is no plain
-  `http` in version 1. A server without a certificate from a public
+  `http` in version 0. A server without a certificate from a public
   authority makes a self-signed one, or uses a private authority's, and
   names its pin (section 3.2).
 - **Paths.** The federation calls are under the peer's base path:
@@ -565,7 +566,7 @@ The fingerprint never travels between servers. Each panel computes it.
 
 ### 5.1 Format
 
-A core 1 code is the ASCII prefix `msfp-pair-1.` followed by base64url of
+A core 0 code is the ASCII prefix `msfp-pair-0.` followed by base64url of
 these bytes, in order:
 
 | Bytes | Content |
@@ -637,7 +638,7 @@ The 26 characters are 16 random bytes in lowercase base32 (RFC 4648
 section 6, `a-z2-7`, no padding); the 2 unused bits of the last
 character are zero. The implementation makes the address once and keeps
 it; the operator types none. Example (from
-[vectors/v1/strict.json](../../vectors/v1/strict.json),
+[vectors/v0/strict.json](../../vectors/v0/strict.json),
 `uncallableAddresses`): `https://msfp-4dq6fy7e4xtop2hj5lv6z3po54.invalid`.
 
 - It is an address like any other: the pairing proof binds it
@@ -662,7 +663,7 @@ The code made by key "a", at `https://a.example.org`, with the secret
 `404142…5f` (section 17), expiring at 1800086400:
 
 ```
-msfp-pair-1.A6EHv_POEL4dcN0Y50vAmWfk1jCbpQ1fHdyGZBJVMbhAQUJDREVGR0hJSktMTU5PUFFSU1RVVldYWVpbXF1eXwAAAABrSyOAaHR0cHM6Ly9hLmV4YW1wbGUub3Jn
+msfp-pair-0.A6EHv_POEL4dcN0Y50vAmWfk1jCbpQ1fHdyGZBJVMbhAQUJDREVGR0hJSktMTU5PUFFSU1RVVldYWVpbXF1eXwAAAABrSyOAaHR0cHM6Ly9hLmV4YW1wbGUub3Jn
 ```
 
 ## 6. Signing requests and answers
@@ -690,7 +691,7 @@ The sender signs these bytes: seven lines, joined by `\n`, with no
 trailing `\n`.
 
 ```
-msfp-1 request
+msfp-0 request
 <method>
 <host>
 <target>
@@ -699,7 +700,7 @@ msfp-1 request
 <body hash>
 ```
 
-- Line 1 is the literal label `msfp-1 request`.
+- Line 1 is the literal label `msfp-0 request`.
 - `<method>`: the HTTP method, in capitals: `POST` for every call.
 - `<host>`: the host part of the **receiver's** address (section 5.2),
   with its port if it has one. Example: `a.example.org`, or
@@ -728,14 +729,14 @@ The answering server signs these bytes: five lines, joined by `\n`, with
 no trailing `\n`.
 
 ```
-msfp-1 response
+msfp-0 response
 <nonce>
 <status>
 <media type>
 <body hash>
 ```
 
-- Line 1 is the literal label `msfp-1 response`.
+- Line 1 is the literal label `msfp-0 response`.
 - `<nonce>`: the text of the request's `MSFP-Nonce` header. This binds
   the answer to its request: it can't be replayed for another one.
 - `<status>`: the HTTP status code sent, three digits (`200`, `404`…).
@@ -916,7 +917,7 @@ The operator of B gave consent at step 2, by pasting the code. A's
 operator gives it at step 6. B can't make A accept: a `hello` saying
 `paired` from a peer in state `ours` changes nothing.
 
-A pairing made from a core 1 code starts in core 1: `pair` is signed
+A pairing made from a core 0 code starts in core 0: `pair` is signed
 under section 6.
 
 ### 7.2 What each side stores
@@ -1124,10 +1125,10 @@ followed by `\n`. A receiver must not depend on these exact bytes: the
 signature covers whatever was sent, and only the status matters to the
 protocol, except where the `type` tells refusals apart: `not-supported`
 on `404` (section 10.4), and the `409`s of `rotate` and
-[playback](playback.md#2-play). The `type` values of version 1:
+[playback](playback.md#2-play). The `type` values of version 0:
 
 This is the reference for every status a federation call can answer, in
-every part of version 1. Media fetches are not federation calls; their
+every part of version 0. Media fetches are not federation calls; their
 statuses are in section 8.4.
 
 | Status | `type` | `title` | Calls | Meaning | What the caller does |
@@ -1322,7 +1323,7 @@ Request:
 The proof is HMAC-SHA256, keyed with the 32-byte secret, over these bytes
 in order:
 
-1. the ASCII label `msfp-1 pairing\n` (it ends with a line feed);
+1. the ASCII label `msfp-0 pairing\n` (it ends with a line feed);
 2. the caller's 32 raw public-key bytes, the same key as in `MSFP-Key`;
 3. a line feed, `\n`;
 4. the `address` field's value, after JSON decoding, as bytes (an
@@ -1401,7 +1402,7 @@ A request and an answer may also carry members that go one way only:
 | `revocation` | object | answers to a server that can't be called | the receiver's revocation statement, with the members of the `revoke` request: `date`, `signature` (sections 9.4, 12.6) |
 | `callsFailed` | boolean | answers | `true`: the answering server's last calls to the caller couldn't connect (section 7.5) |
 
-A server that speaks version 1 sends `core` and `parts` in every `hello`,
+A server that speaks version 0 sends `core` and `parts` in every `hello`,
 request and answer (section 10.2). It should send `address` in every
 `hello`. It leaves `certificates` out when it names none, and leaves out
 everything but `state` when it sends or answers `ended`.
@@ -1476,10 +1477,10 @@ sends a `hello` at once. The peer may have ended the pairing, or not have
 heard yet that the pairing was accepted. A `404` `not-supported` doesn't
 call for a `hello` (section 10.4).
 
-Example, from [vectors/v1/exchanges.json](../../vectors/v1/exchanges.json):
+Example, from [vectors/v0/exchanges.json](../../vectors/v0/exchanges.json):
 
 ```json
-{"state":"paired","core":[1],"parts":{"catalog":[1],"playback":[1],"media":[1],"video":[1]},"certificates":["JN-hf1COiASAAUsiYeHXMNVvNnxYR2dKYnBT2Zx_6Fo"],"address":"https://a.example.org"}
+{"state":"paired","core":[0],"parts":{"catalog":[0],"playback":[0],"media":[0],"video":[0]},"certificates":["JN-hf1COiASAAUsiYeHXMNVvNnxYR2dKYnBT2Zx_6Fo"],"address":"https://a.example.org"}
 ```
 
 ### 9.3 rotate
@@ -1549,13 +1550,13 @@ suspended, since its current key is the new one.
 | `video` | films and series by TMDB: title keys, episode order, subtitles, PGS, WebVTT, skip markers, previews | none: it adds to `titles`, `play` and the media | `catalog`, `playback` and `media` |
 | `music` | artists, albums and tracks by MusicBrainz: keys, descriptions, cover art, audio-only playback | none: it adds to `titles`, `play` and `limits` | `catalog`, `playback` and `media` |
 
-The core and each part have their own version, an integer. Version 1 of
+The core and each part have their own version, an integer. Version 0 of
 each is this document and [catalog.md](catalog.md),
 [playback.md](playback.md), [media.md](media.md), [video.md](video.md)
 and [music.md](music.md).
 
 Rotation and revocation (`rotate`, `revoke`, section 12) are part of
-the core, not a part: a server without them doesn't speak core 1. Every
+the core, not a part: a server without them doesn't speak core 0. Every
 pairing must be able to cut off a stolen key.
 
 `playback` plays title keys from `titles` and points at media URLs, so it
@@ -1576,11 +1577,11 @@ Versions travel in `hello`, request and answer, in `core` and `parts`
 (section 9.2):
 
 ```json
-{"state":"paired","core":[1],"parts":{"catalog":[1],"playback":[1],"media":[1,2],"video":[1],"music":[1]}}
+{"state":"paired","core":[0],"parts":{"catalog":[0],"playback":[0],"media":[0,1],"video":[0],"music":[0]}}
 ```
 
 - **Absent means none.** A `hello` without `core` leaves no common core:
-  the sender doesn't speak MSFP 1. Without `parts`, the sender speaks no
+  the sender doesn't speak MSFP 0. Without `parts`, the sender speaks no
   part: only the core is on.
 - **Part names** are lowercase ASCII letters and `-`, at most 32
   characters. Unknown names are ignored, whatever their value (`null`
@@ -1594,7 +1595,7 @@ Versions travel in `hello`, request and answer, in `core` and `parts`
   (section 8.2): the whole `hello` is refused, nothing is stored. An
   empty `core` list leaves no common core.
 - A server lists every version it speaks, not only the highest. A server
-  that speaks cores 1 and 2 lists `[1,2]`.
+  that speaks cores 0 and 1 lists `[0,1]`.
 
 ### 10.3 Choosing
 
@@ -1629,8 +1630,8 @@ Versions travel in `hello`, request and answer, in `core` and `parts`
 
 ### 10.5 Which core a message uses
 
-A message's core shows in its labels and headers: core 1 uses
-`msfp-1 …`, `MSFP-*` and the code prefix `msfp-pair-1.` (section 15). A
+A message's core shows in its labels and headers: core 0 uses
+`msfp-0 …`, `MSFP-*` and the code prefix `msfp-pair-0.` (section 15). A
 server answers in the core of the request.
 
 ## 11. The discovery document
@@ -1639,7 +1640,7 @@ A server may serve, at `GET /.well-known/msfp` on its address (RFC 8615),
 an `application/json` document:
 
 ```json
-{"core":[1],"parts":{"catalog":[1],"playback":[1],"media":[1],"video":[1]},"base":"/srv/media/api/v1/federation/"}
+{"core":[0],"parts":{"catalog":[0],"playback":[0],"media":[0],"video":[0]},"base":"/srv/media/api/v1/federation/"}
 ```
 
 | Field | Type | Content |
@@ -1658,7 +1659,7 @@ an `application/json` document:
   `/api/v1/federation/`. No segment is empty, `.` or `..`, and there is no
   percent-encoding at all, so the path means the same before and after
   any normalization. Test cases: `bases` in
-  [vectors/v1/strict.json](../../vectors/v1/strict.json). The part
+  [vectors/v0/strict.json](../../vectors/v0/strict.json). The part
   before that ending is the server's **prefix** (`/srv/media` in the
   example; empty by default). The media's stream root is
   `<address><prefix>/api/v1/stream/` ([media](media.md#1-the-urls)).
@@ -1800,7 +1801,7 @@ starts. Starting a rotation from N while O is still kept deletes O at
 once, and the peers still on O are lost, as after the 30 days: they must
 pair again.
 
-Toward a peer that doesn't speak core 1 (section 10.3), no rotation is
+Toward a peer that doesn't speak core 0 (section 10.3), no rotation is
 possible: the rotating server keeps O for that peer only, for as long as
 the pairing lasts, or until its operator pairs again. Holding O longer is
 safe if O isn't compromised.
@@ -2001,7 +2002,7 @@ other server has A1 or A2 as its own.
 
 Its panel should tell its operator, when the configured address changes,
 that peers will be told and how many have moved, and warn when a peer
-hasn't moved after some days. Toward a peer that doesn't speak core 1,
+hasn't moved after some days. Toward a peer that doesn't speak core 0,
 the moving server may keep accepting A1's host longer, at its operator's
 choice, or the operators pair again.
 
@@ -2156,48 +2157,48 @@ request logs the route's pattern, not the path.
 
 ## 15. Versioning
 
-This document is core version 1. The policy for new versions of the core
+This document is core version 0. The policy for new versions of the core
 and of the parts, and what needs one, is in
 [README.md](README.md#versioning). In short: a change to keys,
 signatures, the code or pairing is a new core version, with new labels; a
 new optional member needs no new version as long as its absence keeps
 the old behaviour.
 
-The strings `msfp-1` and `msfp-pair-1.` contain a `1`: they are core 1's
+The strings `msfp-0` and `msfp-pair-0.` contain a `0`: they are core 0's
 labels. The statements' labels `msfp-key-rotation-1` and
 `msfp-key-revocation-1` are versioned on their own: a change to a
 statement's form changes its label.
 
-## 16. Coexisting with version 0
+## 16. Coexisting with the test draft
 
 Removed on 2026-11-17, with every rule that existed only for it:
-version 1 doesn't work with version 0 ([history](README.md#history)).
+version 0 doesn't work with the test draft ([history](README.md#history)).
 
 ## 17. Test vectors
 
-The values below are in [vectors/v1/](../../vectors/v1/), for an
+The values below are in [vectors/v0/](../../vectors/v0/), for an
 implementation's tests to check against. They come from the generator in
 [tools/vectors/](../../tools/vectors/), not from an implementation. The
 generator also checks them.
 
 | File | What it holds |
 |------|---------------|
-| `keys.json` | the keys "a" and "b" (the same as in version 0's vectors), server A's next keys "a2" and "a3", server B's "b2", with their fingerprints and commitments; two certificate keys with their pins |
+| `keys.json` | the keys "a" and "b" (the same as in the test draft's vectors), server A's next keys "a2" and "a3", server B's "b2", with their fingerprints and commitments; two certificate keys with their pins |
 | `code.json` | the code of section 5.3, its secret hash, and the pairing proof of redeemer "b" at `https://192.0.2.10:8096` |
 | `exchanges.json` | `pair` (B calls A, with commitments), `hello` (A to B, with `core`, `parts`, `certificates` and `address`; B answers without `playback`), a refused `hello` (signed `404`), and a `play` refused with `not-supported`; then B can't be called (section 7.5): its `hello` with `inbound: false`, its new address and `knownKey`, A's answer carrying `rotation` and `revocation` objects (A revokes "a" and rotates to "a2" in one action, sections 12.4, 12.6 and 12.7), and B's next `hello` with `knownKey` "a2", answered under "a2" |
 | `rotation.json` | A rotates from "a" to "a2", committing to "a3": the statement, both signatures, and the `rotate` exchange |
 | `revocation.json` | A revokes "a": the statement, its signature, and the `revoke` exchange |
-| `strict.json` | addresses and codes with their verdicts under core 1 (`https` only) |
+| `strict.json` | addresses and codes with their verdicts under core 0 (`https` only) |
 | `strict.json`, `destinations` | IP addresses a server connects to for a peer by default, or refuses (section 3.3) |
 | `strict.json`, `uncallableAddresses` | addresses of a server that can't be called, `https://msfp-<26>.invalid`, with their verdicts (section 5.2) |
 | `strict.json`, `languageCodes` | media servers' language codes and the tag sent for each, or none ([catalog section 3](catalog.md#3-titles)) |
-| `strict.json`, `helloVersions` | `hello` bodies and the versions a receiver keeps of them, or a bad body: `"core":[1,2.5]` lists core 1, and an unknown member or part of `null` is ignored (sections 2.3 and 10.2) |
+| `strict.json`, `helloVersions` | `hello` bodies and the versions a receiver keeps of them, or a bad body: `"core":[0,2.5]` lists core 0, and an unknown member or part of `null` is ignored (sections 2.3 and 10.2) |
 | `media.json` | WebVTT parts and what rebuilding them gives, HLS playlists and PGS parts, with their verdicts ([media section 3](media.md#3-what-is-fetched), [video section 6](video.md#6-media)) |
 | `music.json` | music title keys and music titles, with their verdicts and what the caller keeps of each title ([music sections 2 and 3](music.md#2-title-keys)) |
 | `video.json` | video titles, with their verdicts and what the caller keeps of each, `video` included ([video section 3](video.md#3-titles)) |
 
-The cases of [vectors/v0-strict.json](../../vectors/v0-strict.json)
-(keys, signatures, base64url, dates, integers, JSON) hold for core 1 too.
+The cases of [vectors/history/test-draft-strict.json](../../vectors/history/test-draft-strict.json)
+(keys, signatures, base64url, dates, integers, JSON) hold for core 0 too.
 Its `integers` cases apply where an integer is expected (section 2.3):
 `1.0` is refused there, but is valid I-JSON, as its `json` cases show,
 and a version list ignores it.
@@ -2235,13 +2236,13 @@ MSFP-Signature: 7L_kGyNoMvsmRc3ysOpYEHI4nmqblOIgxjfais5B78FiYXkAcSzhkSFtXiRt9Eg9
 Body (exact bytes, no trailing line feed):
 
 ```
-{"state":"paired","core":[1],"parts":{"catalog":[1],"playback":[1],"media":[1],"video":[1]},"certificates":["JN-hf1COiASAAUsiYeHXMNVvNnxYR2dKYnBT2Zx_6Fo"],"address":"https://a.example.org"}
+{"state":"paired","core":[0],"parts":{"catalog":[0],"playback":[0],"media":[0],"video":[0]},"certificates":["JN-hf1COiASAAUsiYeHXMNVvNnxYR2dKYnBT2Zx_6Fo"],"address":"https://a.example.org"}
 ```
 
 Signed message:
 
 ```
-msfp-1 request
+msfp-0 request
 POST
 192.0.2.10:8096
 /api/v1/federation/hello
@@ -2253,16 +2254,16 @@ cHFyc3R1dnd4eXp7fH1-fw
 B answers `200`, `Content-Type: application/json`, with the body:
 
 ```
-{"state":"paired","core":[1],"parts":{"catalog":[1]},"certificates":["E7UUIjYbkigLNKPjmSGixyA-pslmiFKckCEX_A6IZlM"]}
+{"state":"paired","core":[0],"parts":{"catalog":[0]},"certificates":["E7UUIjYbkigLNKPjmSGixyA-pslmiFKckCEX_A6IZlM"]}
 ```
 
 B speaks `catalog` but not `playback` or `media`: between A and B,
-`catalog` 1 is on, `playback` and `media` are off, and so is `video`,
+`catalog` 0 is on, `playback` and `media` are off, and so is `video`,
 which needs them and which B doesn't list. B can list its libraries to
 A, and shares no titles. The signed message:
 
 ```
-msfp-1 response
+msfp-0 response
 cHFyc3R1dnd4eXp7fH1-fw
 200
 application/json
@@ -2382,7 +2383,7 @@ were settled by the owner on 2026-11-17; each says how.
 12. **The transition for `http` pairings** (proposal 7, open point 1):
     its length, and whether the cut-off is a version or a date.
     **Settled:** one release (section 16.5).
-    **Moot since version 0 was dropped (2026-11-17)**: there are no
+    **Moot since the test draft was dropped (2026-11-17)**: there are no
     `http` pairings to move.
 13. **Making a self-signed certificate** (proposal 7, open point 2).
     Should the specification say more (key type, names, lifetime) than
@@ -2419,17 +2420,17 @@ the owner on 2026-11-17; they may still change as implementations show)
 21. A rotating server whose request under O gets an unsigned `404` tries a
     `hello` under N (section 12.4); repeated `rotate`s carry newly dated
     statements. Confirmed by the owner on 2026-11-17.
-22. **Moot since version 0 was dropped (2026-11-17)**: core 1 is the
-    only core, and addresses are `https` only (section 3). The choice
-    was: core 1 is used only when both servers' addresses are `https`;
-    until then a pairing stays in core 0, and the `address` member of
-    `hello` is read in core 0 between servers that list core 1, so that
-    `http` pairings can move (sections 10.3 and 16.5). Confirmed by the
+22. **Moot since the test draft was dropped (2026-11-17)**: this core is
+    the only core, and addresses are `https` only (section 3). The
+    choice was: this core is used only when both servers' addresses are
+    `https`; until then a pairing stays in the test draft's core, and the
+    `address` member of `hello` is read in the test draft's core between
+    servers that list this one, so that `http` pairings can move (sections 10.3 and 16.5). Confirmed by the
     owner on 2026-11-17.
 23. Section 3.3 refuses the ranges listed, by default, and lets an
     operator allow loopback only. (Whether NAT64's `64:ff9b::/96` and
     6to4's `2002::/16` are judged by the IPv4 address they carry was open
-    here; closed on 2026-11-17: they are, as in version 0's section 3.2.) Confirmed by the
+    here; closed on 2026-11-17: they are, as in the test draft's section 3.2.) Confirmed by the
     owner on 2026-11-17.
 24. Section 8.3's refusals: `429` `rate-limited` for one peer over its
     limit, `503` `server-busy` for a full server, and `retryAfter` in the
@@ -2463,12 +2464,12 @@ the owner on 2026-11-17; they may still change as implementations show)
 **Choices this draft made, confirmed by the owner on 2026-11-17** (when the content types were
 made optional parts on 2026-11-17, [proposal 11](../../proposals/0011-music.md))
 
-27. **Moot since version 0 was dropped (2026-11-17).** The choice was:
-    `video` and `music` have no version 0, and `video` 1 and `music` 1
-    are off when `catalog`, `playback` or `media` is at version 0
-    (section 10.1). Between servers whose parts are at version 0, films
-    and series are shared as version 0 says, without `video` (section
-    16.6).
+27. **Moot since the test draft was dropped (2026-11-17).** The choice was:
+    `video` and `music` have no test-draft version, and are off when
+    `catalog`, `playback` or `media` is at the test draft's version
+    (section 10.1). Between servers whose parts are at the test draft's
+    version, films and series are shared as the test draft says, without
+    `video` (section 16.6).
 28. The examples of sections 9.2, 11 and 17.1 list `video`; the example
     of section 10.2 lists `music` too. B's answer in section 17.1 is
     unchanged: it lists `catalog` only, so B shares no titles with A.

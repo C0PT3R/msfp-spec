@@ -13,13 +13,13 @@ TMDB: keys, episode order, subtitles, PGS, skip markers, previews) and
 **`music`** (this proposal). A server lists the ones it handles in
 `hello`. Named by what identifies the titles, not "audio": audiobooks
 and podcasts would be parts of their own. Written into spec/v1 on
-2026-11-17: [video.md](../spec/v1/video.md) and
-[music.md](../spec/v1/music.md); this proposal's open points are
-[music.md's open questions](../spec/v1/music.md#8-open-questions).
-Touches: [catalog](../spec/v1/catalog.md) sections 1, 3 and 4,
-[playback](../spec/v1/playback.md) sections 2 and 6, and
-[media](../spec/v1/media.md) section 3; adds a part, `music`
-([core section 10](../spec/v1/core.md#10-versions-and-parts)).
+2026-11-17: [video.md](../spec/v0/video.md) and
+[music.md](../spec/v0/music.md); this proposal's open points are
+[music.md's open questions](../spec/v0/music.md#8-open-questions).
+Touches: [catalog](../spec/v0/catalog.md) sections 1, 3 and 4,
+[playback](../spec/v0/playback.md) sections 2 and 6, and
+[media](../spec/v0/media.md) section 3; adds a part, `music`
+([core section 10](../spec/v0/core.md#10-versions-and-parts)).
 
 This proposal gives options where the owner has a choice. Its
 recommendation is at the end, marked as such.
@@ -229,7 +229,7 @@ its own, when an identifier exists for it.
 
 ## Cost
 
-- **Specification:** a new file, `spec/v1/music.md`, with the part's
+- **Specification:** a new file, `spec/v0/music.md`, with the part's
   rules, and a line in each of the three parts it extends; vectors for
   music keys and title objects.
 - **Overfin:** large. It indexes no music today: an index of artists,

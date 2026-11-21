@@ -1,7 +1,7 @@
-"""A minimal MSFP version 1 server, in process, for selftest.py: the suite
-runs against it and must pass. It is built from spec/v1/ and from the
-vectors (its keys are vectors/v1/keys.json's "a", "a2", "a3"; its
-playlists, subtitles and PGS come from vectors/v1/media.json), and does
+"""A minimal MSFP version 0 server, in process, for selftest.py: the suite
+runs against it and must pass. It is built from spec/v0/ and from the
+vectors (its keys are vectors/v0/keys.json's "a", "a2", "a3"; its
+playlists, subtitles and PGS come from vectors/v0/media.json), and does
 only what the suite needs. Test code: never a server for real use."""
 
 import hashlib
@@ -19,7 +19,7 @@ import urllib.parse
 
 from . import ed25519
 from .tls import Certificate
-from .wire import (FED, H_DATE, H_KEY, H_NONCE, H_SIG, Answer, Key, NotIJSON, answer_message, b64u,
+from .wire import (VERSION, FED, H_DATE, H_KEY, H_NONCE, H_SIG, Answer, Key, NotIJSON, answer_message, b64u,
                    check_address, check_destination, check_uncallable_address, clean_name, commitment, decimal,
                    dumps, has_null, host_of, is_int, make_code, make_revocation, make_rotation,
                    parse_ijson, proof, read_pins, read_revocation, read_rotation, request_message,
@@ -27,8 +27,8 @@ from .wire import (FED, H_DATE, H_KEY, H_NONCE, H_SIG, Answer, Key, NotIJSON, an
 from .content import video_key
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-VEC = os.path.join(HERE, "..", "..", "vectors", "v1")
-PARTS = {"catalog": [1], "playback": [1], "media": [1], "video": [1], "music": [1]}
+VEC = os.path.join(HERE, "..", "..", "vectors", "v0")
+PARTS = {"catalog": [VERSION], "playback": [VERSION], "media": [VERSION], "video": [VERSION], "music": [VERSION]}
 NEEDS = {"catalog": (), "media": (), "playback": ("catalog", "media"),
          "video": ("catalog", "playback", "media"), "music": ("catalog", "playback", "media")}
 JPEG = (b"\xff\xd8\xff\xe0\x00\x10JFIF\x00\x01\x01\x00\x00\x01\x00\x01\x00\x00"
@@ -422,13 +422,13 @@ class FakeServer:
 
     def parts_on(self, peer):
         core, parts = peer.versions
-        if not isinstance(core, list) or 1 not in [x for x in core[:8] if is_int(x)]:
+        if not isinstance(core, list) or VERSION not in [x for x in core[:8] if is_int(x)]:
             return set()
         theirs = parts if isinstance(parts, dict) else {}
         on = set()
         for p in ("catalog", "media", "playback", "video", "music"):
             v = theirs.get(p)
-            if isinstance(v, list) and 1 in [x for x in v[:8] if is_int(x)] and all(n in on for n in NEEDS[p]):
+            if isinstance(v, list) and VERSION in [x for x in v[:8] if is_int(x)] and all(n in on for n in NEEDS[p]):
                 on.add(p)
         return on
 
@@ -504,7 +504,7 @@ class FakeServer:
     def hello_body(self, peer, state):
         if state == "ended":
             return {"state": "ended"}
-        b = {"state": state, "core": [1], "parts": PARTS}
+        b = {"state": state, "core": [VERSION], "parts": PARTS}
         if self.cert:
             b["certificates"] = [self.cert.pin]
         b["address"] = self.address

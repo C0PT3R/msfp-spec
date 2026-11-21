@@ -1,9 +1,9 @@
 # Proposal 9: Private servers
 
-Status: Option 1 adopted (2026-11-16); option 2 (the reverse connection) set aside for now. Open points: 1, 2, 3 and 8 decided, 4 to 7 and 9 set aside with option 2 (2026-11-17). None left for option 1. Option 1 written into [spec/v1](../spec/v1/core.md) on 2026-11-17: core sections 3, 5.1, 5.2 (the address), 7.1, 7.2, 7.4 and 7.5 (a peer that can't be called), 8.3, 9.1, 9.2, 11, 12.3, 12.4, 12.6, 13.1, 13.2, 14, 16.3, 16.6 and 17, with the choices made in writing it in core section 18, items 29 to 35; one line each in catalog, playback and media.
+Status: Option 1 adopted (2026-11-16); option 2 (the reverse connection) set aside for now. Open points: 1, 2, 3 and 8 decided, 4 to 7 and 9 set aside with option 2 (2026-11-17). None left for option 1. Option 1 written into [spec/v1](../spec/v0/core.md) on 2026-11-17: core sections 3, 5.1, 5.2 (the address), 7.1, 7.2, 7.4 and 7.5 (a peer that can't be called), 8.3, 9.1, 9.2, 11, 12.3, 12.4, 12.6, 13.1, 13.2, 14, 16.3, 16.6 and 17, with the choices made in writing it in core section 18, items 29 to 35; one line each in catalog, playback and media.
 Touches: sections 3, 5.2, 7.1, 7.4, 9.1, 9.2, 11, 12.4, 12.6 and 13.2 of
-[spec/v1/core.md](../spec/v1/core.md), and sections 1, 2 and 4 of
-[spec/v1/media.md](../spec/v1/media.md); option 2 adds a part.
+[spec/v0/core.md](../spec/v0/core.md), and sections 1, 2 and 4 of
+[spec/v0/media.md](../spec/v0/media.md); option 2 adds a part.
 
 A **private server** here is one that can connect out to the internet but
 can't be connected to: no public address, no port forwarded, no gateway.
@@ -27,9 +27,9 @@ MSFP assumes that each of two peers can call the other over HTTPS.
   `progress` and `stop` by "the viewer's server [calling] the owning
   server". Version 0 has the same table (v0 section 3).
 - **The owning server is called, and serves media.** The viewer's server
-  calls `play` on the owning server ([playback section 2](../spec/v1/playback.md#2-play)),
+  calls `play` on the owning server ([playback section 2](../spec/v0/playback.md#2-play)),
   and fetches the media from the owning server's stream root, built on
-  the owning server's address ([media section 1](../spec/v1/media.md#1-the-urls);
+  the owning server's address ([media section 1](../spec/v0/media.md#1-the-urls);
   v0 section 10.1).
 - **Calls the private side never receives.** Every call a peer makes of
   its own accord: the `hello` that tells a redeemer its pairing was
@@ -701,7 +701,7 @@ What changes:
   `transport` is not offered in core 0: its opening is signed under core 1.
 - **With core 1.** Option 1 adds optional members whose absence keeps
   today's behaviour, so it needs no new core version
-  ([README, Versioning](../spec/v1/README.md#versioning)). Option 2 is a
+  ([README, Versioning](../spec/v0/README.md#versioning)). Option 2 is a
   new part, negotiated in `hello`; off, nothing changes. Neither changes
   keys, signatures, the code or pairing.
 - **Servers that can be called** see no change unless a peer of theirs

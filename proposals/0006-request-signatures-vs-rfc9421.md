@@ -1,7 +1,7 @@
 # Proposal 6: Request signatures: our scheme or HTTP Message Signatures (RFC 9421)
 
 Status: Adopted (2026-11-16): MSFP keeps its own scheme, and the answer message covers `Content-Type` in core version 1.
-Touches: section 6 of [spec/v0.md](../spec/v0.md).
+Touches: section 6 of [spec/history/test-draft.md](../spec/history/test-draft.md).
 
 This proposal is a comparison first. Its recommendation is at the end,
 marked as such.

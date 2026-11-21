@@ -1,4 +1,4 @@
-"""The checks of core 1 (spec/v1/core.md): the code, discovery, strangers,
+"""The checks of core 0 (spec/v0/core.md): the code, discovery, strangers,
 pairing, waiting, hello and versions, JSON, signatures, nonces, answers.
 The parts' checks are in parts.py; keys, addresses, servers that can't
 be called and the reader checks in keys.py. Each check names the file
@@ -15,7 +15,7 @@ from .parts import PartChecks
 from .peer import PeerServer
 from .report import FAIL, PASS, SKIP, Result
 from .tls import Certificate, FileCertificate
-from .wire import (H_DATE, H_KEY, H_NONCE, H_SIG, CertificateRefused, Client, Key, b64u, check_address,
+from .wire import (VERSION, H_DATE, H_KEY, H_NONCE, H_SIG, CertificateRefused, Client, Key, b64u, check_address,
                    check_base, dumps, fingerprint, has_null, host_of, is_int, parse_code, parse_ijson, proof,
                    read_pins, request_message, split_hostport, unb64u, NotIJSON)
 
@@ -181,11 +181,11 @@ class Suite(PartChecks, KeyChecks):
             self.client.key = k
 
     def suite_parts(self):
-        return {p: [1] for p in PARTS}
+        return {p: [VERSION] for p in PARTS}
 
     def hello_body(self, state="paired", answer=False, parts=None, **over):
         """The suite's hello (core 9.2): its versions, its pins, its address."""
-        b = {"state": state, "core": [1], "parts": self.suite_parts() if parts is None else parts}
+        b = {"state": state, "core": [VERSION], "parts": self.suite_parts() if parts is None else parts}
         if self.cert and self.inbound:
             b["certificates"] = [self.cert.pin]
         b["address"] = self.address or self.uncallable_address
@@ -220,13 +220,13 @@ class Suite(PartChecks, KeyChecks):
     def parts_on(self):
         """The parts on between the suite and the server (core 10.3)."""
         core, parts = self.server_versions
-        if not isinstance(core, list) or 1 not in [x for x in core[:8] if is_int(x)]:
+        if not isinstance(core, list) or VERSION not in [x for x in core[:8] if is_int(x)]:
             return set()
         theirs = parts if isinstance(parts, dict) else {}
         on = set()
         for p in ("catalog", "media", "playback", "video", "music"):
             v = theirs.get(p)
-            if isinstance(v, list) and 1 in [x for x in v[:8] if is_int(x)] and all(n in on for n in NEEDS[p]):
+            if isinstance(v, list) and VERSION in [x for x in v[:8] if is_int(x)] and all(n in on for n in NEEDS[p]):
                 on.add(p)
         return on
 
@@ -247,7 +247,7 @@ class Suite(PartChecks, KeyChecks):
             self.r.note("no target: give --target, or a --code that names one")
             return
         if self.target.startswith("http://") and not self.allow_http:
-            self.r.note("the target's address is http://: core 1 is https only; pass --plain-http for an implementation's test switch")
+            self.r.note("the target's address is http://: core 0 is https only; pass --plain-http for an implementation's test switch")
             return
         if self.allow_http:
             self.r.note("--plain-http: plain http, a test switch OUTSIDE the protocol (core 3.1); the HTTPS checks are skipped")
@@ -669,8 +669,8 @@ class Suite(PartChecks, KeyChecks):
             if j.get("state") != "paired":
                 probs.append("state %r" % j.get("state"))
             core = j.get("core")
-            if not isinstance(core, list) or 1 not in core:
-                probs.append("core %r doesn't list 1 (core 10.2: sent in every hello)" % core)
+            if not isinstance(core, list) or VERSION not in core:
+                probs.append("core %r doesn't list %d (core 10.2: sent in every hello)" % (core, VERSION))
             if not isinstance(j.get("parts"), dict):
                 probs.append("no parts object (core 10.2)")
             if j.get("inbound") is False:
@@ -702,8 +702,8 @@ class Suite(PartChecks, KeyChecks):
             core, parts = j.get("core"), j.get("parts")
             if not isinstance(core, list) or len(core) > 8 or any(not is_int(x) or x < 0 for x in core):
                 probs.append("core %r isn't an array of at most 8 non-negative integers (core 10.2)" % core)
-            elif 1 not in core:
-                probs.append("core %r doesn't list 1 (a core 1 server lists every version it speaks)" % core)
+            elif VERSION not in core:
+                probs.append("core %r doesn't list %d (a core %d server lists every version it speaks)" % (core, VERSION, VERSION))
             if not isinstance(parts, dict):
                 probs.append("parts isn't an object (core 10.2: sent in every hello)")
             else:
@@ -738,7 +738,7 @@ class Suite(PartChecks, KeyChecks):
                 raise Fail("not on between the server and this suite: %s; their checks are skipped (every part is "
                            "optional, but a media server without them shares nothing)" % ", ".join(miss))
             return "catalog, playback, media and video 1 on%s" % (", and music" if "music" in on else "; music not listed (optional)")
-        self.check("H2", "core 10.1, 10.3", "the server lists catalog, playback, media and video at version 1", lists_parts, "SHOULD")
+        self.check("H2", "core 10.1, 10.3", "the server lists catalog, playback, media and video at version 0", lists_parts, "SHOULD")
 
         def address():
             a = self.signed(self.hello("paired"), 200)
@@ -809,8 +809,8 @@ class Suite(PartChecks, KeyChecks):
         def tolerated():
             cases = [("an unknown part with any value", with_(parts=dict(base["parts"], **{"zz-conformance": 5}))),
                      ("a part name in capitals (an unknown name)", with_(parts=dict(base["parts"], Catalog="x"))),
-                     ("a version twice", with_(core=[1, 1])),
-                     ("entries that aren't non-negative integers", with_(core=[1, "2", -1, 2.5, True])),
+                     ("a version twice", with_(core=[VERSION, VERSION])),
+                     ("entries that aren't non-negative integers", with_(core=[VERSION, "2", -1, 2.5, True])),
                      ("more than 8 entries", with_(core=[0, 1, 2, 3, 4, 5, 6, 7, 8, 9]))]
             bad = []
             for name, b in cases:
@@ -877,7 +877,7 @@ class Suite(PartChecks, KeyChecks):
         def no_core():
             # A hello without core, then one with an empty core: no common
             # core, so every call but hello gets the signed 404
-            # not-supported (core 10.2, 10.3, 10.4); a hello with core 1
+            # not-supported (core 10.2, 10.3, 10.4); a hello with core 0
             # puts it back.
             out = []
             for label, over in (("no core", {"core": None}), ("core []", {"core": []})):
@@ -889,7 +889,7 @@ class Suite(PartChecks, KeyChecks):
                 finally:
                     self.signed(self.hello("paired"), 200)
             a = self.signed(c.call("libraries", {}), 200)
-            return "with %s: libraries answered 404 not-supported; with core 1 again, libraries %d" % (" and ".join(out), a.status)
+            return "with %s: libraries answered 404 not-supported; with core 0 again, libraries %d" % (" and ".join(out), a.status)
 
         self.check("V7", "core 10.2, 10.3, 10.4", "no common core: every call but hello gets the signed 404 not-supported", no_core)
 

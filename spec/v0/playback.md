@@ -1,4 +1,4 @@
-# MSFP version 1: the playback part, version 1
+# MSFP version 0: the playback part, version 0
 
 **Draft.**
 
@@ -486,7 +486,7 @@ implementations show):
 
 1. **`versionId` in the request** (section 2.1). Proposal 2 says a
    viewer's server passes version IDs back in a later `play` of the same
-   title, but version 0's request has no member for it. This draft adds
+   title, but the test draft's request has no member for it. This draft adds
    the optional `versionId`.
 
 The second choice of that list, `startPositionMs` with several episodes
