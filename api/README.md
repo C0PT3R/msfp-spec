@@ -118,7 +118,7 @@ results in both languages, never errors.
 
 ## Decisions
 
-All decided by the owner on 2026-11-18.
+All decided by the owner on 2026-11-18 (17 on 2026-11-20).
 
 | # | Question | Decision | Built |
 |---|----------|----------|-------|
@@ -138,10 +138,12 @@ All decided by the owner on 2026-11-18.
 | 14 | Content parts | built in; the host says which it speaks (`Config.Parts`) | yes |
 | 15 | Library versions | one number for both libraries | C# not built |
 | 16 | An admin API | none: actions and queries only | yes |
+| 17 | Groups | the engine keeps the events, checks rights, seals the mail and pairs through the group; the store keeps records (`GroupsTx`) | Go |
 
 ## Not built yet
 
-- The C# engine, and the Jellyfin plugin on it.
+- Groups in the C# engine (msfp-dotnet) and in the hosts on it.
+- Group events: a panel reads `Groups()` for requests and members.
 - A neutral request and response form (`MsfpRequest`, `MsfpResponse`)
   for routers other than Go's `net/http`.
 - `SetPins`: pins are only set at `Open` (`Config.Pins`).

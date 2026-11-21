@@ -71,6 +71,18 @@ Every method returns an error besides what is listed.
 The engine only writes peers' titles. The host reads them in its own
 storage, as it likes (counts, joins, search).
 
+**`GroupsTx`**, for the part `groups`: a `Tx` implements it to keep the
+groups this server is in. Without it, the group actions fail with
+`NoGroups` and peers' group calls are answered `404`. The shipped stores
+do.
+
+| Method | Content |
+|--------|---------|
+| `Groups() -> []GroupRecord` | every group |
+| `Group(id) -> *GroupRecord` | `nil` for none |
+| `PutGroup(GroupRecord)` | adds or replaces |
+| `DeleteGroup(id)` | an absent group is no error |
+
 **`OwnLogTx`**, optional: a `Tx` implements it when the engine keeps the
 change log of the host's own catalog (a Catalog without `ChangeLog`).
 The shipped stores do.
@@ -113,9 +125,25 @@ The engine fills every field. Go spells them in capitals
 | its keys | `commitment`, `commitmentFrom` (`pair`, `rotation`, or empty), `pending` (a rotation waiting for our operator), `rotations` (statements kept), `refused` (`{key, at}`) |
 | our keys toward it | `ourKey` (empty for current, `old`, `lost`), `rotationAnswer` (`pending`, `refused`, or empty), `rotateSent`, `commitmentTold` |
 | sharing | `offers` (host library IDs), `offersSeq`, `wants` (`WantedLibrary`), `limits` (ours to it), `theirLimits`, `catalogRead` (`seq`, `wants`) |
+| groups | `groups` (the groups the link was made or kept through), `notByHand` (made by `group-pair`, never paired by hand), `groupOffers` (host library IDs its groups offer, together), `pools` (`{group, limits}`, each group's pool), `joiningGroup` (a group whose code it redeemed, while it joins) |
 
 **`CodeRecord`**: `id`, `secret` (sealed, `msfp code secret`),
-`secretHash`, `note`, `created`, `expires`.
+`secretHash`, `note`, `created`, `expires`, `uses` (how many more
+servers may use it), `group` (the group a group's code invites to).
+
+**`GroupRecord`**, one per group ([groups 3.6](../spec/v0/groups.md#36-what-each-member-keeps)):
+
+| Field | Content |
+|-------|---------|
+| `id`, `me` | the group's ID; this server's member ID in it |
+| `via` | the inviter, until the list arrives from it |
+| `events`, `held` | signed events kept (`{event, signature, received}`), in the order kept; those held until what they follow arrives |
+| `mail` | sealed requests and answers passed on, until they expire (`{id, mail, signature, expires}`) |
+| `mailKey` | this server's X25519 key for the group's mail, sealed (`msfp group mail key`) |
+| `accept`, `offers`, `pool` | how this server answers requests; host library IDs it offers the group; the pool it lends |
+| `requests` | members' requests waiting for the operator: `{mail, from, name, address, nextCommitment, inbound, pins, received}` |
+| `refused`, `sent`, `used` | members whose requests were refused; requests and answers sent (`{id, to, kind, expires}`); mail IDs a `group-pair` used |
+| `synced` | the last sync with the members |
 
 **`ForgottenKey`**: `keyHash`, `at`, `revoked` (the pairing ended with
 a revocation without next key: for 30 days its hellos get the
@@ -135,7 +163,7 @@ as text.
 | `jsonfile.Open(dir, Options{KeyFile})` | small hosts with no database | one process at a time (a lock on the directory); files mode 0600 |
 
 `jsonfile` keeps `state.json` (server, peers, codes, forgotten keys,
-library IDs, leftovers), `peers/<id>.json` (a peer's titles and sent
+library IDs, leftovers, groups), `peers/<id>.json` (a peer's titles and sent
 keys), `own.json` (the change log) and `sealing.key` (the sealing key,
 unless `KeyFile` puts it elsewhere). Each file is replaced whole and
 atomically. A commit that touches several files is not atomic across
@@ -330,7 +358,8 @@ Open(sealed, context) -> plain       sync; errors: Sealed
 ```
 
 - Contexts: `msfp current key`, `msfp next key`, `msfp old key`,
-  `msfp revoked key`, `msfp ids secret`, `msfp code secret`. A box never
+  `msfp revoked key`, `msfp ids secret`, `msfp code secret`,
+  `msfp group mail key`. A box never
   opens under another context. A revoked key sealed under `msfp old
   key`, as engines before 2026-11-18 did, is sealed again at `Open`
   (for one release).

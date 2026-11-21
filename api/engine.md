@@ -54,7 +54,7 @@ be empty when the stored record says the server can't be called.
 | `Logger` | `slog.Default()` | nothing secret is logged |
 | `ClientAddress` | `WithClient`'s, else the connection's | `func(*http.Request) netip.Addr`: the caller's address as the host's trusted proxies say. The engine never reads `X-Forwarded-For` |
 | `NotFound` | MSFP's `404` problem | the host's own answer for a path that doesn't exist, so the engine's unsigned refusals look the same ([core 3](../spec/v0/core.md#3-transport)) |
-| `Parts` | nil: all five | `catalog`, `playback`, `media`, `video`, `music`. A part without those it needs is left out (`video` and `music` need the other three; `playback` needs `catalog` and `media`). An empty list: the core alone |
+| `Parts` | nil: all six | `catalog`, `playback`, `media`, `video`, `music`, `groups`. A part without those it needs is left out (`video` and `music` need the other three; `playback` needs `catalog` and `media`; `groups` needs none, but its store must keep groups: [host.md section 1.1](host.md#11-tx)). An empty list: the core alone |
 | `Catalog`, `Playback`, `Media` | absent | absent: nothing offered, every `play` answered `404` |
 | `MaxBitrateKbps` | 0 (none) | this server's cap on what peers play here |
 | `LongestPlayback` | 24 hours | a peer's playback longer than this ends |
@@ -79,7 +79,7 @@ Spec: [core 6](../spec/v0/core.md#6-signing-requests-and-answers),
 
 | Handler | Mount at | Serves |
 |---------|----------|--------|
-| `FederationHandler()` | `<Prefix>/api/v1/federation/` | `pair`, `hello`, `rotate`, `revoke`, `libraries`, `titles`, `play`, `progress`, `stop`; anything else is `Config.NotFound` |
+| `FederationHandler()` | `<Prefix>/api/v1/federation/` | `pair`, `hello`, `rotate`, `revoke`, `libraries`, `titles`, `play`, `progress`, `stop`, `group-sync`, `group-push`, `group-pair`; anything else is `Config.NotFound` |
 | `StreamHandler(fallback)` | `<Prefix>/api/v1/stream/` | peers' tickets. A ticket the engine doesn't know (the host's own people's, or one ended) goes to `fallback`; nil: `Config.NotFound` |
 | `DiscoveryHandler()` | `/.well-known/msfp` at the root, whatever the prefix | `GET` and `HEAD` while on; otherwise `Config.NotFound` |
 
@@ -108,10 +108,11 @@ background calls, only by a peer's signed `retryAfter`.
 | Method | Result | Errors |
 |--------|--------|--------|
 | `MakeCode(note)` | `(text, CodeView)`: the text, shown once; works once, for 24 hours | `NoCodes` (this server can't be called) |
+| `MakeCodeWith(CodeOptions)` | as `MakeCode`, with `Note`, `Uses` (1 to 100; 0: 1), `Lifetime` (a minute to 30 days; 0: 24 hours) and `Group` (a group's ID: the code invites to it, [groups 2](../spec/v0/groups.md#2-codes-for-a-group)) | `NoCodes`, `CodeOptions`; for a group, `NotFound`, `NoRight` (not its owner nor an admin), `NoGroups` |
 | `Codes()` | live codes, soonest to expire first, without their text | |
 | `DeleteCode(id)` | | `NotFound` |
 | `ReadCode(text)` | `CodePreview`, to show before redeeming | `CodeInvalid`, `CodeExpired`, `OwnCode`, `AlreadyPeer`, `PlainHTTP` |
-| `RedeemCode(text)` | `PeerView` in state `theirs`: fetches the discovery document, calls `pair` | those of `ReadCode`, `RefusedDestination`, `Unreachable`, `CodeRefused` |
+| `RedeemCode(text)` | `PeerView` in state `theirs`: fetches the discovery document, calls `pair`. A group's code: this server joins the group once the inviter accepts, then gets the list and asks every member ([groups 4](../spec/v0/groups.md#4-joining)) | those of `ReadCode`, `RefusedDestination`, `Unreachable`, `CodeRefused` |
 | `Accept(peer)` | `PeerView`, `paired`; the peer told at once, or at its next hello | `NotFound`, `NotWaiting` |
 | `Check(peer)` | `PeerView`: a `hello` now, its answer applied | `NotFound`, `Uncallable`, `Suspended`, `KeyLost`, `Unreachable`, `Unknown` (marked `gone`) |
 | `End(peer)` | ends or refuses a pairing in any state: deleted, its keys forgotten, then told | `NotFound` |
@@ -143,6 +144,32 @@ background calls, only by a peer's signed `retryAfter`.
 `withoutNext` is never implied: without a next key and without it,
 `KeyStolen` fails with `NoNextKey`.
 
+**Groups.** Spec: [groups](../spec/v0/groups.md). Every action is signed as an event,
+kept, and passed on to the members at once and at each sync (every 30
+seconds, in `Run`). `id` is a group's ID, `member` a member ID (both
+base64url, as the views give them). Each one may also fail with
+`NoGroups` (the store keeps no groups) and `NotFound` (no such group).
+
+| Method | Result | Errors |
+|--------|--------|--------|
+| `CreateGroup(name, GroupSettings)` | `GroupView`: a new group, this server its owner. `GroupSettings{WaitDays, CapPerDay}`, zero: 3 days, 5 joins a day ([groups 4.1](../spec/v0/groups.md#41-answering)). Invite with `MakeCodeWith` | `CodeOptions` (a name empty or over 80 characters) |
+| `SetGroupSettings(id, name, settings)` | the name and settings | `NoRight` (the owner only) |
+| `SetAdmin(id, member, on)` | names an admin, or removes one | `NoRight` (the owner only), `NotMember` |
+| `SetHeir(id, member)` | who takes the group when the owner steps down; `""`: none (the oldest admin, else the oldest member) | `NoRight`, `NotMember` |
+| `GiveGroup(id, member)` | the group goes to `member`; `""`: to the successor | `NoRight` (also when nobody is left to take it), `NotMember` |
+| `Ban(id, member, reason)` | the member is out, and told; its links through this group alone end on every member. `reason` optional | `NoRight` (an admin bans members only), `NotMember` |
+| `Unban(id, member)` | it may be invited again | `NoRight` (the owner only) |
+| `LeaveGroup(id, end)` | this server leaves; the peers in `end` (links made through it) end too, the others keep their pairing, by hand when it had no other source ([groups 7](../spec/v0/groups.md#7-leaving-blocking-banning-dissolving)) | |
+| `DissolveGroup(id, keepPairings)` | every member removes the group; without `keepPairings`, the links it alone made end | `NoRight` (the owner only) |
+| `Block(id, member, invitees)` | ends the link with `member`, whatever its sources, and forgets its key, so its requests are dropped in every group; with `invitees`, those it invited too, and theirs | `NotMember` |
+| `SetGroupAnswer(id, accept)` | `true`: this server accepts a request itself once the requester has been in the group `WaitDays`; `false`: the operator answers each | |
+| `AcceptRequest(id, mail)` | `mail` from `GroupView.Requests`: the two pair through the group (`group-pair`, or an answer mailed when the requester calls instead), no fingerprint to compare | `NotFound` (no such request), the call's |
+| `RefuseRequest(id, mail)` | nothing is sent; the member's requests are dropped until `LiftRefusal`. An unknown `mail`: nothing done | |
+| `LiftRefusal(id, member)` | | |
+| `RequestMember(id, member)` | sends this server's request to one member (a newcomer sends it to all by itself). Skipped, without error: a member already linked, or one whose request from us is still live; a failed sending is logged | |
+| `SetGroupOffers(id, hostLibraries)` | what every link through the group is offered, added to what each link offers by hand; playbacks from libraries no longer offered end ([groups 9](../spec/v0/groups.md#9-sharing-and-limits)) | |
+| `SetGroupPool(id, Limits)` | the pool this server lends the group: streams, transcodes and a bitrate cap shared by all its members; a playback counts against the first pool with room (the link's own limits first) | `InvalidLimits` |
+
 **Catalog and playbacks here.**
 
 | Method | Content | Errors |
@@ -163,6 +190,8 @@ They read storage and never call a peer.
 | `Offers(peer)` | `[]Library`, those offered marked `Offered`; `NotFound` |
 | `Wants(peer)` | `[]WantedLibrary` as last read; `NotFound` |
 | `Playbacks()` | **sync**: `[]PlaybackView`, peers' playbacks here, oldest first |
+| `Groups()` | `[]GroupView`, the groups this server is in; `NoGroups` |
+| `Group(id)` | `GroupView`; `NotFound`, `NoGroups` |
 
 **`ServerView`**:
 
@@ -191,11 +220,29 @@ They read storage and never call a peer.
 | `Pending`, `Refused` | `KeyNotice{Fingerprint, At}`: a key waiting for `ConfirmRotation`; a refused rotation |
 | `OurKey`, `RotationAnswer` | what it knows us by (`""` current, `old`, `lost`: pair again); its last answer to our `rotate` |
 | `Limits`, `TheirLimits` | ours to it; its to us (nil until said) |
-| `Offers`, `Wants`, `WantsGone` | counts |
+| `Offers`, `Wants`, `WantsGone` | counts; `Offers` counts only those by hand |
+| `Groups`, `ByHand` | the groups the link was made or kept through; whether it was also paired by hand (always, without groups) |
 
 Not to be confused: `ServerView.NotRotated` counts peers still on our
 **old key**; `PeerView.NotMoved` is a peer still on our **former
 address**.
+
+**`GroupView`**:
+
+| Field | Content |
+|-------|---------|
+| `ID`, `Name`, `Settings` | |
+| `Role`, `Me` | this server's role (`owner`, `admin`, `member`) and member ID |
+| `Owner`, `Heir` | member IDs; `Heir` empty for none |
+| `Members` | `GroupMemberView{ID, Name, Fingerprint, Role, InvitedBy, Joined, Peer}`; `Peer` is the link with it (empty: none) |
+| `Banned` | `GroupBanView{ID, Reason}` |
+| `Requests` | `GroupRequestView{Mail, From, Name, Fingerprint, Received, Waited}`, waiting for this server's operator; `Waited`: the requester has been in the group its days |
+| `Accept`, `Offers`, `Pool` | this server's answer setting, host library IDs offered, pool lent |
+| `Dissolved` | the owner dissolved it (kept until left) |
+| `Joining` | the list hasn't come from the inviter yet |
+
+The engine sends no group events yet: `PeerPaired` and `PeerEnded` tell
+of the links; a panel reads `Groups()` for requests and members.
 
 **`PlaybackView`**: `ID`, `Peer`, `PeerName`, `Title`, `Method`,
 `Handle` (the host's), `Since`, `State` (`started`, or `active` once
@@ -354,6 +401,7 @@ RunOnce()    everything due now, the hourly work included, waited for
 | our new address tried until it answers, then announced | expired codes deleted; forgotten keys over a year dropped |
 | the scheduled hellos of a server that can't be called | keys: our change of key ended after 30 days, `rotate` sent again daily, a revoked key's 30 days, peers suspended 30 days made `gone` |
 | peers' catalogs read when due: a minute after start, then every `SyncEvery`, at once when wants change | addresses: our move ended, late peers told again, peers' new addresses tried again |
+| groups synced with their members, every 30 seconds; requests accepted once waited (with `SetGroupAnswer(true)`) | |
 | peers' playbacks here expired: no `progress` and no fetch for 2 minutes (looked at every 30 seconds), or over `LongestPlayback` | leftovers stopped (once; never a playback started since) |
 | `progress` due to peers for our viewers | the engine's own change log refreshed |
 
@@ -401,6 +449,8 @@ a secret, never sent). Match with `errors.Is`.
 | `NoNextKey`, `NotNextKey`, `NoPending`, `KeyTaken`, `RotationUnderWay` | keys |
 | `InvalidAddress`, `PlainHTTP`, `RefusedDestination`, `CertificateRefused`, `MoveFailed` | addresses and connections |
 | `InvalidLimits` | streams 0 to 50, transcodes 0 to streams, bitrate 0 to 1,000,000 |
+| `CodeOptions` | a code's uses or lifetime out of range; a group's name empty or too long |
+| `NoGroups`, `NoRight`, `NotMember` | the store keeps no groups; this server's role doesn't allow it; not a member (or the group is gone) |
 | `InvalidReason` | `StopPlayback` with an ending that isn't the host's |
 | `RangeNotSatisfiable` | a malformed `Range`, or out of the file |
 | `Sealed` | a sealed value didn't open |
@@ -445,8 +495,8 @@ says nothing.
 
 **`Library`** `{ID, Name, Kind, Offered}`. **`WantedLibrary`** `{ID`
 (the peer's public ID)`, Name, Kind, Wanted, Gone}`. **`Version`**
-`{ID, Name}`. **`CodeView`** `{ID, Note, Created, Expires}`.
-**`CodePreview`** `{Address, Fingerprint, Expires}`.
+`{ID, Name}`. **`CodeView`** `{ID, Note, Created, Expires, Uses, Group}` (`Uses`: how many more servers may use it).
+**`CodePreview`** `{Address, Fingerprint, Expires, Group, GroupName}` (the group a group's code invites to: show its name before redeeming).
 
 **The toolkit** (package `wire`, `github.com/msfp-io/msfp-go/wire`) has the protocol's pieces: keys, codes,
 signatures, strict JSON, pins, statements, and helpers a host uses:
