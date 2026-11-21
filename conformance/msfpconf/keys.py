@@ -609,17 +609,32 @@ class KeyChecks:
         def signs_new():
             new = self.server_keys[0]
             a = self.hello("paired")
+            late = ""
+            if not a.signed:
+                # Core 12.4's window: a request sent right after answering
+                # rotated may reach the server before it took the answer in,
+                # and get one signed with the old key. Asked again a moment
+                # later, it must sign with the new key only.
+                time.sleep(2)
+                a = self.hello("paired")
+                if a.signed:
+                    late = "; the first answer, right after this suite answered rotated, wasn't under the new key yet"
+                    self.note_unclear("core 12.4", "a request the receiver sends right after answering rotated can "
+                                      "reach the rotating server before it takes that answer in: signed with the old "
+                                      "key, the answer fails the receiver's check (against the new key only). A "
+                                      "window of one round trip; the suite asks again 2 s later")
             if not a.signed:
                 b = self.client.call("hello", self.hello_body("paired"), keys=[old])
                 if b.signed:
                     raise Fail("after this suite answered rotated, the server still signs with its old key (core 12.4: "
                                "toward a peer that answered rotated, it signs with the new key only)")
-                raise Fail("the hello answer verifies under neither key: %s" % a.why_unsigned)
+                raise Fail("the hello answer verifies under neither key: %s (%s; under the old key: %s)"
+                           % (a.why_unsigned, a.short(), b.short()))
             if a.signer != new:
                 raise Fail("signed with another key")
             reqs = [r for r in self.peer.since(t0) if r.get("key") == old and r["t"] > self.peer.events[-1][0] + 1]
-            return "its answers verify under the new key %s%s" % (b64u(new), "; but %d request(s) were still signed with the "
-                                                                 "old key afterwards" % len(reqs) if reqs else "")
+            return "its answers verify under the new key %s%s%s" % (b64u(new), "; but %d request(s) were still signed with the "
+                                                                   "old key afterwards" % len(reqs) if reqs else "", late)
         self.check("O2", "core 12.4", "after the rotation, the server signs toward this suite with its new key only", signs_new,
                    operator=True)
 
