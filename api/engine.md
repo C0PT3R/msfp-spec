@@ -241,9 +241,6 @@ address**.
 | `Dissolved` | the owner dissolved it (kept until left) |
 | `Joining` | the list hasn't come from the inviter yet |
 
-The engine sends no group events yet: `PeerPaired` and `PeerEnded` tell
-of the links; a panel reads `Groups()` for requests and members.
-
 **`PlaybackView`**: `ID`, `Peer`, `PeerName`, `Title`, `Method`,
 `Handle` (the host's), `Since`, `State` (`started`, or `active` once
 used).
@@ -357,8 +354,10 @@ that fails gives its error, never a plain `false`.
 ## 7. Events
 
 `Notify(Event)` ([host.md section 6](host.md#6-clock-dialer-notifier-sheet-encoder)).
-Each event has `PeerID()` (`""` for an event of this server). Every
-peer event also carries `Name`. The state an event speaks of is in the
+Each event has `PeerID()` (`""` for an event of this server, and for
+group events: a group's members aren't peers until linked). Every peer
+event also carries `Name`. Links made through a group tell `PeerPaired`
+and `PeerEnded` as any other. The state an event speaks of is in the
 queries too, so a host that missed one loses nothing.
 
 | Event | Fields | When | Spec |
@@ -388,6 +387,10 @@ queries too, so a host that missed one loses nothing.
 | `PlaybackStarted` | `Playback`, `Title`, `Method` | a peer's playback here started | [playback 6.1](../spec/v0/playback.md#61-a-playbacks-states) |
 | `PlaybackEnded` | `Playback`, `Title`, `Reason` | it ended, and why | [playback 6.3](../spec/v0/playback.md#63-how-a-playback-ends) |
 | `RemotePlaybackEnded` | `Playback`, `Reason` | our playback on a peer ended without `Stop`: `410` (`expired`), the pairing ended, the peer suspended or uncallable (`pairingEnded`) | playback 6.3 |
+| `GroupRequestWaiting` | `Group`, `GroupName`, `Mail`, `Member`, `Name`, `Fingerprint` | a member's request waits for the operator: `AcceptRequest` or `RefuseRequest` with `Mail`. Not for one the server accepts itself | [groups 4.1](../spec/v0/groups.md#41-answering) |
+| `GroupJoined` | `Group`, `GroupName` | the list arrived and names this server; its requests are sent | [groups 4](../spec/v0/groups.md#4-joining) |
+| `GroupChanged` | `Group`, `GroupName`, `Types` | members' events changed a group; `Types`: their types, once each (`joined`, `admin`, `owner`, `banned`…). Not for this server's own actions | [groups 3.3](../spec/v0/groups.md#33-the-types) |
+| `GroupLeft` | `Group`, `GroupName`, `Why`, `Reason` | this server is out and removed the group: `left`, `dissolved` (by its owner, maybe this server), `banned` with the ban's reason | [groups 7](../spec/v0/groups.md#7-leaving-blocking-banning-dissolving) |
 
 ## 8. Background work
 

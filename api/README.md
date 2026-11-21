@@ -143,7 +143,6 @@ All decided by the owner on 2026-11-18 (17 on 2026-11-20).
 ## Not built yet
 
 - Groups in the C# engine (msfp-dotnet) and in the hosts on it.
-- Group events: a panel reads `Groups()` for requests and members.
 - A neutral request and response form (`MsfpRequest`, `MsfpResponse`)
   for routers other than Go's `net/http`.
 - `SetPins`: pins are only set at `Open` (`Config.Pins`).
